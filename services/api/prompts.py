@@ -83,6 +83,7 @@ STATE DETERMINATION:
 - "mistake": a common mistake visual cue is clearly seen.
 - "hazard": a safety rule is clearly and visibly violated in this frame.
 - "not_visible": relevant work area or parts are occluded, blurred, or outside frame.
+If more than one state applies, choose the first in this order: hazard, mistake, done, in_progress, not_visible.
 
 Conciseness: reason must be at most 12 words. fix must be at most 10 words.
 Return JSON matching the schema.
@@ -101,9 +102,9 @@ SAFETY RULES:
 
 INSPECTION INSTRUCTIONS:
 - Carefully inspect the image to verify whether the success criteria are completely and strictly satisfied.
-- Check that no safety rules are visibly violated.
+- Check that no safety rule is visibly violated in this image. Judge only what is visible; a rule whose state cannot be seen (for example, whether power is off) never makes the check fail.
 - visible: Set to true if the relevant parts and terminal area are clearly in view, false if occluded, blurry, or missing.
-- passed: Set to true ONLY if visible is true, success criteria are completely fulfilled, and safety rules are respected.
+- passed: true ONLY if visible is true, the success criteria are completely met, and no safety rule is visibly violated.
 - reason: Clear explanation of your verdict.
 - fix: If not passed, concise instruction on what the trainee must correct; empty if passed.
 
