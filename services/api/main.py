@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
+from firebase_admin import auth as fb_auth
 
 from services.api.auth import (
     AuthUser,
@@ -69,6 +70,13 @@ if LOCAL_DEV:
 
 
 # --- Request & Response Schemas ---
+
+
+class MeResponse(BaseModel):
+    uid: str
+    role: str
+    display_name: str | None = None
+    role_assigned: bool = False
 
 
 class LiveTokenRequest(BaseModel):
@@ -150,6 +158,33 @@ def require_any_authenticated_user(user: AuthUser = Depends(verify_auth_token)) 
 @app.get("/api/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/me", response_model=MeResponse)
+def get_me(user: AuthUser = Depends(verify_auth_token)) -> MeResponse:
+    if user.role is not None:
+        return MeResponse(
+            uid=user.uid,
+            role=user.role,
+            display_name=user.display_name,
+            role_assigned=False,
+        )
+
+    # User has no role claim yet: check if email is verified
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified",
+        )
+
+    # Assign default "trainee" role
+    fb_auth.set_custom_user_claims(user.uid, {"role": "trainee"})
+    return MeResponse(
+        uid=user.uid,
+        role="trainee",
+        display_name=user.display_name,
+        role_assigned=True,
+    )
 
 
 @app.post("/api/live-token")
