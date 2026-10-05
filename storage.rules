@@ -1,0 +1,46 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isMaster() {
+      return isSignedIn() && request.auth.token.role == 'master';
+    }
+
+    function isSupervisor() {
+      return isSignedIn() && request.auth.token.role == 'supervisor';
+    }
+
+    function isCaptureMaster(captureId) {
+      return firestore.exists(/databases/(default)/documents/captures/$(captureId))
+        && firestore.get(/databases/(default)/documents/captures/$(captureId)).data.master_uid == request.auth.uid;
+    }
+
+    // captures/{captureId}/** writable only by master who owns captures/{captureId}
+    match /captures/{captureId}/{allPaths=**} {
+      allow read: if isSupervisor() || (isMaster() && isCaptureMaster(captureId));
+      allow write: if isMaster() && isCaptureMaster(captureId);
+    }
+
+    // skills/** readable by any signed-in user and written only by the server
+    match /skills/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // manuals/** writable by role master; readable by any signed-in user
+    match /manuals/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isMaster() || isSupervisor();
+    }
+
+    // evals/** readable by any signed-in user; written by supervisor/server
+    match /evals/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSupervisor();
+    }
+  }
+}

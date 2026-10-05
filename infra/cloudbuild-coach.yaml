@@ -1,0 +1,103 @@
+steps:
+  # 1. Run Python tests (healthz + schema validation)
+  - name: 'python:3.12-slim'
+    id: 'test-python'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --no-cache-dir -r requirements-dev.txt -r services/api/requirements.txt
+        pytest
+
+  # 2. Run Web lint and Vitest unit tests
+  - name: 'node:24-slim'
+    id: 'test-web'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cd apps/web
+        npm ci
+        npm run lint
+        npm test
+
+  # 3. Build API Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-api'
+    args:
+      - 'build'
+      - '-f'
+      - 'services/api/Dockerfile'
+      - '.'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:latest'
+
+  # 4. Push API Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-api'
+    args:
+      - 'push'
+      - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
+
+  # 5. Deploy Cloud Run takumi-api
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-api'
+    args:
+      - 'gcloud'
+      - 'run'
+      - 'deploy'
+      - 'takumi-api'
+      - '--image=asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
+      - '--region=asia-southeast1'
+      - '--service-account=takumi-api@takumi-cup-2026.iam.gserviceaccount.com'
+      - '--min-instances=0'
+      - '--max-instances=3'
+      - '--concurrency=20'
+      - '--timeout=300s'
+      - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
+      - '--allow-unauthenticated'
+      - '--project=takumi-cup-2026'
+      - '--quiet'
+
+  # 6. Deploy Firebase security rules
+  - name: 'node:24-slim'
+    id: 'deploy-rules'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        npx --yes firebase-tools deploy --only firestore:rules,storage --project takumi-cup-2026 --non-interactive
+
+  # 7. Write web config and build apps/web
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'fetch-web-config'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud secrets versions access latest --secret=FIREBASE_WEB_CONFIG --project=takumi-cup-2026 > apps/web/.env.production
+
+  - name: 'node:24-slim'
+    id: 'build-web'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cd apps/web
+        npm ci
+        npm run build
+
+  # 8. Deploy to Firebase Hosting live channel
+  - name: 'node:24-slim'
+    id: 'deploy-hosting'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        npx --yes firebase-tools deploy --only hosting --project takumi-cup-2026 --non-interactive
+
+timeout: '1200s'
+options:
+  logging: CLOUD_LOGGING_ONLY

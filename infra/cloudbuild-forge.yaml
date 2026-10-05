@@ -1,0 +1,57 @@
+steps:
+  # 1. Conditionally build and deploy Cloud Run takumi-forge
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'build-and-deploy-forge'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ -f services/forge/Dockerfile ]; then
+          echo "services/forge/Dockerfile found. Building and deploying takumi-forge..."
+          docker build -f services/forge/Dockerfile . -t asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-forge:$COMMIT_SHA
+          docker push asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-forge:$COMMIT_SHA
+          gcloud run deploy takumi-forge \
+            --image=asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-forge:$COMMIT_SHA \
+            --region=asia-southeast1 \
+            --service-account=takumi-forge@takumi-cup-2026.iam.gserviceaccount.com \
+            --no-cpu-throttling \
+            --timeout=900s \
+            --set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest \
+            --allow-unauthenticated \
+            --project=takumi-cup-2026 \
+            --quiet
+        else
+          echo "services/forge/Dockerfile not found. Skipping takumi-forge build & deployment."
+        fi
+
+  # 2. Write web config and build apps/web preview
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'fetch-web-config'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud secrets versions access latest --secret=FIREBASE_WEB_CONFIG --project=takumi-cup-2026 > apps/web/.env.production
+
+  - name: 'node:24-slim'
+    id: 'build-web'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cd apps/web
+        npm ci
+        npm run build
+
+  # 3. Deploy to Firebase Hosting preview channel "forge"
+  - name: 'node:24-slim'
+    id: 'deploy-preview'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        npx --yes firebase-tools hosting:channel:deploy forge --expires 30d --project takumi-cup-2026 --non-interactive
+
+timeout: '1200s'
+options:
+  logging: CLOUD_LOGGING_ONLY

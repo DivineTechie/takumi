@@ -5,10 +5,12 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
+*-debug.log
 .next/
 out/
 build/
 dist/
+*.tsbuildinfo
 .turbo/
 .parcel-cache/
 .cache/
