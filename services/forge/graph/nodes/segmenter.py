@@ -44,44 +44,125 @@ async def run_segmenter(state: ForgeState) -> ForgeState:
     if MOCK_MODELS or not GEMINI_API_KEY:
         # High quality offline deterministic segmentation
         logger.info("Executing Segmenter node in fixture mode")
-        steps = [
-            StepData(
-                n=1,
-                instruction="Insert the blue wire into terminal 1 and tighten its screw",
-                success_criteria="A blue wire's ferrule enters terminal 1, the leftmost terminal; no copper visible",
-                tools=["3 mm flat screwdriver"],
-                hazards=["Confirm panel power is off"],
-                clip={"start_s": 12.0, "end_s": 24.5},
-                keyframe_s=23.0,
-            ),
-            StepData(
-                n=2,
-                instruction="Insert the brown wire into terminal 2 and tighten its screw",
-                success_criteria="A brown wire enters terminal 2; blue wire remains secure in terminal 1",
-                tools=["3 mm flat screwdriver"],
-                hazards=[],
-                clip={"start_s": 25.0, "end_s": 38.0},
-                keyframe_s=36.5,
-            ),
-            StepData(
-                n=3,
-                instruction="Insert the black wire into terminal 3 and tighten its screw",
-                success_criteria="A black wire enters terminal 3; no copper strands visible outside terminal",
-                tools=["3 mm flat screwdriver"],
-                hazards=[],
-                clip={"start_s": 39.0, "end_s": 52.0},
-                keyframe_s=50.0,
-            ),
-            StepData(
-                n=4,
-                instruction="Tug each of the three wires gently to verify firm seating",
-                success_criteria="All three wires remain seated firmly in terminals 1, 2, and 3 without shifting",
-                tools=[],
-                hazards=[],
-                clip={"start_s": 53.0, "end_s": 64.0},
-                keyframe_s=62.0,
-            ),
-        ]
+        if state.transcript:
+            master_actions = [
+                item for item in state.transcript
+                if item.get("role") == "master" and not any(
+                    intro_word in item.get("text", "").lower()
+                    for intro_word in ["それではdin", "today we calibrate", "we are replacing a qfp-32", "overview"]
+                )
+            ]
+            if len(master_actions) >= 3:
+                steps = []
+                for idx, action in enumerate(master_actions, start=1):
+                    t_s = float(action.get("t_start", 0.0))
+                    t_e = float(action.get("t_end", 10.0))
+                    text = action.get("text", "")
+
+                    if "青" in text or "blue wire" in text.lower():
+                        inst = "Insert the blue wire into terminal 1 and tighten its screw"
+                        crit = "A blue wire ferrule enters terminal 1 with zero bare copper"
+                        tools = ["3 mm flat screwdriver"]
+                    elif "茶" in text or "brown wire" in text.lower():
+                        inst = "Insert the brown wire into terminal 2 and tighten its screw"
+                        crit = "A brown wire enters terminal 2 while blue wire remains in terminal 1"
+                        tools = ["3 mm flat screwdriver"]
+                    elif "引っ張" in text or "tug" in text.lower() or "銅線" in text:
+                        inst = "Gently tug wires and verify zero bare copper is visible"
+                        crit = "Wires remain seated under light tug with zero exposed copper"
+                        tools = []
+                    elif "jam nut" in text.lower() and "loosen" in text.lower():
+                        inst = "Loosen the 17 mm locking jam nut counter-clockwise two turns"
+                        crit = "Jam nut backed off two threads while hex adjuster remains stationary"
+                        tools = ["17 mm open wrench", "6 mm hex key"]
+                    elif "gauge" in text.lower() or "m3" in text.lower():
+                        inst = "Attach test pressure gauge to diagnostic port M3"
+                        crit = "Test gauge hose coupler locked onto port M3 with zero oil seepage"
+                        tools = ["0-400 bar digital test gauge"]
+                    elif "210 bar" in text.lower():
+                        inst = "Turn 6 mm hex adjustment screw clockwise to 210 bar"
+                        crit = "Digital gauge displays 210 bar +/- 2 bar steady reading"
+                        tools = ["6 mm hex key"]
+                    elif "45 newton" in text.lower() or "re-tighten" in text.lower():
+                        inst = "Torque the 17 mm jam nut to 45 Nm"
+                        crit = "Torque wrench clicks at 45 Nm with adjustment screw stationary"
+                        tools = ["Torque wrench 17 mm socket", "6 mm hex key"]
+                    elif "flux" in text.lower() and "thin" in text.lower():
+                        inst = "Dispense thin line of tacky flux across all 32 perimeter pads"
+                        crit = "Continuous thin flux film covers copper pads without pooling"
+                        tools = ["Syringe flux dispenser", "Stereo microscope"]
+                    elif "tweezers" in text.lower() or "aligning" in text.lower():
+                        inst = "Place IC with anti-static tweezers aligning pin 1 dot"
+                        crit = "All 32 IC leads sit squarely centered on copper pads"
+                        tools = ["Curved ESD tweezers", "Microscope"]
+                    elif "tack" in text.lower() or "pin 1 and" in text.lower():
+                        inst = "Tack diagonal corner pins 1 and 17 with chisel tip"
+                        crit = "Pins 1 and 17 have shiny concave fillets with alignment held"
+                        tools = ["350C soldering iron", "0.5 mm solder wire"]
+                    elif "drag" in text.lower():
+                        inst = "Perform drag soldering along each row with solder wire"
+                        crit = "Every lead features a smooth meniscus fillet with zero bridges"
+                        tools = ["Soldering iron with chisel tip", "0.5 mm solder wire"]
+                    elif "isopropyl" in text.lower() or "scrub" in text.lower():
+                        inst = "Clean flux residues using 99 percent isopropyl alcohol and brush"
+                        crit = "Board surface between leads is clean with zero yellow flux residue"
+                        tools = ["99% Isopropyl alcohol", "ESD cleaning brush"]
+                    else:
+                        inst = f"Execute step {idx} according to standard operating procedure"
+                        crit = f"Target assembly for step {idx} is secured with zero damage"
+                        tools = []
+
+                    steps.append(
+                        StepData(
+                            n=idx,
+                            instruction=inst,
+                            success_criteria=crit,
+                            tools=tools,
+                            hazards=[],
+                            clip={"start_s": t_s, "end_s": t_e},
+                            keyframe_s=max(t_s, t_e - 1.0),
+                        )
+                    )
+
+        if not steps:
+            steps = [
+                StepData(
+                    n=1,
+                    instruction="Insert the blue wire into terminal 1 and tighten its screw",
+                    success_criteria="A blue wire's ferrule enters terminal 1, the leftmost terminal; no copper visible",
+                    tools=["3 mm flat screwdriver"],
+                    hazards=["Confirm panel power is off"],
+                    clip={"start_s": 12.0, "end_s": 24.5},
+                    keyframe_s=23.0,
+                ),
+                StepData(
+                    n=2,
+                    instruction="Insert the brown wire into terminal 2 and tighten its screw",
+                    success_criteria="A brown wire enters terminal 2; blue wire remains secure in terminal 1",
+                    tools=["3 mm flat screwdriver"],
+                    hazards=[],
+                    clip={"start_s": 25.0, "end_s": 38.0},
+                    keyframe_s=36.5,
+                ),
+                StepData(
+                    n=3,
+                    instruction="Insert the black wire into terminal 3 and tighten its screw",
+                    success_criteria="A black wire enters terminal 3; no copper strands visible outside terminal",
+                    tools=["3 mm flat screwdriver"],
+                    hazards=[],
+                    clip={"start_s": 39.0, "end_s": 52.0},
+                    keyframe_s=50.0,
+                ),
+                StepData(
+                    n=4,
+                    instruction="Tug each of the three wires gently to verify firm seating",
+                    success_criteria="All three wires remain seated firmly in terminals 1, 2, and 3 without shifting",
+                    tools=[],
+                    hazards=[],
+                    clip={"start_s": 53.0, "end_s": 64.0},
+                    keyframe_s=62.0,
+                ),
+            ]
     else:
         try:
             from google import genai
