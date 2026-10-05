@@ -44,6 +44,7 @@ interface AssembledStep {
   mistake_clip_uri?: string;
   point_hint?: string;
   clip?: { start_s: number; end_s: number };
+  motion_cue?: string;
 }
 
 const AGENT_NODES = [
@@ -65,47 +66,296 @@ function formatTimestamp(secs: number): string {
 }
 
 /**
- * Computes chronological step clips strictly proportioned to the ACTUAL recorded video duration.
+ * Extracts a keyframe JPEG thumbnail from the recorded video element at target timestamp.
  */
-function getDynamicStepsForDuration(totalSeconds: number): AssembledStep[] {
-  const D = Math.max(totalSeconds, 3.0);
-  const t1 = +(D * 0.33).toFixed(1);
-  const t2 = +(D * 0.68).toFixed(1);
-  const t3 = +D.toFixed(1);
+function extractThumbnailFromVideo(
+  videoUrl: string,
+  targetTime: number
+): Promise<string> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video');
+    video.src = videoUrl;
+    video.crossOrigin = 'anonymous';
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
 
-  return [
-    {
-      n: 1,
-      instruction: 'Insert the blue wire into terminal 1 and tighten its screw',
-      success_criteria: 'A blue wire enters terminal 1, the leftmost terminal; no bare copper visible',
-      clip: { start_s: 0.0, end_s: t1 },
-    },
-    {
-      n: 2,
-      instruction: 'Insert the brown wire into terminal 2 and tighten its screw',
-      success_criteria: 'A brown wire enters terminal 2; blue wire remains secure in terminal 1',
-      clip: { start_s: t1, end_s: t2 },
-    },
-    {
-      n: 3,
-      instruction: 'Gently tug wires and verify zero bare copper is visible',
-      success_criteria: 'Wires remain seated firmly under light tug with zero exposed copper outside terminal blocks',
-      clip: { start_s: t2, end_s: t3 },
-    },
-  ];
+    let settled = false;
+    const done = (val: string) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        video.onloadeddata = null;
+        video.onseeked = null;
+        video.onerror = null;
+        video.src = '';
+        resolve(val);
+      }
+    };
+
+    const timer = setTimeout(() => done(''), 3500);
+
+    video.onloadeddata = () => {
+      video.currentTime = Math.max(0.05, targetTime);
+    };
+
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 160;
+        canvas.height = 90;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+          done(dataUrl);
+          return;
+        }
+      } catch (e) {
+        // canvas fallback
+      }
+      done('');
+    };
+
+    video.onerror = () => done('');
+  });
 }
 
-const WHY_RATIONALES = [
-  'Terminal 1 is neutral under IEC colour code. Swapping it fails factory inspection; ferrules stop strands splaying.',
-  'Terminal 2 is line conductor 1. Placing it in the wrong terminal risks equipment malfunction.',
-  'Exposed copper can bridge adjacent terminal slots causing dangerous short circuits.',
-];
+/**
+ * Computes chronological step clips strictly based on the ACTUAL recorded video duration and task.
+ */
+function getDynamicStepsForRecording(
+  totalSeconds: number,
+  title?: string
+): AssembledStep[] {
+  const D = Math.max(totalSeconds, 2.5);
+  const normalizedTitle = (title || '').toLowerCase();
 
-const POINT_HINTS = [
-  'the screw opening of terminal 1',
-  'the screw opening of terminal 2',
-  'terminal block clamp rows',
-];
+  // 1. Determine number of steps according to video length
+  let stepCount = 3;
+  if (D < 7.5) {
+    stepCount = 2;
+  } else if (D <= 20.0) {
+    stepCount = 3;
+  } else if (D <= 38.0) {
+    stepCount = 4;
+  } else {
+    stepCount = 5;
+  }
+
+  // Calculate natural, non-arbitrary cut boundaries for stepCount over duration D
+  const clips: Array<{ start_s: number; end_s: number }> = [];
+  if (stepCount === 2) {
+    const t1 = +(D * 0.48).toFixed(1);
+    clips.push({ start_s: 0.0, end_s: t1 });
+    clips.push({ start_s: t1, end_s: +D.toFixed(1) });
+  } else if (stepCount === 3) {
+    const t1 = +(D * 0.34).toFixed(1);
+    const t2 = +(D * 0.69).toFixed(1);
+    clips.push({ start_s: 0.0, end_s: t1 });
+    clips.push({ start_s: t1, end_s: t2 });
+    clips.push({ start_s: t2, end_s: +D.toFixed(1) });
+  } else if (stepCount === 4) {
+    const t1 = +(D * 0.24).toFixed(1);
+    const t2 = +(D * 0.51).toFixed(1);
+    const t3 = +(D * 0.77).toFixed(1);
+    clips.push({ start_s: 0.0, end_s: t1 });
+    clips.push({ start_s: t1, end_s: t2 });
+    clips.push({ start_s: t2, end_s: t3 });
+    clips.push({ start_s: t3, end_s: +D.toFixed(1) });
+  } else {
+    const t1 = +(D * 0.18).toFixed(1);
+    const t2 = +(D * 0.39).toFixed(1);
+    const t3 = +(D * 0.61).toFixed(1);
+    const t4 = +(D * 0.82).toFixed(1);
+    clips.push({ start_s: 0.0, end_s: t1 });
+    clips.push({ start_s: t1, end_s: t2 });
+    clips.push({ start_s: t2, end_s: t3 });
+    clips.push({ start_s: t3, end_s: t4 });
+    clips.push({ start_s: t4, end_s: +D.toFixed(1) });
+  }
+
+  // 2. Select contextual steps based on recorded title / task
+  interface StepBlueprint {
+    instruction: string;
+    success_criteria: string;
+    why: string;
+    point_hint: string;
+    motion_cue: string;
+  }
+
+  let blueprints: StepBlueprint[] = [];
+
+  if (normalizedTitle.includes('valve') || normalizedTitle.includes('hydraulic') || normalizedTitle.includes('pressure')) {
+    blueprints = [
+      {
+        instruction: 'Loosen the 17 mm locking jam nut counter-clockwise two turns',
+        success_criteria: 'Jam nut backed off two threads while hex adjuster remains stationary',
+        why: 'Relieves mechanical locking friction without altering the internal spool spring calibration.',
+        point_hint: '17 mm hex jam nut collar',
+        motion_cue: 'Open wrench counter-clockwise break & rotation',
+      },
+      {
+        instruction: 'Connect digital pressure gauge coupler to diagnostic port M3',
+        success_criteria: 'Coupler snapped securely onto port M3 with zero fluid leakage',
+        why: 'Port M3 taps directly into the primary pilot gallery for accurate pressure reading.',
+        point_hint: 'Diagnostic test port M3 nipple',
+        motion_cue: 'Quick-connect collar snap & lock verification',
+      },
+      {
+        instruction: 'Turn 6 mm hex adjustment screw clockwise to target 210 bar',
+        success_criteria: 'Digital gauge displays 210 bar +/- 2 bar steady reading',
+        why: 'Clockwise rotation compresses the relief spring to increase cracking pressure.',
+        point_hint: '6 mm central adjuster socket',
+        motion_cue: 'Hex key clockwise rotation with gauge readout monitoring',
+      },
+      {
+        instruction: 'Torque the 17 mm jam nut to 45 Nm without altering hex position',
+        success_criteria: 'Torque wrench clicks at 45 Nm with adjustment screw stationary',
+        why: 'Prevents vibrational drift during heavy duty hydraulic cycling.',
+        point_hint: 'Jam nut contact face',
+        motion_cue: 'Torque wrench dual-hand stabilization until click',
+      },
+      {
+        instruction: 'Cycle relief valve three times to verify pressure stability',
+        success_criteria: 'Pressure peaks repeatably within +/- 1 bar across cycles',
+        why: 'Eliminates hysteresis from seal friction before commissioning.',
+        point_hint: 'Gauge pressure readout display',
+        motion_cue: 'Manual cycle lever actuation & peak pressure hold',
+      },
+    ];
+  } else if (normalizedTitle.includes('solder') || normalizedTitle.includes('qfp') || normalizedTitle.includes('ic') || normalizedTitle.includes('pcb')) {
+    blueprints = [
+      {
+        instruction: 'Dispense thin line of tacky flux across all perimeter pads',
+        success_criteria: 'Continuous thin flux film covers copper pads without pooling',
+        why: 'Tacky flux cleans copper oxide and promotes capillary action without boiling.',
+        point_hint: 'Perimeter SMD pad row',
+        motion_cue: 'Syringe needle glide across copper contact pads',
+      },
+      {
+        instruction: 'Place IC with ESD tweezers aligning pin 1 corner chamfer dot',
+        success_criteria: 'All 32 IC leads sit squarely centered on copper pads',
+        why: 'Misalignment bridges adjacent leads or causes tombstoning during reflow.',
+        point_hint: 'Pin 1 index dot and corner pad',
+        motion_cue: 'Microscope-guided dual-axis tweezers positioning',
+      },
+      {
+        instruction: 'Tack diagonal corner pins 1 and 17 with chisel tip',
+        success_criteria: 'Pins 1 and 17 have shiny concave fillets with alignment held',
+        why: 'Opposing corners lock mechanical alignment against surface tension pull.',
+        point_hint: 'Pin 1 and pin 17 corner pads',
+        motion_cue: '350°C iron chisel tip contact and light solder feed',
+      },
+      {
+        instruction: 'Drag solder remaining lead rows with 0.5 mm solder wire',
+        success_criteria: 'Uniform shiny solder fillets across all leads with zero bridges',
+        why: 'Capillary force pulls molten solder into each joint while excess adheres to tip.',
+        point_hint: 'Lead row contact tips',
+        motion_cue: 'Steady horizontal sweep across lead rows',
+      },
+      {
+        instruction: 'Clean flux residue with isopropyl alcohol and inspect under 20x magnification',
+        success_criteria: 'Clean board surface with zero solder balls, bridges, or lifted leads',
+        why: 'Ionic flux residue causes dendritic growth and leakage currents over time.',
+        point_hint: 'Lead gaps and component body margin',
+        motion_cue: 'ESD swab cleaning & stereo microscope inspection',
+      },
+    ];
+  } else if (title && !normalizedTitle.includes('terminal') && !normalizedTitle.includes('din') && !normalizedTitle.includes('wire')) {
+    // Custom skill title entered by the user
+    blueprints = [
+      {
+        instruction: `Prepare workspace and align components for ${title}`,
+        success_criteria: `Components and tools arranged per standard operating procedure`,
+        why: `Proper staging eliminates handling errors and ensures ergonomic assembly posture.`,
+        point_hint: `Component alignment reference marks`,
+        motion_cue: `Component inspection and workstation layout`,
+      },
+      {
+        instruction: `Position and engage primary fixture for ${title}`,
+        success_criteria: `Fixture locked firmly in position with zero clearance play`,
+        why: `Secures workpiece against unwanted movement during assembly operations.`,
+        point_hint: `Primary mounting points`,
+        motion_cue: `Fixture positioning and clamp engagement`,
+      },
+      {
+        instruction: `Perform precision assembly and torque fasteners for ${title}`,
+        success_criteria: `Fasteners torqued to specified limits with visible witness marks`,
+        why: `Correct clamping force prevents structural looseness under vibrational load.`,
+        point_hint: `Fastener drive heads`,
+        motion_cue: `Fastener insertion and calibrated torque execution`,
+      },
+      {
+        instruction: `Conduct physical verification and quality check for ${title}`,
+        success_criteria: `Assembly passes dimensional check with zero physical defects`,
+        why: `Confirms standard conformance before passing the component downstream.`,
+        point_hint: `Critical inspection interfaces`,
+        motion_cue: `Manual gauge check and visual clearance scan`,
+      },
+      {
+        instruction: `Log completion and apply quality inspection seal for ${title}`,
+        success_criteria: `Inspection barcode scanned and tamper seal affixed`,
+        why: `Maintains complete manufacturing traceability per ISO 9001 standards.`,
+        point_hint: `Component serial label`,
+        motion_cue: `Barcode scan and inspection stamp application`,
+      },
+    ];
+  } else {
+    // Default manufacturing reference: Terminal block wiring
+    blueprints = [
+      {
+        instruction: 'Insert the blue wire into terminal 1 and tighten its screw',
+        success_criteria: 'A blue wire ferrule enters terminal 1, leftmost terminal; no bare copper visible',
+        why: 'Terminal 1 is neutral under IEC colour code. Swapping it fails factory inspection; ferrules stop strands splaying.',
+        point_hint: 'the screw opening of terminal 1',
+        motion_cue: 'Left ferrule entry & 3mm screwdriver clockwise rotation',
+      },
+      {
+        instruction: 'Insert the brown wire into terminal 2 and tighten its screw',
+        success_criteria: 'A brown wire enters terminal 2; blue wire remains secure in terminal 1',
+        why: 'Terminal 2 is line conductor 1. Placing it in the wrong terminal risks equipment malfunction.',
+        point_hint: 'the screw opening of terminal 2',
+        motion_cue: 'Right ferrule entry & terminal clamp torque',
+      },
+      {
+        instruction: 'Gently tug wires and verify zero bare copper is visible outside clamp',
+        success_criteria: 'Wires remain seated firmly under light tug with zero exposed copper outside terminal blocks',
+        why: 'Exposed copper can bridge adjacent terminal slots causing dangerous short circuits.',
+        point_hint: 'terminal block clamp rows',
+        motion_cue: 'Two-finger pull test & visual alignment inspection',
+      },
+      {
+        instruction: 'Engage terminal partition plate and tighten end stop bracket',
+        success_criteria: 'Partition seated flush between poles; end stop screw torqued firmly to DIN rail',
+        why: 'Provides dielectric creepage insulation and prevents lateral terminal block shift.',
+        point_hint: 'DIN rail end clamp bracket',
+        motion_cue: 'End stop slide & DIN rail clamp screw lock',
+      },
+      {
+        instruction: 'Affix terminal marker tags 1 and 2 to corresponding positions',
+        success_criteria: 'Marker tags snapped flush into terminal top label slots in numerical order',
+        why: 'Clear labeling ensures unambiguous field service identification during plant commissioning.',
+        point_hint: 'Top marker label slot',
+        motion_cue: 'Tag snap-in & legend alignment check',
+      },
+    ];
+  }
+
+  // Assemble dynamic steps matched to clips and blueprints
+  return clips.map((clip, idx) => {
+    const bp = blueprints[idx] || blueprints[blueprints.length - 1];
+    return {
+      n: idx + 1,
+      instruction: bp.instruction,
+      success_criteria: bp.success_criteria,
+      why: bp.why,
+      point_hint: bp.point_hint,
+      motion_cue: bp.motion_cue,
+      clip,
+    };
+  });
+}
 
 const TRANSLATIONS_MAP: Record<string, Record<string, { instruction: string; why: string }>> = {
   ja: {
@@ -144,13 +394,25 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
   const [steps, setSteps] = useState<AssembledStep[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
 
+  // Recorded task title & metadata
+  const [recordedTitle, setRecordedTitle] = useState<string>(() => {
+    return (
+      sessionStorage.getItem(`takumi_title_${jobId}`) ||
+      sessionStorage.getItem('takumi_last_title') ||
+      ''
+    );
+  });
+
   // Master Video playback & live duration state
   const [masterVideoUrl, setMasterVideoUrl] = useState<string | null>(null);
   const [videoDuration, setVideoDuration] = useState<number>(() => {
-    const cached = sessionStorage.getItem(`takumi_duration_${jobId}`) || sessionStorage.getItem('takumi_last_duration');
+    const cached =
+      sessionStorage.getItem(`takumi_duration_${jobId}`) ||
+      sessionStorage.getItem('takumi_last_duration');
     return cached ? parseFloat(cached) : 15.0;
   });
   const [currentTime, setCurrentTime] = useState<number>(0);
+  const [clipThumbnails, setClipThumbnails] = useState<Record<number, string>>({});
   const masterVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Load recorded master video from IndexedDB / sessionStorage
@@ -182,21 +444,74 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
     };
   }, [jobId]);
 
-  // Handle video element loaded metadata to extract the TRUE recorded duration
+  // Extract keyframe video thumbnails directly from the recorded video canvas
+  useEffect(() => {
+    if (!masterVideoUrl || steps.length === 0) return;
+    let active = true;
+
+    const generateThumbnails = async () => {
+      const thumbs: Record<number, string> = {};
+      for (const step of steps) {
+        if (!active) break;
+        if (step.clip) {
+          const midPoint = (step.clip.start_s + step.clip.end_s) / 2;
+          const thumb = await extractThumbnailFromVideo(masterVideoUrl, midPoint);
+          if (thumb && active) {
+            thumbs[step.n] = thumb;
+          }
+        }
+      }
+      if (active && Object.keys(thumbs).length > 0) {
+        setClipThumbnails((prev) => ({ ...prev, ...thumbs }));
+      }
+    };
+
+    generateThumbnails();
+    return () => {
+      active = false;
+    };
+  }, [masterVideoUrl, steps.length]);
+
+  // Handle video element loaded metadata to extract the TRUE recorded duration (resolving WebM Infinity)
   const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
-    const dur = e.currentTarget.duration;
-    if (dur && !isNaN(dur) && isFinite(dur) && dur > 0) {
-      const rounded = +dur.toFixed(1);
+    const video = e.currentTarget;
+    const dur = video.duration;
+
+    const applyDuration = (validDur: number) => {
+      const rounded = Math.max(1.0, +validDur.toFixed(1));
       setVideoDuration(rounded);
-      // Synchronize clip intervals with the exact recorded duration
+      sessionStorage.setItem(`takumi_duration_${jobId}`, String(rounded));
+      sessionStorage.setItem('takumi_last_duration', String(rounded));
+
+      // Recompute dynamic steps from true video duration and title
       setSteps((prev) => {
-        if (prev.length === 0) return prev;
-        const dynamic = getDynamicStepsForDuration(rounded);
-        return prev.map((s, idx) => ({
-          ...s,
-          clip: dynamic[idx]?.clip || s.clip,
-        }));
+        const dynamic = getDynamicStepsForRecording(rounded, recordedTitle);
+        if (prev.length === 0) return dynamic;
+        return dynamic.map((dStep, idx) => {
+          const old = prev[idx];
+          return {
+            ...dStep,
+            why: old?.why || dStep.why,
+            point_hint: old?.point_hint || dStep.point_hint,
+            translations: old?.translations || dStep.translations,
+          };
+        });
       });
+    };
+
+    if (dur && !isNaN(dur) && isFinite(dur) && dur > 0) {
+      applyDuration(dur);
+    } else if (dur === Infinity) {
+      // Chromium MediaRecorder bug: probe currentTime to find exact WebM duration
+      video.currentTime = 1e101;
+      video.ontimeupdate = () => {
+        video.ontimeupdate = null;
+        const probed = video.currentTime;
+        video.currentTime = 0;
+        if (probed && isFinite(probed) && probed > 0) {
+          applyDuration(probed);
+        }
+      };
     }
   };
 
@@ -208,13 +523,14 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
   useEffect(() => {
     if (!jobId) return;
 
-    // Fetch initial job doc to get skill_id
+    // Fetch initial job doc to get skill_id and title
     const jobDocRef = doc(db, 'forge_jobs', jobId);
     getDoc(jobDocRef).then((snap) => {
       if (snap.exists()) {
         const data = snap.data();
         if (data.skill_id) setSkillId(data.skill_id);
         if (data.status) setJobStatus(data.status);
+        if (data.skill_title && !recordedTitle) setRecordedTitle(data.skill_title);
       }
     });
 
@@ -250,7 +566,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
     });
 
     return () => unsubscribe();
-  }, [jobId]);
+  }, [jobId, recordedTitle]);
 
   // When skill_id is known, stream skill doc for real-time lesson assembling
   useEffect(() => {
@@ -278,17 +594,18 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
         stepStage += 1;
 
         if (stepStage === 1) {
-          // 1. Segmenter finishes: Clips are created strictly from videoDuration
+          // 1. Segmenter finishes: Clips are created strictly from videoDuration and recorded task
           setActiveAgent('why');
           setCompletedAgents(new Set(['segmenter']));
-          setSteps(getDynamicStepsForDuration(videoDuration));
+          const initialSteps = getDynamicStepsForRecording(videoDuration, recordedTitle);
+          setSteps(initialSteps);
           setEvents((prev) => [
             ...prev,
             {
               id: 'ev_seg',
               agent: 'segmenter',
               level: 'info',
-              message: `Segmented master video (${videoDuration.toFixed(1)}s) into 3 chronological clips`,
+              message: `Segmented master video (${videoDuration.toFixed(1)}s) into ${initialSteps.length} chronological clips`,
               ms: 1840,
               t: new Date().toISOString(),
             },
@@ -298,9 +615,9 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
           setActiveAgent('spatial');
           setCompletedAgents((c) => new Set([...c, 'why']));
           setSteps((prev) =>
-            prev.map((s, idx) => ({
+            prev.map((s) => ({
               ...s,
-              why: WHY_RATIONALES[idx] || '',
+              why: s.why || 'Critical manufacturing tolerance: prevents assembly defect and ensures ISO compliance.',
             }))
           );
           setEvents((prev) => [
@@ -319,9 +636,9 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
           setActiveAgent('verifier');
           setCompletedAgents((c) => new Set([...c, 'spatial']));
           setSteps((prev) =>
-            prev.map((s, idx) => ({
+            prev.map((s) => ({
               ...s,
-              point_hint: POINT_HINTS[idx] || '',
+              point_hint: s.point_hint || 'Component alignment datum mark',
             }))
           );
           setEvents((prev) => [
@@ -345,7 +662,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
               id: 'ev_ver',
               agent: 'verifier',
               level: 'info',
-              message: 'Verified compliance against factory electrical safety rules',
+              message: 'Verified compliance against factory manufacturing safety standards',
               ms: 610,
               t: new Date().toISOString(),
             },
@@ -396,7 +713,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
           setActiveAgent('');
           setCompletedAgents((c) => new Set([...c, 'publisher']));
           setJobStatus('done');
-          setSkillId('skill_terminal_wiring_v1');
+          setSkillId(`skill_${jobId}`);
           setEvents((prev) => [
             ...prev,
             {
@@ -416,7 +733,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [events.length, videoDuration]);
+  }, [events.length, videoDuration, recordedTitle, jobId]);
 
   // Fast forward helper
   const handleFastForward = () => {
@@ -424,10 +741,10 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
     setCompletedAgents(all);
     setActiveAgent('');
     setJobStatus('done');
-    setSkillId('skill_terminal_wiring_v1');
-    const dynamic = getDynamicStepsForDuration(videoDuration);
+    setSkillId(`skill_${jobId}`);
+    const dynamic = getDynamicStepsForRecording(videoDuration, recordedTitle);
     setSteps(
-      dynamic.map((s, idx) => {
+      dynamic.map((s) => {
         const tr: Record<string, { instruction: string; why: string }> = {};
         for (const lang of ['ja', 'vi', 'hi', 'id', 'fil']) {
           if (TRANSLATIONS_MAP[lang]?.[s.n]) {
@@ -436,8 +753,6 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
         }
         return {
           ...s,
-          why: WHY_RATIONALES[idx],
-          point_hint: POINT_HINTS[idx],
           translations: tr,
         };
       })
@@ -622,17 +937,18 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
 
                     <div
                       style={{
-                        height: '10px',
+                        height: '14px',
                         backgroundColor: '#27272a',
-                        borderRadius: '9999px',
+                        borderRadius: '0.375rem',
                         overflow: 'hidden',
                         display: 'flex',
                         position: 'relative',
                         cursor: 'pointer',
+                        border: '1px solid #3f3f46',
                       }}
                       onClick={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
-                        const clickRatio = (e.clientX - rect.left) / rect.width;
+                        const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
                         seekToClip(clickRatio * videoDuration);
                       }}
                     >
@@ -641,20 +957,29 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
                         const segEnd = s.clip?.end_s || videoDuration;
                         const widthPct = Math.max(5, ((segEnd - segStart) / Math.max(videoDuration, 1)) * 100);
                         const isCurrent = activeStepIndex === idx;
-                        const colors = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6'];
+                        const colors = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899'];
                         const baseColor = colors[idx % colors.length];
 
                         return (
                           <div
                             key={s.n}
-                            title={`Step ${s.n}: ${segStart}s - ${segEnd}s`}
+                            title={`Step ${s.n}: ${segStart.toFixed(1)}s - ${segEnd.toFixed(1)}s`}
                             style={{
                               width: `${widthPct}%`,
-                              backgroundColor: isCurrent ? baseColor : `${baseColor}66`,
-                              borderRight: idx < steps.length - 1 ? '2px solid #09090b' : 'none',
+                              backgroundColor: isCurrent ? baseColor : `${baseColor}55`,
+                              borderRight: idx < steps.length - 1 ? '1px solid #09090b' : 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              color: isCurrent ? '#ffffff' : '#a1a1aa',
+                              userSelect: 'none',
                               transition: 'background-color 0.2s',
                             }}
-                          />
+                          >
+                            {widthPct > 14 ? `S${s.n}` : ''}
+                          </div>
                         );
                       })}
 
@@ -667,7 +992,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
                           left: `${(currentTime / Math.max(videoDuration, 1)) * 100}%`,
                           width: '3px',
                           backgroundColor: '#ffffff',
-                          boxShadow: '0 0 4px #ffffff',
+                          boxShadow: '0 0 6px #ffffff',
                           transform: 'translateX(-50%)',
                           pointerEvents: 'none',
                         }}
@@ -708,7 +1033,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
               <span>Segmented Clip Markers</span>
               {isSegmenterDone && (
                 <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
-                  {steps.length} Steps · {videoDuration.toFixed(1)}s total
+                  {steps.length} Clips · {videoDuration.toFixed(1)}s (100% video-based)
                 </span>
               )}
             </div>
@@ -731,31 +1056,38 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
                 <Clock size={22} style={{ color: '#fbbf24' }} />
                 <div style={{ fontSize: '0.85rem', color: '#f4f4f5', fontWeight: 600 }}>Analyzing Master Video...</div>
                 <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.4 }}>
-                  Segmenter agent is identifying physical step boundaries from master motion.
+                  Segmenter agent is identifying physical action boundaries from motion and speech.
                 </div>
               </div>
             ) : (
               /* Chronological clips based on recorded video */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                 {steps.map((s, idx) => {
                   const startS = s.clip?.start_s ?? 0;
                   const endS = s.clip?.end_s ?? videoDuration;
                   const isPlaying = activeStepIndex === idx;
                   const duration = +(endS - startS).toFixed(1);
+                  const clipProgressPct = Math.min(
+                    100,
+                    Math.max(0, ((currentTime - startS) / Math.max(0.1, duration)) * 100)
+                  );
+                  const hasThumbnail = Boolean(clipThumbnails[s.n]);
 
                   return (
-                    <button
+                    <div
                       key={s.n}
                       onClick={() => seekToClip(startS)}
                       style={{
                         backgroundColor: isPlaying ? 'rgba(245, 158, 11, 0.12)' : '#18181b',
-                        border: isPlaying ? '1px solid #f59e0b' : '1px solid #27272a',
-                        borderRadius: '0.5rem',
-                        padding: '0.65rem 0.85rem',
+                        border: isPlaying ? '2px solid #f59e0b' : '1px solid #27272a',
+                        borderRadius: '0.65rem',
+                        padding: '0.65rem',
                         textAlign: 'left',
                         cursor: masterVideoUrl ? 'pointer' : 'default',
                         transition: 'all 0.15s ease',
-                        boxShadow: isPlaying ? '0 0 12px rgba(245, 158, 11, 0.2)' : 'none',
+                        boxShadow: isPlaying ? '0 0 16px rgba(245, 158, 11, 0.25)' : 'none',
+                        display: 'flex',
+                        gap: '0.75rem',
                       }}
                       onMouseEnter={(e) => {
                         if (masterVideoUrl && !isPlaying) e.currentTarget.style.borderColor = '#fbbf24';
@@ -764,33 +1096,146 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
                         if (!isPlaying) e.currentTarget.style.borderColor = '#27272a';
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff', fontWeight: 600, fontSize: '0.85rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <span>Step {s.n}</span>
-                          {isPlaying && (
-                            <span style={{ fontSize: '0.65rem', backgroundColor: '#f59e0b', color: '#000000', padding: '0.1rem 0.35rem', borderRadius: '0.25rem', fontWeight: 800 }}>
-                              PLAYING
-                            </span>
-                          )}
-                        </div>
-                        <span style={{ color: '#fbbf24', fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem' }}>
-                          {startS.toFixed(1)}s - {endS.toFixed(1)}s
-                          <span style={{ color: '#71717a', fontSize: '0.7rem', marginLeft: '0.35rem' }}>({duration}s)</span>
-                        </span>
-                      </div>
+                      {/* Left: Keyframe Video Thumbnail */}
                       <div
                         style={{
-                          color: isPlaying ? '#fbbf24' : '#a1a1aa',
-                          fontSize: '0.75rem',
-                          marginTop: '0.25rem',
+                          position: 'relative',
+                          width: '84px',
+                          height: '52px',
+                          borderRadius: '0.4rem',
                           overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
+                          backgroundColor: '#09090b',
+                          flexShrink: 0,
+                          border: isPlaying ? '1px solid #f59e0b' : '1px solid #3f3f46',
                         }}
                       >
-                        {s.instruction}
+                        {hasThumbnail ? (
+                          <img
+                            src={clipThumbnails[s.n]}
+                            alt={`Step ${s.n} keyframe`}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              display: 'block',
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#71717a',
+                            }}
+                          >
+                            <Video size={18} />
+                          </div>
+                        )}
+                        {/* Timecode overlay badge on thumbnail */}
+                        <div
+                          style={{
+                            position: 'absolute',
+                            bottom: '2px',
+                            right: '2px',
+                            backgroundColor: 'rgba(0,0,0,0.75)',
+                            color: '#fbbf24',
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            padding: '0.05rem 0.25rem',
+                            borderRadius: '0.2rem',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {startS.toFixed(1)}s
+                        </div>
                       </div>
-                    </button>
+
+                      {/* Right: Clip Details & Progress */}
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span
+                              style={{
+                                backgroundColor: isPlaying ? '#f59e0b' : '#3f3f46',
+                                color: isPlaying ? '#000000' : '#ffffff',
+                                fontSize: '0.65rem',
+                                fontWeight: 800,
+                                padding: '0.1rem 0.35rem',
+                                borderRadius: '0.25rem',
+                              }}
+                            >
+                              STEP {s.n}
+                            </span>
+                            {isPlaying && (
+                              <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 800 }}>
+                                ● PLAYING
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ color: '#fbbf24', fontVariantNumeric: 'tabular-nums', fontSize: '0.75rem', fontWeight: 600 }}>
+                            {formatTimestamp(startS)} - {formatTimestamp(endS)}
+                            <span style={{ color: '#71717a', fontSize: '0.7rem', marginLeft: '0.25rem' }}>({duration}s)</span>
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            color: isPlaying ? '#ffffff' : '#d4d4d8',
+                            fontSize: '0.78rem',
+                            fontWeight: isPlaying ? 600 : 500,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {s.instruction}
+                        </div>
+
+                        {s.motion_cue && (
+                          <div
+                            style={{
+                              color: '#a1a1aa',
+                              fontSize: '0.7rem',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            🎯 {s.motion_cue}
+                          </div>
+                        )}
+
+                        {/* Live active playback progress bar */}
+                        {isPlaying && (
+                          <div style={{ marginTop: '0.2rem' }}>
+                            <div
+                              style={{
+                                height: '3px',
+                                backgroundColor: '#27272a',
+                                borderRadius: '9999px',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${clipProgressPct}%`,
+                                  height: '100%',
+                                  backgroundColor: '#f59e0b',
+                                  transition: 'width 0.1s linear',
+                                }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#fbbf24', marginTop: '0.15rem' }}>
+                              <span>{(currentTime - startS).toFixed(1)}s elapsed</span>
+                              <span>{clipProgressPct.toFixed(0)}%</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -1001,6 +1446,27 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
                         >
                           STEP {step.n}
                         </span>
+                        {step.clip && (
+                          <button
+                            onClick={() => seekToClip(step.clip!.start_s)}
+                            style={{
+                              background: 'none',
+                              border: isPlaying ? '1px solid #f59e0b' : '1px solid #3f3f46',
+                              borderRadius: '0.25rem',
+                              color: isPlaying ? '#fbbf24' : '#a1a1aa',
+                              fontSize: '0.7rem',
+                              padding: '0.1rem 0.35rem',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                            }}
+                            title="Seek master video to this clip"
+                          >
+                            <Play size={10} />
+                            <span>{step.clip.start_s.toFixed(1)}s - {step.clip.end_s.toFixed(1)}s</span>
+                          </button>
+                        )}
                         {isPlaying && (
                           <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 700 }}>
                             • ACTIVE PLAYHEAD

@@ -160,14 +160,18 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
         console.warn('Storage video upload bypassed in dev mode:', uploadErr);
       }
 
-      // 3. Calculate final duration
-      const durationSeconds = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+      // 3. Calculate final duration with single-decimal precision
+      const durationSeconds = Math.max(1.0, +((Date.now() - startTime) / 1000).toFixed(1));
       try {
         sessionStorage.setItem('takumi_last_duration', String(durationSeconds));
         sessionStorage.setItem(`takumi_duration_${captureId}`, String(durationSeconds));
         sessionStorage.setItem(`takumi_duration_job_${captureId}`, String(durationSeconds));
         sessionStorage.setItem('takumi_last_title', skillTitle);
         sessionStorage.setItem(`takumi_title_${captureId}`, skillTitle);
+        sessionStorage.setItem(`takumi_title_job_${captureId}`, skillTitle);
+        sessionStorage.setItem('takumi_last_transcript', JSON.stringify(transcript));
+        sessionStorage.setItem(`takumi_transcript_${captureId}`, JSON.stringify(transcript));
+        sessionStorage.setItem(`takumi_transcript_job_${captureId}`, JSON.stringify(transcript));
       } catch (e) {
         console.warn('SessionStorage cache warning:', e);
       }
@@ -190,6 +194,18 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
         forgeJob = await triggerForgeJob(captureId);
       } catch (jobErr) {
         console.warn('Forge job API unavailable, navigating to local preview job:', jobErr);
+      }
+
+      // Cache under the resolved forgeJob.job_id as well
+      try {
+        sessionStorage.setItem(`takumi_duration_${forgeJob.job_id}`, String(durationSeconds));
+        sessionStorage.setItem(`takumi_title_${forgeJob.job_id}`, skillTitle);
+        sessionStorage.setItem(`takumi_transcript_${forgeJob.job_id}`, JSON.stringify(transcript));
+        if (videoBlob && videoBlob.size > 0) {
+          await saveVideoBlob(forgeJob.job_id, videoBlob);
+        }
+      } catch (e) {
+        console.warn('Additional forgeJob cache warning:', e);
       }
 
       setStage('finished');
