@@ -16,7 +16,6 @@ class WatchState(str, Enum):
 
 
 class WatcherResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
     state: WatchState = Field(
         ...,
         description="Current state: done, in_progress, mistake, not_visible, or hazard",
@@ -32,7 +31,6 @@ class WatcherResponse(BaseModel):
 
 
 class VerifierResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
     passed: bool = Field(..., description="True if success criteria are met")
     visible: bool = Field(..., description="True if the target area is clearly visible")
     reason: str = Field(..., description="Explanation of verification verdict")
@@ -40,7 +38,6 @@ class VerifierResponse(BaseModel):
 
 
 class PointItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
     point: list[int] = Field(
         ...,
         description="2D coordinate [y, x] normalized between 0 and 1000, y first",
@@ -49,7 +46,6 @@ class PointItem(BaseModel):
 
 
 class PointerResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
     points: list[PointItem] = Field(
         default_factory=list,
         description="List of at most 3 points [y, x] in range 0-1000",

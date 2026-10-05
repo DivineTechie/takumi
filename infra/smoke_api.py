@@ -142,7 +142,7 @@ async def check_live_websocket(token: str) -> tuple[bool, bool]:
 
     # 1. First connection
     try:
-        async with websockets.connect(ws_url, timeout=10) as ws:
+        async with websockets.connect(ws_url, open_timeout=10) as ws:
             await ws.send(json.dumps(setup_msg))
             resp = await asyncio.wait_for(ws.recv(), timeout=10)
             data = json.loads(resp)
@@ -153,7 +153,7 @@ async def check_live_websocket(token: str) -> tuple[bool, bool]:
 
     # 2. Reconnection with SAME token (must be rejected)
     try:
-        async with websockets.connect(ws_url, timeout=10) as ws:
+        async with websockets.connect(ws_url, open_timeout=10) as ws:
             await ws.send(json.dumps(setup_msg))
             resp = await asyncio.wait_for(ws.recv(), timeout=10)
             data = json.loads(resp)
