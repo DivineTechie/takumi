@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { CaptureScreen } from './features/capture/CaptureScreen';
+import { AgentTrace } from './features/review/AgentTrace';
+import { MasterReview } from './features/review/MasterReview';
+import { SkillLibrary } from './features/library/SkillLibrary';
 
 export default function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
@@ -22,75 +25,31 @@ export default function App() {
   if (currentPath.startsWith('/forge/')) {
     const jobId = currentPath.replace('/forge/', '');
     return (
-      <main
-        style={{
-          minHeight: '100vh',
-          backgroundColor: '#09090b',
-          color: '#ffffff',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '2rem',
-          fontFamily: 'system-ui, sans-serif',
-          textAlign: 'center',
-        }}
-      >
-        <h1 style={{ fontSize: '2rem', marginBottom: '1rem', color: '#fbbf24' }}>
-          TAKUMI 匠 · Agent Trace
-        </h1>
-        <p style={{ color: '#a1a1aa', maxWidth: '400px', marginBottom: '2rem' }}>
-          Job ID: <code style={{ color: '#ffffff' }}>{jobId}</code>
-        </p>
-        <button
-          onClick={() => navigate('/capture')}
-          style={{
-            padding: '0.75rem 1.5rem',
-            backgroundColor: '#27272a',
-            border: '1px solid #3f3f46',
-            color: '#ffffff',
-            borderRadius: '0.5rem',
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
-        >
-          Return to Capture
-        </button>
-      </main>
+      <AgentTrace
+        jobId={jobId}
+        onNavigateToReview={(skillId) => navigate(`/review/${skillId}`)}
+      />
     );
   }
 
-  return (
-    <main
-      style={{
-        minHeight: '100vh',
-        backgroundColor: '#09090b',
-        color: '#ffffff',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem',
-        fontFamily: 'system-ui, sans-serif',
-        textAlign: 'center',
-      }}
-    >
-      <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>TAKUMI 匠</h1>
-      <button
-        onClick={() => navigate('/capture')}
-        style={{
-          padding: '0.85rem 1.75rem',
-          backgroundColor: '#f59e0b',
-          color: '#000000',
-          border: 'none',
-          borderRadius: '0.75rem',
-          fontSize: '1rem',
-          fontWeight: 700,
-          cursor: 'pointer',
-        }}
-      >
-        Launch Master Capture (/capture)
-      </button>
-    </main>
-  );
+  if (currentPath.startsWith('/review/')) {
+    const skillId = currentPath.replace('/review/', '');
+    return (
+      <MasterReview
+        skillId={skillId}
+        onPublished={() => navigate('/library')}
+      />
+    );
+  }
+
+  if (currentPath === '/library') {
+    return (
+      <SkillLibrary
+        onNavigateToCapture={() => navigate('/capture')}
+        onNavigateToReview={(skillId) => navigate(`/review/${skillId}`)}
+      />
+    );
+  }
+
+  return <CaptureScreen onJobCreated={(jobId) => navigate(`/forge/${jobId}`)} />;
 }
