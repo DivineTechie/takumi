@@ -3,6 +3,7 @@ import { Square, Sparkles, Wifi, WifiOff, UploadCloud, AlertTriangle } from 'luc
 
 interface RecordingOverlayProps {
   skillTitle: string;
+  stream?: MediaStream | null;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   currentQuestion: string | null;
   questionCount: number;
@@ -14,6 +15,7 @@ interface RecordingOverlayProps {
 
 export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
   skillTitle,
+  stream,
   videoRef,
   currentQuestion,
   questionCount,
@@ -23,6 +25,18 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
   onFinish,
 }) => {
   const [secondsElapsed, setSecondsElapsed] = useState(0);
+
+  // Bind media stream to video element on mount
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      if (videoRef.current.srcObject !== stream) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch((err) => {
+          console.warn('Video playback warning in overlay:', err);
+        });
+      }
+    }
+  }, [stream, videoRef]);
 
   useEffect(() => {
     const timer = setInterval(() => {

@@ -24,6 +24,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
   const [startTime, setStartTime] = useState<number>(0);
 
   const {
+    stream,
     videoRef,
     error: cameraError,
     isStarting: isCameraStarting,
@@ -199,6 +200,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
   return (
     <RecordingOverlay
       skillTitle={skillTitle}
+      stream={stream}
       videoRef={videoRef}
       currentQuestion={currentQuestion}
       questionCount={questionCount}
