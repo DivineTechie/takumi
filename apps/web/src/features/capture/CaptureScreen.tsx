@@ -3,6 +3,7 @@ import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage, auth } from '../../lib/firebase';
 import { triggerForgeJob } from '../../lib/api';
+import { saveVideoBlob } from '../review/mediaStorage';
 import { SetupForm, SetupFormData } from './components/SetupForm';
 import { RecordingOverlay } from './components/RecordingOverlay';
 import { useCameraStream } from './hooks/useCameraStream';
@@ -94,8 +95,12 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
         }
       }
 
-      // 3. Create captures/{captureId} in Firestore
-      const masterUid = auth.currentUser?.uid || 'master_dev_user';
+      // 3. Create captures/{captureId} in Firestore (requires signed-in master)
+      if (!auth.currentUser) {
+        throw new Error('Sign-in required: Please sign in with an authorized Master account to record captures.');
+      }
+
+      const masterUid = auth.currentUser.uid;
       const initialDoc: Capture = {
         id: generatedId,
         master_uid: masterUid,
@@ -142,6 +147,16 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
       const videoBlob = await stopRecording();
       stopCamera();
 
+      if (videoBlob && videoBlob.size > 0) {
+        try {
+          await saveVideoBlob('last_recorded_video', videoBlob);
+          await saveVideoBlob(captureId, videoBlob);
+          await saveVideoBlob(`job_${captureId}`, videoBlob);
+        } catch (e) {
+          console.warn('Could not save video blob to IndexedDB:', e);
+        }
+      }
+
       // 2. Upload video with resumable Firebase Storage task
       try {
         await uploadMasterVideo(captureId, videoBlob);
@@ -177,8 +192,8 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
       if (onJobCreated) {
         onJobCreated(forgeJob.job_id, forgeJob.skill_id);
       } else {
-        // Navigate to /forge/:jobId
-        window.location.href = `/forge/${forgeJob.job_id}`;
+        window.history.pushState({}, '', `/forge/${forgeJob.job_id}`);
+        window.dispatchEvent(new PopStateEvent('popstate'));
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
