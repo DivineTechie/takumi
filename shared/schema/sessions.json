@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/sessions.json",
+  "title": "Session",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Session identifier (e.g. ses_...)"
+    },
+    "skill_id": {
+      "type": "string"
+    },
+    "trainee_uid": {
+      "type": "string"
+    },
+    "language": {
+      "type": "string",
+      "enum": ["en", "ja", "vi", "hi", "id", "fil"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["live", "completed", "abandoned"]
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ended_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": ["pending", "active", "done"]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mistakes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "secs": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": ["n", "state", "attempts", "mistakes", "secs"],
+        "additionalProperties": false
+      }
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "steps_done": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mistakes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "safety_stops": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration_s": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": ["steps_done", "mistakes", "safety_stops", "duration_s"],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "id",
+    "skill_id",
+    "trainee_uid",
+    "language",
+    "status",
+    "started_at",
+    "ended_at",
+    "steps"
+  ],
+  "additionalProperties": false
+}

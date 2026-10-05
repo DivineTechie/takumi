@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/forge_job_events.json",
+  "title": "ForgeJobEvent",
+  "type": "object",
+  "properties": {
+    "t": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "agent": {
+      "type": "string",
+      "enum": [
+        "segmenter",
+        "why",
+        "spatial",
+        "verifier",
+        "localizer",
+        "illustrator",
+        "mistakes",
+        "publisher"
+      ]
+    },
+    "level": {
+      "type": "string",
+      "enum": ["info", "warn", "error"]
+    },
+    "message": {
+      "type": "string"
+    },
+    "artifact_uri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "ms": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "required": ["t", "agent", "level", "message"],
+  "additionalProperties": false
+}

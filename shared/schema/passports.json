@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/passports.json",
+  "title": "Passport",
+  "type": "object",
+  "properties": {
+    "trainee_uid": {
+      "type": "string"
+    },
+    "skill_id": {
+      "type": "string"
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "session_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "verify_url": {
+      "type": "string",
+      "format": "uri"
+    }
+  },
+  "required": [
+    "trainee_uid",
+    "skill_id",
+    "issued_at",
+    "session_ids",
+    "verify_url"
+  ],
+  "additionalProperties": false
+}

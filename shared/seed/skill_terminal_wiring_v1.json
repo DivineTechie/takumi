@@ -1,0 +1,119 @@
+{
+  "id": "skill_terminal_wiring_v1",
+  "title": "Wire a DIN-rail terminal block",
+  "source_language": "ja",
+  "languages": ["en", "vi", "hi"],
+  "status": "published",
+  "master": {
+    "display_name": "Master K.",
+    "role": "Senior panel electrician"
+  },
+  "safety_rules": [
+    "No bare copper visible outside a terminal",
+    "Panel power must be off"
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Insert the blue wire into terminal 1 and tighten its screw.",
+      "success_criteria": "A blue wire's ferrule enters terminal 1, the leftmost terminal.",
+      "why": "Terminal 1 is neutral under IEC colour code. Swapping it fails inspection; ferrules stop strands splaying.",
+      "tools": ["3 mm flat screwdriver"],
+      "hazards": ["Confirm power is off"],
+      "common_mistakes": [
+        {
+          "description": "Wire in terminal 2",
+          "visual_cue": "blue wire in the second slot"
+        }
+      ],
+      "point_hint": "the screw opening of terminal 1",
+      "translations": {
+        "vi": {
+          "instruction": "Cắm dây màu xanh dương vào cổng 1 và siết chặt ốc.",
+          "why": "Cổng 1 là dây trung tính theo mã IEC. Nối sai sẽ không đạt kiểm tra; đầu cos giữ dây gọn gàng."
+        },
+        "hi": {
+          "instruction": "नीले तार को टर्मिनल 1 में डालें और उसके स्क्रू को कसें।",
+          "why": "IEC रंग कोड के अनुसार टर्मिनल 1 न्यूट्रल है। गलत तार लगाने पर निरीक्षण विफल होगा; फेरूल तारों को बिखरने से रोकता है।"
+        }
+      }
+    },
+    {
+      "n": 2,
+      "instruction": "Insert the brown wire into terminal 2 and tighten its screw.",
+      "success_criteria": "A brown wire enters terminal 2; the blue wire is still in terminal 1.",
+      "why": "Terminal 2 is line conductor 1. Placing it in the wrong terminal fails inspection; ferrules stop strands splaying.",
+      "tools": ["3 mm flat screwdriver"],
+      "hazards": [],
+      "common_mistakes": [
+        {
+          "description": "Wire in terminal 3",
+          "visual_cue": "brown wire in the third slot"
+        }
+      ],
+      "point_hint": "the screw opening of terminal 2",
+      "translations": {
+        "vi": {
+          "instruction": "Cắm dây màu nâu vào cổng 2 và siết chặt ốc.",
+          "why": "Cổng 2 là dây pha 1. Cắm nhầm cổng sẽ không đạt kiểm tra; đầu cos giữ dây gọn gàng."
+        },
+        "hi": {
+          "instruction": "भूरे तार को टर्मिनल 2 में डालें और उसके स्क्रू को कसें।",
+          "why": "टर्मिनल 2 लाइन 1 है। गलत टर्मिनल में लगाने पर निरीक्षण विफल होगा; फेरूल तारों को बिखरने से रोकता है।"
+        }
+      }
+    },
+    {
+      "n": 3,
+      "instruction": "Insert the black wire into terminal 3 and tighten its screw.",
+      "success_criteria": "A black wire enters terminal 3; blue and brown wires are still in terminals 1 and 2.",
+      "why": "Terminal 3 is line conductor 2. Placing it in the wrong terminal fails inspection; ferrules stop strands splaying.",
+      "tools": ["3 mm flat screwdriver"],
+      "hazards": [],
+      "common_mistakes": [
+        {
+          "description": "Wire in terminal 4",
+          "visual_cue": "black wire in the fourth slot"
+        }
+      ],
+      "point_hint": "the screw opening of terminal 3",
+      "translations": {
+        "vi": {
+          "instruction": "Cắm dây màu đen vào cổng 3 và siết chặt ốc.",
+          "why": "Cổng 3 là dây pha 2. Cắm nhầm cổng sẽ không đạt kiểm tra; đầu cos giữ dây gọn gàng."
+        },
+        "hi": {
+          "instruction": "काले तार को टर्मिनल 3 में डालें और उसके स्क्रू को कसें।",
+          "why": "टर्मिनल 3 लाइन 2 है। गलत टर्मिनल में लगाने पर निरीक्षण विफल होगा; फेरूल तारों को बिखरने से रोकता है।"
+        }
+      }
+    },
+    {
+      "n": 4,
+      "instruction": "Insert the grey wire into terminal 4 and tighten its screw.",
+      "success_criteria": "A grey wire enters terminal 4; blue, brown, and black wires are still in terminals 1, 2, and 3.",
+      "why": "Terminal 4 is line conductor 3. Placing it in the wrong terminal fails inspection; ferrules stop strands splaying.",
+      "tools": ["3 mm flat screwdriver"],
+      "hazards": [],
+      "common_mistakes": [
+        {
+          "description": "Wire in terminal 5",
+          "visual_cue": "grey wire in the fifth slot"
+        }
+      ],
+      "point_hint": "the screw opening of terminal 4",
+      "translations": {
+        "vi": {
+          "instruction": "Cắm dây màu xám vào cổng 4 và siết chặt ốc.",
+          "why": "Cổng 4 là dây pha 3. Cắm nhầm cổng sẽ không đạt kiểm tra; đầu cos giữ dây gọn gàng."
+        },
+        "hi": {
+          "instruction": "स्लेटी तार को टर्मिनल 4 में डालें और उसके स्क्रू को कसें।",
+          "why": "टर्मिनल 4 लाइन 3 है। गलत टर्मिनल में लगाने पर निरीक्षण विफल होगा; फेरूल तारों को बिखरने से रोकता है।"
+        }
+      }
+    }
+  ],
+  "created_at": "2026-10-05T08:00:00Z",
+  "published_at": "2026-10-05T08:30:00Z"
+}

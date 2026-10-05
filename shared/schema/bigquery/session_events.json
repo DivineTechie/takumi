@@ -1,0 +1,62 @@
+[
+  {
+    "name": "session_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Session identifier"
+  },
+  {
+    "name": "skill_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Skill identifier"
+  },
+  {
+    "name": "trainee_uid",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Firebase UID of trainee"
+  },
+  {
+    "name": "language",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Language code (en, ja, vi, hi, id, fil)"
+  },
+  {
+    "name": "step",
+    "type": "INT64",
+    "mode": "NULLABLE",
+    "description": "Step number"
+  },
+  {
+    "name": "type",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Event type (step_done, mistake, blocked, safety_stop, ask_why, ask_master, point, verify)"
+  },
+  {
+    "name": "source",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Event source (watcher, verify, coach, trainee)"
+  },
+  {
+    "name": "reason",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Event reason or trigger"
+  },
+  {
+    "name": "latency_ms",
+    "type": "INT64",
+    "mode": "NULLABLE",
+    "description": "Event latency in milliseconds"
+  },
+  {
+    "name": "ts",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Event timestamp"
+  }
+]

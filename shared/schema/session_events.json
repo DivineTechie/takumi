@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/session_events.json",
+  "title": "SessionEvent",
+  "type": "object",
+  "properties": {
+    "t": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "step": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "step_done",
+        "mistake",
+        "blocked",
+        "safety_stop",
+        "ask_why",
+        "ask_master",
+        "point",
+        "verify"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "enum": ["watcher", "verify", "coach", "trainee"]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "latency_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "frame_uri": {
+      "type": "string",
+      "format": "uri"
+    }
+  },
+  "required": ["t", "step", "type", "source"],
+  "additionalProperties": false
+}

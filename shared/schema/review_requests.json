@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/review_requests.json",
+  "title": "ReviewRequest",
+  "type": "object",
+  "properties": {
+    "skill_id": {
+      "type": "string"
+    },
+    "step": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "reason": {
+      "type": "string"
+    },
+    "suggested_instruction": {
+      "type": "string"
+    },
+    "suggested_success_criteria": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "applied", "dismissed"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "skill_id",
+    "step",
+    "reason",
+    "suggested_instruction",
+    "status",
+    "created_at"
+  ],
+  "additionalProperties": false
+}
