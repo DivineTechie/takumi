@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" width="480" height="480">
+  <!-- Outer Dark Badge Background -->
+  <rect width="480" height="480" rx="96" fill="#0f141b"/>
+
+  <!-- Industrial Stitching: Dashed Amber Outline -->
+  <rect x="46" y="46" width="388" height="388" rx="64" fill="none" stroke="#f59e0b" stroke-width="6" stroke-dasharray="14 14" stroke-linecap="round"/>
+
+  <!-- Inner Panel -->
+  <rect x="88" y="88" width="304" height="304" rx="44" fill="#141a23" stroke="#222a36" stroke-width="2"/>
+
+  <!-- Precision Crosshair Ticks -->
+  <line x1="240" y1="92" x2="240" y2="118" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+  <line x1="240" y1="362" x2="240" y2="388" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+  <line x1="92" y1="240" x2="118" y2="240" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+  <line x1="362" y1="240" x2="388" y2="240" stroke="#f59e0b" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Rounded Hexagon Reticle with Amber Outline -->
+  <polygon points="240,110 346,171 346,293 240,354 134,293 134,171" fill="none" stroke="#f59e0b" stroke-width="4" stroke-linejoin="round" opacity="0.65"/>
+
+  <!-- Master Craftsman Kanji (匠) in Pure Vector Paths -->
+  <path fill="#ffffff" fill-rule="evenodd" d="M175,174 L306,174 L306,191 L280,191 C284,201 287,206 287,210 C265,212 245,214 224,215 L225,225 L300,225 L300,241 L269,241 L269,283 L253,283 L252,241 L225,241 C221,263 216,275 207,285 L311,285 L311,301 L191,301 L191,308 L175,308 Z M192,191 L191,285 L202,285 C196,276 202,264 208,247 L208,196 C226,200 265,195 279,191 Z"/>
+</svg>

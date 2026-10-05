@@ -4,6 +4,7 @@ import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
 import type { Skill } from '../../../../shared/schema/ts/skills';
+import logoSvg from '../assets/logo.svg';
 
 export const ChooseLessonScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -54,6 +55,13 @@ export const ChooseLessonScreen: React.FC = () => {
             <span className="material-symbols-outlined text-[24px]">arrow_back</span>
           </button>
           <div className="flex items-center gap-2.5">
+            <img
+              src={logoSvg}
+              alt="TAKUMI Logo"
+              className="w-8 h-8 rounded-lg shrink-0 object-contain shadow-sm"
+              width={32}
+              height={32}
+            />
             <span className="font-headline-md font-bold text-on-surface tracking-wider">TAKUMI</span>
           </div>
         </div>

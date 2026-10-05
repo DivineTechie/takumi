@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
+import logoSvg from '../assets/logo.svg';
 
 export const SignInScreen: React.FC = () => {
   const { user, loading, signInWithGoogle, sendSignInLink } = useAuth();
@@ -74,8 +75,14 @@ export const SignInScreen: React.FC = () => {
 
         {/* Center Hero Section */}
         <div className="w-full flex flex-col items-center text-center my-auto">
-          <div className="w-28 h-28 mb-6 flex items-center justify-center rounded-2xl bg-surface-container-high border border-outline-variant shadow-lg p-2 text-primary-container">
-            <span className="material-symbols-outlined text-[56px]">handyman</span>
+          <div className="w-36 h-36 mb-6 flex items-center justify-center">
+            <img
+              src={logoSvg}
+              alt="TAKUMI Logo"
+              className="w-[120px] h-[120px] object-contain rounded-2xl mx-auto shadow-2xl"
+              width={120}
+              height={120}
+            />
           </div>
 
           <h1 className="text-[32px] leading-[40px] font-extrabold tracking-wider text-on-surface uppercase mb-3">

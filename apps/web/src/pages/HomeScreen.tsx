@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
+import logoSvg from '../assets/logo.svg';
 
 export const HomeScreen: React.FC = () => {
   const { user, role, signOut } = useAuth();
@@ -25,9 +26,13 @@ export const HomeScreen: React.FC = () => {
         <div className="max-w-[460px] mx-auto px-4 min-h-[64px] flex items-center justify-between">
           {/* Brand Mark & Name - never cut off at 390px */}
           <div className="flex items-center gap-3 shrink-0">
-            <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 flex items-center justify-center bg-surface-container border border-outline-variant text-primary-container">
-              <span className="material-symbols-outlined text-2xl">handyman</span>
-            </div>
+            <img
+              src={logoSvg}
+              alt="TAKUMI Logo"
+              className="w-8 h-8 rounded-lg shrink-0 object-contain shadow-sm"
+              width={32}
+              height={32}
+            />
             <span className="text-[20px] font-bold tracking-wider text-on-surface shrink-0">
               TAKUMI
             </span>

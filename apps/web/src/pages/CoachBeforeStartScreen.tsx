@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import logoSvg from '../assets/logo.svg';
 
 const LANGUAGES = [
   { code: 'en', native: 'English', label: 'Primary' },
@@ -29,6 +30,13 @@ export const CoachBeforeStartScreen: React.FC = () => {
             <span className="material-symbols-outlined text-2xl">arrow_back</span>
           </button>
           <div className="flex items-center gap-2">
+            <img
+              src={logoSvg}
+              alt="TAKUMI Logo"
+              className="w-8 h-8 rounded-lg shrink-0 object-contain shadow-sm"
+              width={32}
+              height={32}
+            />
             <span className="font-headline-md font-bold tracking-wider text-on-surface">TAKUMI</span>
           </div>
           <div className="w-10" />
