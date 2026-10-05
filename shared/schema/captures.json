@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/captures.json",
+  "title": "Capture",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Capture identifier (e.g. cap_20261006_ab12)"
+    },
+    "master_uid": {
+      "type": "string",
+      "description": "Firebase UID of the master craftsman"
+    },
+    "skill_title": {
+      "type": "string",
+      "description": "Title of the captured skill"
+    },
+    "source_language": {
+      "type": "string",
+      "enum": ["en", "ja", "vi", "hi", "id", "fil"]
+    },
+    "video_uri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "duration_s": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Duration in seconds (optional while recording)"
+    },
+    "transcript": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "t": { "type": "number", "minimum": 0 },
+          "speaker": {
+            "type": "string",
+            "enum": ["interviewer", "master"]
+          },
+          "text": { "type": "string" }
+        },
+        "required": ["t", "speaker", "text"],
+        "additionalProperties": false
+      }
+    },
+    "manual_uris": {
+      "type": "array",
+      "items": { "type": "string", "format": "uri" }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["recording", "uploaded", "forging", "in_review", "failed"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "master_uid",
+    "skill_title",
+    "source_language",
+    "video_uri",
+    "transcript",
+    "status",
+    "created_at"
+  ],
+  "additionalProperties": false
+}

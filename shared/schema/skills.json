@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/skills.json",
+  "title": "Skill",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Skill identifier (e.g. skill_terminal_wiring_v1)"
+    },
+    "title": {
+      "type": "string",
+      "description": "Title of the skill"
+    },
+    "capture_id": {
+      "type": "string",
+      "description": "Associated capture ID (optional; absent on seed)"
+    },
+    "source_language": {
+      "type": "string",
+      "enum": ["en", "ja", "vi", "hi", "id", "fil"]
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["en", "ja", "vi", "hi", "id", "fil"]
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "in_review", "published"]
+    },
+    "master": {
+      "type": "object",
+      "properties": {
+        "display_name": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["display_name", "role"],
+      "additionalProperties": false
+    },
+    "video_uri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "safety_rules": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "file_search_store": {
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "success_criteria": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          },
+          "why_source": {
+            "type": "object",
+            "properties": {
+              "t_start": { "type": "number", "minimum": 0 },
+              "t_end": { "type": "number", "minimum": 0 }
+            },
+            "required": ["t_start", "t_end"],
+            "additionalProperties": false
+          },
+          "why_inferred": {
+            "type": "boolean"
+          },
+          "tools": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "hazards": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "common_mistakes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "description": { "type": "string" },
+                "visual_cue": { "type": "string" }
+              },
+              "required": ["description", "visual_cue"],
+              "additionalProperties": false
+            }
+          },
+          "point_hint": {
+            "type": "string"
+          },
+          "point_yx": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "clip": {
+            "type": "object",
+            "properties": {
+              "start_s": { "type": "number", "minimum": 0 },
+              "end_s": { "type": "number", "minimum": 0 }
+            },
+            "required": ["start_s", "end_s"],
+            "additionalProperties": false
+          },
+          "keyframe_s": {
+            "type": "number",
+            "minimum": 0
+          },
+          "keyframe_uri": {
+            "type": "string",
+            "format": "uri"
+          },
+          "card_image_uri": {
+            "type": "string",
+            "format": "uri"
+          },
+          "mistake_clip_uri": {
+            "type": "string",
+            "format": "uri"
+          },
+          "verifier": {
+            "type": "object",
+            "properties": {
+              "conflict": { "type": "boolean" },
+              "detail": { "type": "string" },
+              "suggestion": { "type": "string" },
+              "citation": { "type": "string" }
+            },
+            "required": ["conflict", "detail", "suggestion", "citation"],
+            "additionalProperties": false
+          },
+          "translations": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "instruction": { "type": "string" },
+                "why": { "type": "string" },
+                "audio_uri": { "type": "string", "format": "uri" }
+              },
+              "required": ["instruction", "why"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "n",
+          "instruction",
+          "success_criteria",
+          "why",
+          "tools",
+          "hazards",
+          "common_mistakes",
+          "translations"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "published_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "source_language",
+    "languages",
+    "status",
+    "master",
+    "safety_rules",
+    "steps",
+    "created_at",
+    "published_at"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/forge_jobs.json",
+  "title": "ForgeJob",
+  "type": "object",
+  "properties": {
+    "capture_id": {
+      "type": "string",
+      "description": "Source capture ID"
+    },
+    "skill_id": {
+      "type": "string",
+      "description": "Generated skill ID"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "running", "done", "failed"]
+    },
+    "started_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Timestamp when job started, null while queued"
+    },
+    "finished_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Timestamp when job finished, null until complete"
+    }
+  },
+  "required": [
+    "capture_id",
+    "skill_id",
+    "status",
+    "started_at",
+    "finished_at"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,14 @@
+{
+  "name": "takumi-monorepo",
+  "private": true,
+  "scripts": {
+    "schema": "node scripts/generate_schemas.mjs",
+    "typecheck:schema": "tsc --noEmit -p shared/schema/tsconfig.json",
+    "test": "npm --prefix apps/web test && .\\.venv\\Scripts\\pytest",
+    "lint": "npm --prefix apps/web run lint"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^16.0.0",
+    "typescript": "^5.7.2"
+  }
+}
