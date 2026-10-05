@@ -161,7 +161,16 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
       }
 
       // 3. Calculate final duration
-      const durationSeconds = Math.round((Date.now() - startTime) / 1000);
+      const durationSeconds = Math.max(1, Math.round((Date.now() - startTime) / 1000));
+      try {
+        sessionStorage.setItem('takumi_last_duration', String(durationSeconds));
+        sessionStorage.setItem(`takumi_duration_${captureId}`, String(durationSeconds));
+        sessionStorage.setItem(`takumi_duration_job_${captureId}`, String(durationSeconds));
+        sessionStorage.setItem('takumi_last_title', skillTitle);
+        sessionStorage.setItem(`takumi_title_${captureId}`, skillTitle);
+      } catch (e) {
+        console.warn('SessionStorage cache warning:', e);
+      }
 
       // 4. Update Firestore capture doc to "uploaded" with transcript
       try {

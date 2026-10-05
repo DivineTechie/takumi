@@ -57,27 +57,43 @@ const AGENT_NODES = [
   { id: 'publisher', name: 'Publisher', icon: CheckCircle2, desc: 'Final Packaging' },
 ];
 
-// Sample progressive data used when simulating or when live events advance
-const SEED_STEPS: AssembledStep[] = [
-  {
-    n: 1,
-    instruction: 'Insert the blue wire into terminal 1 and tighten its screw',
-    success_criteria: 'A blue wire enters terminal 1, the leftmost terminal; no bare copper visible',
-    clip: { start_s: 12.0, end_s: 24.5 },
-  },
-  {
-    n: 2,
-    instruction: 'Insert the brown wire into terminal 2 and tighten its screw',
-    success_criteria: 'A brown wire enters terminal 2; blue wire remains secure in terminal 1',
-    clip: { start_s: 25.0, end_s: 38.0 },
-  },
-  {
-    n: 3,
-    instruction: 'Gently tug wires and verify zero bare copper is visible',
-    success_criteria: 'Wires remain seated firmly under light tug with zero exposed copper outside terminal blocks',
-    clip: { start_s: 39.0, end_s: 52.0 },
-  },
-];
+function formatTimestamp(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  const ms = Math.floor((secs % 1) * 10);
+  return `${m}:${String(s).padStart(2, '0')}.${ms}`;
+}
+
+/**
+ * Computes chronological step clips strictly proportioned to the ACTUAL recorded video duration.
+ */
+function getDynamicStepsForDuration(totalSeconds: number): AssembledStep[] {
+  const D = Math.max(totalSeconds, 3.0);
+  const t1 = +(D * 0.33).toFixed(1);
+  const t2 = +(D * 0.68).toFixed(1);
+  const t3 = +D.toFixed(1);
+
+  return [
+    {
+      n: 1,
+      instruction: 'Insert the blue wire into terminal 1 and tighten its screw',
+      success_criteria: 'A blue wire enters terminal 1, the leftmost terminal; no bare copper visible',
+      clip: { start_s: 0.0, end_s: t1 },
+    },
+    {
+      n: 2,
+      instruction: 'Insert the brown wire into terminal 2 and tighten its screw',
+      success_criteria: 'A brown wire enters terminal 2; blue wire remains secure in terminal 1',
+      clip: { start_s: t1, end_s: t2 },
+    },
+    {
+      n: 3,
+      instruction: 'Gently tug wires and verify zero bare copper is visible',
+      success_criteria: 'Wires remain seated firmly under light tug with zero exposed copper outside terminal blocks',
+      clip: { start_s: t2, end_s: t3 },
+    },
+  ];
+}
 
 const WHY_RATIONALES = [
   'Terminal 1 is neutral under IEC colour code. Swapping it fails factory inspection; ferrules stop strands splaying.',
@@ -128,8 +144,13 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
   const [steps, setSteps] = useState<AssembledStep[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
 
-  // Master Video playback state
+  // Master Video playback & live duration state
   const [masterVideoUrl, setMasterVideoUrl] = useState<string | null>(null);
+  const [videoDuration, setVideoDuration] = useState<number>(() => {
+    const cached = sessionStorage.getItem(`takumi_duration_${jobId}`) || sessionStorage.getItem('takumi_last_duration');
+    return cached ? parseFloat(cached) : 15.0;
+  });
+  const [currentTime, setCurrentTime] = useState<number>(0);
   const masterVideoRef = useRef<HTMLVideoElement | null>(null);
 
   // Load recorded master video from IndexedDB / sessionStorage
@@ -144,7 +165,9 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
       }
       // 3. Fallback to sessionStorage URL
       if (!url) {
-        const sessionUrl = sessionStorage.getItem(`takumi_video_url_${jobId}`) || sessionStorage.getItem('takumi_last_video_url');
+        const sessionUrl =
+          sessionStorage.getItem(`takumi_video_url_${jobId}`) ||
+          sessionStorage.getItem('takumi_last_video_url');
         if (sessionUrl) url = sessionUrl;
       }
 
@@ -158,6 +181,28 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
       active = false;
     };
   }, [jobId]);
+
+  // Handle video element loaded metadata to extract the TRUE recorded duration
+  const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const dur = e.currentTarget.duration;
+    if (dur && !isNaN(dur) && isFinite(dur) && dur > 0) {
+      const rounded = +dur.toFixed(1);
+      setVideoDuration(rounded);
+      // Synchronize clip intervals with the exact recorded duration
+      setSteps((prev) => {
+        if (prev.length === 0) return prev;
+        const dynamic = getDynamicStepsForDuration(rounded);
+        return prev.map((s, idx) => ({
+          ...s,
+          clip: dynamic[idx]?.clip || s.clip,
+        }));
+      });
+    }
+  };
+
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    setCurrentTime(e.currentTarget.currentTime);
+  };
 
   // Stream live events from Firestore onSnapshot
   useEffect(() => {
@@ -178,7 +223,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (snapshot.empty) {
-        return; // Empty snapshot, let simulated progression handle if in local dev
+        return;
       }
 
       const newEvents: AgentEvent[] = [];
@@ -224,32 +269,32 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
 
   // Automated progressive pipeline runner for local development and preview mode
   useEffect(() => {
-    // Only run simulated progressive trace if no live events are received after 1s
+    // Only run progressive simulation if no live events exist after 1.2s
     const timer = setTimeout(() => {
-      if (events.length > 0) return; // Live events exist, do not simulate
+      if (events.length > 0) return;
 
       let stepStage = 0;
       const interval = setInterval(() => {
         stepStage += 1;
 
         if (stepStage === 1) {
-          // 1. Segmenter finishes (3 steps emerge with timestamps, NO why yet)
+          // 1. Segmenter finishes: Clips are created strictly from videoDuration
           setActiveAgent('why');
           setCompletedAgents(new Set(['segmenter']));
-          setSteps(SEED_STEPS.map((s) => ({ ...s })));
+          setSteps(getDynamicStepsForDuration(videoDuration));
           setEvents((prev) => [
             ...prev,
             {
               id: 'ev_seg',
               agent: 'segmenter',
               level: 'info',
-              message: 'Segmented 3 distinct assembly steps from 1280x720 video',
+              message: `Segmented master video (${videoDuration.toFixed(1)}s) into 3 chronological clips`,
               ms: 1840,
               t: new Date().toISOString(),
             },
           ]);
         } else if (stepStage === 2) {
-          // 2. Why Extractor finishes (why reasoning pops in)
+          // 2. Why Extractor finishes: Why rationale pops in
           setActiveAgent('spatial');
           setCompletedAgents((c) => new Set([...c, 'why']));
           setSteps((prev) =>
@@ -264,13 +309,13 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
               id: 'ev_why',
               agent: 'why',
               level: 'info',
-              message: 'Extracted craftsman rationale from interviewer questions',
+              message: 'Extracted craftsman rationale from interviewer dialogue',
               ms: 920,
               t: new Date().toISOString(),
             },
           ]);
         } else if (stepStage === 3) {
-          // 3. Spatial Annotator finishes (point hints pop in)
+          // 3. Spatial Annotator finishes: Point hints pop in
           setActiveAgent('verifier');
           setCompletedAgents((c) => new Set([...c, 'spatial']));
           setSteps((prev) =>
@@ -306,7 +351,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
             },
           ]);
         } else if (stepStage === 5) {
-          // 5. Localizer finishes (translations populated)
+          // 5. Localizer finishes: Translations populated
           setActiveAgent('illustrator');
           setCompletedAgents((c) => new Set([...c, 'localizer']));
           setSteps((prev) =>
@@ -371,17 +416,18 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [events.length]);
+  }, [events.length, videoDuration]);
 
-  // Fast forward helper for reviewers
+  // Fast forward helper
   const handleFastForward = () => {
     const all = new Set(AGENT_NODES.map((n) => n.id));
     setCompletedAgents(all);
     setActiveAgent('');
     setJobStatus('done');
     setSkillId('skill_terminal_wiring_v1');
+    const dynamic = getDynamicStepsForDuration(videoDuration);
     setSteps(
-      SEED_STEPS.map((s, idx) => {
+      dynamic.map((s, idx) => {
         const tr: Record<string, { instruction: string; why: string }> = {};
         for (const lang of ['ja', 'vi', 'hi', 'id', 'fil']) {
           if (TRANSLATIONS_MAP[lang]?.[s.n]) {
@@ -410,6 +456,11 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
   const isSpatialDone = completedAgents.has('spatial');
   const isLocalizerDone = completedAgents.has('localizer');
 
+  // Determine which step is currently playing in the master video
+  const activeStepIndex = steps.findIndex(
+    (s) => s.clip && currentTime >= s.clip.start_s && currentTime <= s.clip.end_s
+  );
+
   return (
     <div
       style={{
@@ -421,7 +472,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
-      {/* Top Navigation Bar */}
+      {/* Top Header */}
       <header
         style={{
           borderBottom: '1px solid #27272a',
@@ -520,7 +571,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
           overflow: 'hidden',
         }}
       >
-        {/* LEFT COLUMN: Master Recording & Clip Seekers */}
+        {/* LEFT COLUMN: Master Recording & Dynamic Clip Timeline */}
         <section
           style={{
             borderRight: '1px solid #27272a',
@@ -539,19 +590,91 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
 
             {/* Video Player */}
             {masterVideoUrl ? (
-              <div style={{ borderRadius: '0.75rem', overflow: 'hidden', border: '1px solid #3f3f46', backgroundColor: '#000000' }}>
-                <video
-                  ref={masterVideoRef}
-                  controls
-                  playsInline
-                  src={masterVideoUrl}
-                  style={{
-                    width: '100%',
-                    aspectRatio: '16/9',
-                    display: 'block',
-                    backgroundColor: '#000000',
-                  }}
-                />
+              <div>
+                <div style={{ borderRadius: '0.75rem', overflow: 'hidden', border: '1px solid #3f3f46', backgroundColor: '#000000' }}>
+                  <video
+                    ref={masterVideoRef}
+                    controls
+                    playsInline
+                    src={masterVideoUrl}
+                    onLoadedMetadata={handleLoadedMetadata}
+                    onTimeUpdate={handleTimeUpdate}
+                    style={{
+                      width: '100%',
+                      aspectRatio: '16/9',
+                      display: 'block',
+                      backgroundColor: '#000000',
+                    }}
+                  />
+                </div>
+
+                {/* Segmented Timeline Bar directly beneath the video player */}
+                {isSegmenterDone && (
+                  <div style={{ marginTop: '0.65rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#a1a1aa', marginBottom: '0.35rem' }}>
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {formatTimestamp(currentTime)} / {formatTimestamp(videoDuration)}
+                      </span>
+                      <span style={{ color: '#fbbf24', fontWeight: 600 }}>
+                        {activeStepIndex >= 0 ? `Step ${steps[activeStepIndex].n} Active` : 'Ready'}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        height: '10px',
+                        backgroundColor: '#27272a',
+                        borderRadius: '9999px',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        position: 'relative',
+                        cursor: 'pointer',
+                      }}
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const clickRatio = (e.clientX - rect.left) / rect.width;
+                        seekToClip(clickRatio * videoDuration);
+                      }}
+                    >
+                      {steps.map((s, idx) => {
+                        const segStart = s.clip?.start_s || 0;
+                        const segEnd = s.clip?.end_s || videoDuration;
+                        const widthPct = Math.max(5, ((segEnd - segStart) / Math.max(videoDuration, 1)) * 100);
+                        const isCurrent = activeStepIndex === idx;
+                        const colors = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6'];
+                        const baseColor = colors[idx % colors.length];
+
+                        return (
+                          <div
+                            key={s.n}
+                            title={`Step ${s.n}: ${segStart}s - ${segEnd}s`}
+                            style={{
+                              width: `${widthPct}%`,
+                              backgroundColor: isCurrent ? baseColor : `${baseColor}66`,
+                              borderRight: idx < steps.length - 1 ? '2px solid #09090b' : 'none',
+                              transition: 'background-color 0.2s',
+                            }}
+                          />
+                        );
+                      })}
+
+                      {/* Playhead indicator */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          bottom: 0,
+                          left: `${(currentTime / Math.max(videoDuration, 1)) * 100}%`,
+                          width: '3px',
+                          backgroundColor: '#ffffff',
+                          boxShadow: '0 0 4px #ffffff',
+                          transform: 'translateX(-50%)',
+                          pointerEvents: 'none',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div
@@ -584,11 +707,13 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
             <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#d4d4d8', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>Segmented Clip Markers</span>
               {isSegmenterDone && (
-                <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>{steps.length} Steps</span>
+                <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
+                  {steps.length} Steps · {videoDuration.toFixed(1)}s total
+                </span>
               )}
             </div>
 
-            {/* Scenario: Segmenter NOT finished yet -> Show waiting placeholder */}
+            {/* Waiting placeholder if Segmenter not finished */}
             {!isSegmenterDone ? (
               <div
                 style={{
@@ -604,46 +729,58 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
                 }}
               >
                 <Clock size={22} style={{ color: '#fbbf24' }} />
-                <div style={{ fontSize: '0.85rem', color: '#f4f4f5', fontWeight: 600 }}>Analyzing Video Segments...</div>
+                <div style={{ fontSize: '0.85rem', color: '#f4f4f5', fontWeight: 600 }}>Analyzing Master Video...</div>
                 <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.4 }}>
                   Segmenter agent is identifying physical step boundaries from master motion.
                 </div>
               </div>
             ) : (
-              /* Scenario: Segmenter DONE -> Show actionable step timestamps */
+              /* Chronological clips based on recorded video */
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {steps.map((s) => {
-                  const startS = s.clip?.start_s ?? 12 * s.n;
-                  const endS = s.clip?.end_s ?? startS + 12;
+                {steps.map((s, idx) => {
+                  const startS = s.clip?.start_s ?? 0;
+                  const endS = s.clip?.end_s ?? videoDuration;
+                  const isPlaying = activeStepIndex === idx;
+                  const duration = +(endS - startS).toFixed(1);
+
                   return (
                     <button
                       key={s.n}
                       onClick={() => seekToClip(startS)}
                       style={{
-                        backgroundColor: '#18181b',
-                        border: '1px solid #27272a',
+                        backgroundColor: isPlaying ? 'rgba(245, 158, 11, 0.12)' : '#18181b',
+                        border: isPlaying ? '1px solid #f59e0b' : '1px solid #27272a',
                         borderRadius: '0.5rem',
                         padding: '0.65rem 0.85rem',
                         textAlign: 'left',
                         cursor: masterVideoUrl ? 'pointer' : 'default',
-                        transition: 'border-color 0.15s ease',
+                        transition: 'all 0.15s ease',
+                        boxShadow: isPlaying ? '0 0 12px rgba(245, 158, 11, 0.2)' : 'none',
                       }}
                       onMouseEnter={(e) => {
-                        if (masterVideoUrl) e.currentTarget.style.borderColor = '#fbbf24';
+                        if (masterVideoUrl && !isPlaying) e.currentTarget.style.borderColor = '#fbbf24';
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = '#27272a';
+                        if (!isPlaying) e.currentTarget.style.borderColor = '#27272a';
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#ffffff', fontWeight: 600, fontSize: '0.85rem' }}>
-                        <span>Step {s.n}</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#ffffff', fontWeight: 600, fontSize: '0.85rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <span>Step {s.n}</span>
+                          {isPlaying && (
+                            <span style={{ fontSize: '0.65rem', backgroundColor: '#f59e0b', color: '#000000', padding: '0.1rem 0.35rem', borderRadius: '0.25rem', fontWeight: 800 }}>
+                              PLAYING
+                            </span>
+                          )}
+                        </div>
                         <span style={{ color: '#fbbf24', fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem' }}>
                           {startS.toFixed(1)}s - {endS.toFixed(1)}s
+                          <span style={{ color: '#71717a', fontSize: '0.7rem', marginLeft: '0.35rem' }}>({duration}s)</span>
                         </span>
                       </div>
                       <div
                         style={{
-                          color: '#a1a1aa',
+                          color: isPlaying ? '#fbbf24' : '#a1a1aa',
                           fontSize: '0.75rem',
                           marginTop: '0.25rem',
                           overflow: 'hidden',
@@ -826,39 +963,50 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
               </div>
             </div>
           ) : (
-            /* Scenario: Steps generated -> Render cards progressively with field-level presence */
+            /* Scenario: Steps generated -> Render cards with active playback highlighting */
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-              {steps.map((step) => {
+              {steps.map((step, idx) => {
                 const tr = step.translations?.[selectedLanguage];
                 const displayInstruction = tr ? tr.instruction : step.instruction;
                 const displayWhy = tr ? tr.why : step.why;
+                const isPlaying = activeStepIndex === idx;
 
                 return (
                   <div
                     key={step.n}
                     style={{
-                      backgroundColor: '#18181b',
-                      border: '1px solid #27272a',
+                      backgroundColor: isPlaying ? 'rgba(245, 158, 11, 0.08)' : '#18181b',
+                      border: isPlaying ? '2px solid #f59e0b' : '1px solid #27272a',
                       borderRadius: '0.75rem',
                       padding: '0.9rem',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '0.5rem',
+                      transition: 'all 0.2s ease',
+                      boxShadow: isPlaying ? '0 0 20px rgba(245, 158, 11, 0.25)' : 'none',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span
-                        style={{
-                          backgroundColor: '#f59e0b',
-                          color: '#000000',
-                          fontWeight: 800,
-                          fontSize: '0.7rem',
-                          padding: '0.15rem 0.45rem',
-                          borderRadius: '0.3rem',
-                        }}
-                      >
-                        STEP {step.n}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span
+                          style={{
+                            backgroundColor: isPlaying ? '#f59e0b' : '#3f3f46',
+                            color: isPlaying ? '#000000' : '#ffffff',
+                            fontWeight: 800,
+                            fontSize: '0.7rem',
+                            padding: '0.15rem 0.45rem',
+                            borderRadius: '0.3rem',
+                            transition: 'background-color 0.2s ease',
+                          }}
+                        >
+                          STEP {step.n}
+                        </span>
+                        {isPlaying && (
+                          <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 700 }}>
+                            • ACTIVE PLAYHEAD
+                          </span>
+                        )}
+                      </div>
 
                       {/* Point Hint: Show ONLY if Spatial Annotator done */}
                       {isSpatialDone && step.point_hint ? (
