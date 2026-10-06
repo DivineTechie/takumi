@@ -7,7 +7,7 @@ import type {
   LiveClientStats,
   LiveConnectionState,
 } from './types';
-import { base64ToPCM16 } from './audio';
+import { base64ToPCM16, createSilenceBase64, OutputAudioQueue } from './audio';
 
 const WS_BASE_URL =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained';
@@ -18,6 +18,8 @@ export interface LiveClientConfig {
   getCurrentStep: () => number;
   callbacks: LiveClientCallbacks;
   maxReconnectAttempts?: number;
+  speakerMode?: boolean;
+  audioQueue?: OutputAudioQueue;
 }
 
 export async function decodeWebSocketData(
@@ -80,6 +82,10 @@ export class GeminiLiveClient {
   private setupTimeoutId: number | null = null;
   private connectStartTime = 0;
   private lastVideoSentTime = 0;
+  private speakerMode = true;
+  private audioQueue?: OutputAudioQueue;
+  private gatingOverridden = false;
+  private simulatedGatingUntil = 0;
   private stats: LiveClientStats = {
     setupCompleteReceived: false,
     setupCompleteMs: null,
@@ -89,11 +95,16 @@ export class GeminiLiveClient {
     transcriptsReceived: 0,
     lastCloseCode: null,
     lastCloseReason: '',
+    interruptedCount: 0,
+    playbackUnderruns: 0,
+    isGating: false,
   };
 
   constructor(config: LiveClientConfig) {
     this.config = config;
     this.maxReconnectAttempts = config.maxReconnectAttempts ?? 3;
+    this.speakerMode = config.speakerMode ?? true;
+    this.audioQueue = config.audioQueue;
   }
 
   public getState(): LiveConnectionState {
@@ -104,8 +115,39 @@ export class GeminiLiveClient {
     return this.state === 'connected' && this.setupDone;
   }
 
+  public setSpeakerMode(enabled: boolean): void {
+    this.speakerMode = enabled;
+    this.notifyStats();
+  }
+
+  public getSpeakerMode(): boolean {
+    return this.speakerMode;
+  }
+
+  public stopGating(): void {
+    this.gatingOverridden = true;
+    this.notifyStats();
+  }
+
+  public isGating(): boolean {
+    if (!this.speakerMode) {
+      return false;
+    }
+    if (this.gatingOverridden) {
+      return false;
+    }
+    if (this.audioQueue) {
+      return this.audioQueue.isPlayingWithTail(0.3);
+    }
+    return Date.now() < this.simulatedGatingUntil;
+  }
+
   public getStats(): LiveClientStats {
-    return { ...this.stats };
+    return {
+      ...this.stats,
+      playbackUnderruns: this.audioQueue ? this.audioQueue.getUnderrunCount() : 0,
+      isGating: this.isGating(),
+    };
   }
 
   private notifyStats(): void {
@@ -233,6 +275,12 @@ export class GeminiLiveClient {
         generationConfig: {
           responseModalities: ['AUDIO'],
         },
+        realtimeInputConfig: {
+          automaticActivityDetection: {
+            startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+            silenceDurationMs: 800,
+          },
+        },
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         contextWindowCompression: {
@@ -340,15 +388,23 @@ export class GeminiLiveClient {
         const sc = msg.serverContent;
 
         if (sc.interrupted) {
+          this.stats.interruptedCount++;
+          this.simulatedGatingUntil = 0;
+          this.gatingOverridden = false;
           this.config.callbacks.onInterrupted?.();
+          this.notifyStats();
         }
 
         // Output audio from modelTurn
         if (sc.modelTurn?.parts) {
+          this.gatingOverridden = false;
           for (const part of sc.modelTurn.parts) {
             if (part.inlineData?.data) {
               this.stats.audioChunksReceived++;
               const pcm16 = base64ToPCM16(part.inlineData.data);
+              const durationMs = (pcm16.length / 24000) * 1000;
+              const now = Date.now();
+              this.simulatedGatingUntil = Math.max(this.simulatedGatingUntil, now) + durationMs + 300;
               this.config.callbacks.onAudioChunk?.(pcm16.buffer);
             }
           }
@@ -475,10 +531,15 @@ export class GeminiLiveClient {
     this.stats.micChunksSent++;
     this.notifyStats();
 
+    let dataToSend = base64PCM16;
+    if (this.isGating()) {
+      dataToSend = createSilenceBase64(base64PCM16.length);
+    }
+
     const payload = {
       realtimeInput: {
         audio: {
-          data: base64PCM16,
+          data: dataToSend,
           mimeType: 'audio/pcm;rate=16000',
         },
       },

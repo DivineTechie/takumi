@@ -47,15 +47,23 @@ export function createAndResumeAudioContexts(): {
   return { outputContext, micContext };
 }
 
+export function createSilenceBase64(base64Length: number): string {
+  if (base64Length <= 0) return '';
+  return 'A'.repeat(base64Length);
+}
+
 /**
  * Output audio queue for 24 kHz PCM received from Gemini Live model turns.
  * AudioBuffers are created at 24000 Hz, while output AudioContext is at the device's native rate.
- * Scheduled back-to-back with immediate flush() capability on model interruption.
+ * Scheduled with a 150ms initial jitter buffer, 50ms restart on underrun,
+ * and immediate flush() capability on model interruption.
  */
 export class OutputAudioQueue {
   private audioContext: AudioContext;
   private nextStartTime: number = 0;
   private activeSources: Set<AudioBufferSourceNode> = new Set();
+  private underrunCount: number = 0;
+  private isTurnActive: boolean = false;
 
   constructor(audioContext: AudioContext) {
     this.audioContext = audioContext;
@@ -84,13 +92,30 @@ export class OutputAudioQueue {
     source.connect(this.audioContext.destination);
 
     const currentTime = this.audioContext.currentTime;
-    const startTime = Math.max(currentTime, this.nextStartTime);
+    let startTime: number;
+
+    if (!this.isTurnActive || this.nextStartTime === 0) {
+      // First chunk of model turn: buffer for 0.15s
+      this.isTurnActive = true;
+      startTime = currentTime + 0.15;
+    } else if (this.nextStartTime < currentTime) {
+      // Underrun: later chunk arrived behind currentTime
+      this.underrunCount++;
+      startTime = currentTime + 0.05;
+    } else {
+      // Continuous back-to-back scheduling
+      startTime = this.nextStartTime;
+    }
+
     source.start(startTime);
     this.nextStartTime = startTime + audioBuffer.duration;
 
     this.activeSources.add(source);
     source.onended = () => {
       this.activeSources.delete(source);
+      if (this.activeSources.size === 0 && this.audioContext.currentTime >= this.nextStartTime) {
+        this.isTurnActive = false;
+      }
     };
   }
 
@@ -116,6 +141,21 @@ export class OutputAudioQueue {
     }
     this.activeSources.clear();
     this.nextStartTime = 0;
+    this.isTurnActive = false;
+  }
+
+  public isPlayingWithTail(tailSeconds = 0.3): boolean {
+    if (this.nextStartTime === 0) return false;
+    return this.audioContext.currentTime < (this.nextStartTime + tailSeconds);
+  }
+
+  public isPlaying(): boolean {
+    if (this.nextStartTime === 0) return false;
+    return this.audioContext.currentTime < this.nextStartTime;
+  }
+
+  public getUnderrunCount(): number {
+    return this.underrunCount;
   }
 
   public getNextStartTime(): number {

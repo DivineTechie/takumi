@@ -10,7 +10,7 @@ import {
 } from '../lib/live/types';
 import { GeminiLiveClient } from '../lib/live/client';
 import { OutputAudioQueue, setupMicCapture, type MicCaptureHandle } from '../lib/live/audio';
-import { isCameraMirrored, captureVideoFrame } from '../lib/live/video';
+import { isCameraMirrored, captureVideoFrameAsync } from '../lib/live/video';
 import { SessionCapTimer } from '../lib/live/sessionCap';
 
 interface CoachLiveViewProps {
@@ -19,6 +19,7 @@ interface CoachLiveViewProps {
   stream: MediaStream;
   outputAudioContext: AudioContext;
   micAudioContext: AudioContext;
+  speakerMode?: boolean;
   onEnd: () => void;
 }
 
@@ -28,6 +29,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   stream,
   outputAudioContext,
   micAudioContext,
+  speakerMode = true,
   onEnd,
 }) => {
   const navigate = useNavigate();
@@ -53,6 +55,9 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     transcriptsReceived: 0,
     lastCloseCode: null,
     lastCloseReason: '',
+    interruptedCount: 0,
+    playbackUnderruns: 0,
+    isGating: false,
   });
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
@@ -61,6 +66,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const captionFadeTimeoutRef = useRef<number | null>(null);
   const videoFrameIntervalRef = useRef<number | null>(null);
+  const isEncodingFrameRef = useRef<boolean>(false);
   const isMirroredRef = useRef<boolean>(false);
 
   // Determine mirroring
@@ -120,6 +126,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     const client = new GeminiLiveClient({
       skill,
       language,
+      speakerMode,
+      audioQueue,
       getCurrentStep: () => currentStepRef.current,
       callbacks: {
         onStateChange: (state) => {
@@ -175,18 +183,29 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         console.error('Failed to setup mic capture:', err);
       });
 
-    // 4. Video stream interval (at most 1 frame per second, stopped if document hidden)
-    videoFrameIntervalRef.current = window.setInterval(() => {
+    // 4. Async video stream interval (at most 1 frame per second, stopped if document hidden)
+    // Frame skip guard prevents frame queue accumulation or delaying audio
+    videoFrameIntervalRef.current = window.setInterval(async () => {
       if (document.visibilityState === 'hidden') {
         return;
       }
+      if (isEncodingFrameRef.current) {
+        return;
+      }
       if (videoRef.current) {
-        const frame = captureVideoFrame(videoRef.current, {
-          targetWidth: 768,
-          mirrored: isMirroredRef.current,
-        });
-        if (frame) {
-          client.sendVideoFrame(frame);
+        isEncodingFrameRef.current = true;
+        try {
+          const frame = await captureVideoFrameAsync(videoRef.current, {
+            targetWidth: 768,
+            mirrored: isMirroredRef.current,
+          });
+          if (frame) {
+            client.sendVideoFrame(frame);
+          }
+        } catch (err) {
+          console.warn('Async frame capture failed:', err);
+        } finally {
+          isEncodingFrameRef.current = false;
         }
       }
     }, 1000);
@@ -262,10 +281,16 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     stream,
     outputAudioContext,
     micAudioContext,
+    speakerMode,
     handleTranscript,
     onEnd,
     isDebug,
   ]);
+
+  // Sync speakerMode updates dynamically
+  useEffect(() => {
+    clientRef.current?.setSpeakerMode(speakerMode);
+  }, [speakerMode]);
 
   // Handle "Why?" button action
   const handleAskWhy = () => {
@@ -289,18 +314,29 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const refImage = activeStepObj.card_image_uri || activeStepObj.keyframe_uri;
   const langDisplay = LANGUAGE_DISPLAY_NAMES[language] || { native: language, english: language };
 
+  const audioTrack = stream.getAudioTracks()[0];
+  const audioSettings = audioTrack?.getSettings?.() || {};
+
   return (
     <main className="relative w-full max-w-[420px] mx-auto h-[100dvh] overflow-hidden bg-surface-dim shadow-2xl flex flex-col justify-between font-sans select-none">
       {/* 1. Full-Bleed Edge-to-Edge POV Camera View */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className={`absolute inset-0 w-full h-full object-cover z-0 ${
-          mirrored ? 'scale-x-[-1]' : ''
-        }`}
-      />
+      <div
+        className="absolute inset-0 w-full h-full cursor-pointer z-0"
+        onClick={() => {
+          clientRef.current?.stopGating();
+        }}
+        data-testid="camera-view"
+      >
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className={`w-full h-full object-cover ${
+            mirrored ? 'scale-x-[-1]' : ''
+          }`}
+        />
+      </div>
 
       {/* 2. Overlay Canvas for AR Markers and Reticles */}
       <canvas
@@ -406,6 +442,34 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               <div>
                 <span className="text-white/60">transcripts recvd: </span>
                 <span className="text-white font-bold">{stats.transcriptsReceived}</span>
+              </div>
+              <div>
+                <span className="text-white/60">interrupted: </span>
+                <span className="text-white font-bold">{stats.interruptedCount}</span>
+              </div>
+              <div>
+                <span className="text-white/60">underruns: </span>
+                <span className="text-white font-bold">{stats.playbackUnderruns}</span>
+              </div>
+              <div>
+                <span className="text-white/60">gating: </span>
+                <span
+                  className={
+                    stats.isGating
+                      ? 'text-amber-400 font-bold'
+                      : 'text-emerald-400 font-bold'
+                  }
+                >
+                  {stats.isGating ? 'ON (silence)' : 'OFF (live)'}
+                </span>
+              </div>
+              <div className="col-span-2 truncate">
+                <span className="text-white/60">mic settings: </span>
+                <span className="text-white/80">
+                  {`AEC: ${String(audioSettings.echoCancellation ?? 'n/a')}, NS: ${String(
+                    audioSettings.noiseSuppression ?? 'n/a'
+                  )}, AGC: ${String(audioSettings.autoGainControl ?? 'n/a')}`}
+                </span>
               </div>
               <div className="col-span-2 truncate">
                 <span className="text-white/60">last close: </span>

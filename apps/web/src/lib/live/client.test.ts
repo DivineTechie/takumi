@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { GeminiLiveClient, type LiveClientConfig } from './client';
+import type { OutputAudioQueue } from './audio';
 import type { Skill } from '../../../../../shared/schema/ts/skills';
 import * as apiModule from '../api';
 import seedSkill from '../../../../../shared/seed/skill_terminal_wiring_v1.json';
@@ -134,6 +135,10 @@ describe('GeminiLiveClient', () => {
     expect(setupMsg.setup.model).toBe('models/gemini-3.8-live');
     expect(setupMsg.setup.generationConfig.responseModalities).toEqual(['AUDIO']);
     expect(setupMsg.setup.contextWindowCompression.slidingWindow).toBeDefined();
+    expect(setupMsg.setup.realtimeInputConfig.automaticActivityDetection).toEqual({
+      startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+      silenceDurationMs: 800,
+    });
     expect(setupMsg.setup.tools[0].functionDeclarations.length).toBe(2);
 
     // Simulate setupComplete
@@ -492,5 +497,119 @@ describe('GeminiLiveClient', () => {
     expect(responseMsg.toolResponse.functionResponses[0].response.result.status).toBe(
       'not available yet'
     );
+  });
+
+  it('gating sends silence zeros during coach audio and for 300ms tail', async () => {
+    let mockPlayingWithTail = true;
+    const mockAudioQueue = {
+      isPlayingWithTail: vi.fn(() => mockPlayingWithTail),
+      getUnderrunCount: vi.fn(() => 0),
+    } as unknown as OutputAudioQueue;
+
+    const client = createClient({
+      speakerMode: true,
+      audioQueue: mockAudioQueue,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const ws = MockWebSocket.instances[0];
+    ws.simulateServerMessage({ setupComplete: {} });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(client.isGating()).toBe(true);
+
+    // Send mic audio while gating: must send silence zeros ('A'.repeat(len))
+    const rawMicB64 = 'dB8gHCAd'; // 8 base64 chars
+    client.sendAudio(rawMicB64);
+
+    const sentAudioMsg1 = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+    expect(sentAudioMsg1.realtimeInput.audio.data).toBe('AAAAAAAA');
+    expect(sentAudioMsg1.realtimeInput.audio.data.length).toBe(rawMicB64.length);
+
+    // Audio finishes and 300ms tail expires
+    mockPlayingWithTail = false;
+    expect(client.isGating()).toBe(false);
+
+    // Send mic audio when not gating: sends original audio
+    client.sendAudio(rawMicB64);
+    const sentAudioMsg2 = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+    expect(sentAudioMsg2.realtimeInput.audio.data).toBe(rawMicB64);
+  });
+
+  it('tap override immediately breaks gating during coach audio', async () => {
+    const mockAudioQueue = {
+      isPlayingWithTail: vi.fn(() => true),
+      getUnderrunCount: vi.fn(() => 0),
+    } as unknown as OutputAudioQueue;
+
+    const client = createClient({
+      speakerMode: true,
+      audioQueue: mockAudioQueue,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const ws = MockWebSocket.instances[0];
+    ws.simulateServerMessage({ setupComplete: {} });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(client.isGating()).toBe(true);
+
+    // Trainee taps camera view to cut in
+    client.stopGating();
+    expect(client.isGating()).toBe(false);
+
+    // Mic signal should now pass through live
+    const rawMicB64 = 'dB8gHCAd';
+    client.sendAudio(rawMicB64);
+    const sentMsg = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+    expect(sentMsg.realtimeInput.audio.data).toBe(rawMicB64);
+  });
+
+  it('headphones mode (speakerMode: false) disables mic gating entirely', async () => {
+    const mockAudioQueue = {
+      isPlayingWithTail: vi.fn(() => true),
+      getUnderrunCount: vi.fn(() => 0),
+    } as unknown as OutputAudioQueue;
+
+    const client = createClient({
+      speakerMode: false, // wearing headphones
+      audioQueue: mockAudioQueue,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const ws = MockWebSocket.instances[0];
+    ws.simulateServerMessage({ setupComplete: {} });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(client.getSpeakerMode()).toBe(false);
+    expect(client.isGating()).toBe(false);
+
+    const rawMicB64 = 'dB8gHCAd';
+    client.sendAudio(rawMicB64);
+    const sentMsg = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+    expect(sentMsg.realtimeInput.audio.data).toBe(rawMicB64);
+  });
+
+  it('tracks playback underruns in telemetry stats', async () => {
+    const mockAudioQueue = {
+      isPlayingWithTail: vi.fn(() => false),
+      getUnderrunCount: vi.fn(() => 4),
+    } as unknown as OutputAudioQueue;
+
+    const client = createClient({
+      audioQueue: mockAudioQueue,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const stats = client.getStats();
+    expect(stats.playbackUnderruns).toBe(4);
   });
 });

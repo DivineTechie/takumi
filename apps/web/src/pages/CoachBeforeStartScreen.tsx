@@ -39,6 +39,14 @@ export const CoachBeforeStartScreen: React.FC = () => {
       : 'en';
   });
 
+  const [wearingHeadphones, setWearingHeadphones] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('takumi_wearing_headphones') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
   const [isStarting, setIsStarting] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
@@ -204,6 +212,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
         stream={activeStream}
         outputAudioContext={outputAudioContextRef.current}
         micAudioContext={micAudioContextRef.current}
+        speakerMode={!wearingHeadphones}
         onEnd={handleEndLiveSession}
       />
     );
@@ -368,13 +377,35 @@ export const CoachBeforeStartScreen: React.FC = () => {
               })}
             </div>
 
-            {/* Headphone Advisory */}
-            <div className="flex items-center gap-3 p-3.5 rounded-xl bg-surface-container-low border border-outline-variant mt-auto">
-              <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0 text-primary">
-                <span className="material-symbols-outlined text-2xl">headphones</span>
-              </div>
-              <p className="font-body-md text-on-surface font-medium leading-snug">
-                Use headphones for best results
+            {/* Headphone Toggle & Note */}
+            <div className="flex flex-col gap-2.5 p-3.5 rounded-xl bg-surface-container-low border border-outline-variant mt-auto">
+              <label className="flex items-center justify-between cursor-pointer select-none">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0 text-primary">
+                    <span className="material-symbols-outlined text-2xl">headphones</span>
+                  </div>
+                  <span className="font-body-md text-on-surface font-semibold">
+                    I'm wearing headphones
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  aria-label="I'm wearing headphones"
+                  checked={wearingHeadphones}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setWearingHeadphones(next);
+                    try {
+                      localStorage.setItem('takumi_wearing_headphones', String(next));
+                    } catch {
+                      // ignore
+                    }
+                  }}
+                  className="w-5 h-5 accent-primary cursor-pointer rounded"
+                />
+              </label>
+              <p className="font-body-sm text-on-surface-variant leading-snug">
+                On speaker, the coach talks and then listens. With headphones you can interrupt it anytime.
               </p>
             </div>
           </section>

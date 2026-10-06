@@ -30,6 +30,9 @@ export interface LiveClientStats {
   transcriptsReceived: number;
   lastCloseCode: number | null;
   lastCloseReason: string;
+  interruptedCount: number;
+  playbackUnderruns: number;
+  isGating: boolean;
 }
 
 export interface LiveClientCallbacks {
