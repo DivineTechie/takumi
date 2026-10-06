@@ -45,7 +45,7 @@ steps:
         npm ci
         cd ../..
         echo "=== Running Security Rule Tests against Firestore & Storage Emulators ==="
-        npx --yes firebase-tools@15.32.1 emulators:exec --only firestore,storage "npm test --prefix infra/rules-tests"
+        npx --yes firebase-tools@15.32.1 emulators:exec --only firestore,storage --project takumi-rules-test "npm test --prefix infra/rules-tests"
 
   # 4. Build API Docker image
   - name: 'gcr.io/cloud-builders/docker'
