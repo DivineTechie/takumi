@@ -187,7 +187,7 @@ export const LessonHeatmap: React.FC<LessonHeatmapProps> = ({
                                     ? 'bg-error'
                                     : step.mistake_rate > 0.15
                                     ? 'bg-amber-400'
-                                    : 'bg-success'
+                                    : 'bg-emerald-500'
                                 }`}
                                 style={{ width: `${Math.min(100, mistakePercent || 0)}%` }}
                               />

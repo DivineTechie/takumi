@@ -420,11 +420,11 @@ def test_insights_skill_unreached_steps_and_incomplete_sessions_return_null():
                 assert res.status_code == 200
                 data = res.json()
 
-                # Step 1 reached
+                # Step 1 reached but not completed -> median_secs must be None, mistake_rate 0.0
                 s1 = data["steps"][0]
                 assert s1["sessions_reached"] == 2
                 assert s1["mistake_rate"] == 0.0
-                assert s1["median_secs"] == 0.0
+                assert s1["median_secs"] is None
                 assert s1["safety_stops"] == 0
 
                 # Step 2 never reached -> must be null
@@ -437,3 +437,30 @@ def test_insights_skill_unreached_steps_and_incomplete_sessions_return_null():
                 # Totals: 0 completed -> median_duration_s must be null
                 assert data["totals"]["completed"] == 0
                 assert data["totals"]["median_duration_s"] is None
+
+
+def test_session_replay_stale_live_session_marked_abandoned():
+    mock_db = MagicMock()
+    session_doc = MagicMock()
+    session_doc.exists = True
+    session_doc.to_dict.return_value = {
+        "id": "ses_stale_live",
+        "skill_id": "skill_wiring",
+        "trainee_uid": "trainee_123",
+        "status": "live",
+        "started_at": "2026-10-06T00:00:00Z",  # hours ago (> 12m)
+    }
+    mock_db.collection("sessions").document.return_value.get.return_value = session_doc
+    mock_db.collection("sessions").document.return_value.collection.return_value.order_by.return_value.stream.return_value = []
+
+    mock_user = MagicMock()
+    mock_user.display_name = "Dave"
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}):
+        with patch("services.api.main.get_firestore_client", return_value=mock_db):
+            with patch("services.api.main.fb_auth.get_user", return_value=mock_user):
+                res = client.get("/api/sessions/ses_stale_live/replay", headers={"Authorization": "Bearer token"})
+                assert res.status_code == 200
+                data = res.json()
+                assert data["session"]["status"] == "abandoned"
+

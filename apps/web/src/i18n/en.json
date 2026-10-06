@@ -66,6 +66,12 @@
   "dashboard_retry": "Retry",
   "dashboard_load_failed": "Failed to load dashboard data.",
   "dashboard_filter_all": "Filter trainees…",
+  "dashboard_no_mistakes": "No mistakes yet",
+  "dashboard_recent_sessions": "Recent Sessions",
+  "dashboard_tab_matrix_short": "Matrix",
+  "dashboard_tab_insights_short": "Insights",
+  "dashboard_tab_replay_short": "Replay",
+  "dashboard_abandoned": "Abandoned",
   "dashboard_frame_preview": "Safety / Mistake Frame",
   "dashboard_close": "Close"
 }

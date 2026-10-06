@@ -66,6 +66,12 @@
   "dashboard_retry": "Subukang muli",
   "dashboard_load_failed": "Nabigong i-load ang data ng dashboard.",
   "dashboard_filter_all": "I-filter ang mga trainee…",
+  "dashboard_no_mistakes": "Wala pang mga pagkakamali",
+  "dashboard_recent_sessions": "Mga Kamakailang Sesyon",
+  "dashboard_tab_matrix_short": "Matrix",
+  "dashboard_tab_insights_short": "Insights",
+  "dashboard_tab_replay_short": "Replay",
+  "dashboard_abandoned": "Inabandona",
   "dashboard_frame_preview": "Larawan ng Kaligtasan / Pagkakamali",
   "dashboard_close": "Isara"
 }

@@ -66,6 +66,12 @@
   "dashboard_retry": "पुनः प्रयास करें",
   "dashboard_load_failed": "डैशबोर्ड डेटा लोड करने में विफल।",
   "dashboard_filter_all": "प्रशिक्षु खोजें…",
+  "dashboard_no_mistakes": "अभी कोई गलती नहीं",
+  "dashboard_recent_sessions": "हाल के सत्र",
+  "dashboard_tab_matrix_short": "मैट्रिक्स",
+  "dashboard_tab_insights_short": "विश्लेषण",
+  "dashboard_tab_replay_short": "रीप्ले",
+  "dashboard_abandoned": "छोड़ा गया",
   "dashboard_frame_preview": "सुरक्षा / गलती फ़्रेम",
   "dashboard_close": "बंद करें"
 }

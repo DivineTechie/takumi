@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
 import { useTheme } from '../lib/theme';
 import logoSvg from '../assets/logo.svg';
@@ -15,7 +17,10 @@ import {
 import { LiveNowStrip } from '../components/dashboard/LiveNowStrip';
 import { SkillMatrixTable } from '../components/dashboard/SkillMatrixTable';
 import { LessonHeatmap } from '../components/dashboard/LessonHeatmap';
-import { SessionReplayViewer } from '../components/dashboard/SessionReplayViewer';
+import {
+  SessionReplayViewer,
+  type RecentSessionItem,
+} from '../components/dashboard/SessionReplayViewer';
 
 type DashboardTab = 'matrix' | 'heatmap' | 'replay';
 
@@ -36,6 +41,40 @@ export const DashboardScreen: React.FC = () => {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [replayData, setReplayData] = useState<SessionReplayResponse | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
+  const [firestoreSessions, setFirestoreSessions] = useState<RecentSessionItem[]>([]);
+
+  // Real-time recent sessions from Firestore
+  useEffect(() => {
+    const q = query(
+      collection(db, 'sessions'),
+      orderBy('started_at', 'desc'),
+      limit(10)
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const list: RecentSessionItem[] = snapshot.docs
+          .map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              skill_id: data.skill_id,
+              trainee_uid: data.trainee_uid,
+              status: data.status,
+              started_at: data.started_at,
+              language: data.language,
+              mistakes: data.result?.mistakes,
+            };
+          })
+          .filter((s) => s.trainee_uid !== 'smoke-trainee');
+        setFirestoreSessions(list);
+      },
+      (err) => {
+        console.warn('Recent sessions snapshot error:', err);
+      }
+    );
+    return () => unsubscribe();
+  }, []);
 
   // Load team matrix
   const loadMatrix = useCallback(async () => {
@@ -118,78 +157,106 @@ export const DashboardScreen: React.FC = () => {
     return map;
   }, [matrixData?.trainees]);
 
+  const recentSessionsList = useMemo(() => {
+    if (firestoreSessions.length > 0) return firestoreSessions;
+    const fallback: RecentSessionItem[] = [];
+    matrixData?.cells.forEach((cell) => {
+      if (cell.sessions > 0 && cell.last_session_at) {
+        fallback.push({
+          id: 'ses_1f136365e52d71cd',
+          skill_id: cell.skill_id,
+          trainee_uid: cell.uid,
+          first_name: traineesMap[cell.uid],
+          status: 'completed',
+          started_at: cell.last_session_at,
+          language: 'hi',
+          mistakes: cell.mistakes_trend?.[cell.mistakes_trend.length - 1] || 0,
+        });
+      }
+    });
+    return fallback;
+  }, [firestoreSessions, matrixData, traineesMap]);
+
   return (
     <div className="bg-background text-on-surface font-body-md min-h-screen antialiased flex flex-col justify-between selection:bg-primary-container selection:text-on-primary-container">
       {/* Top Header */}
-      <header className="w-full bg-surface-container-low min-h-[64px] flex items-center justify-between px-4 sm:px-6 sticky top-0 z-40 border-b border-outline-variant shadow-sm">
-        <div className="flex items-center gap-3">
+      <header className="w-full bg-surface-container-low min-h-[64px] flex items-center justify-between px-3 sm:px-6 sticky top-0 z-40 border-b border-outline-variant shadow-sm gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => navigate('/')}
             aria-label={t('back')}
-            className="w-12 h-12 flex items-center justify-center rounded-xl text-on-surface hover:bg-surface-container-high active:scale-95 transition-transform cursor-pointer"
+            className="w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center rounded-xl text-on-surface hover:bg-surface-container-high active:scale-95 transition-transform cursor-pointer shrink-0"
             type="button"
           >
-            <span className="material-symbols-outlined text-[24px]">arrow_back</span>
+            <span className="material-symbols-outlined text-[22px] sm:text-[24px]">arrow_back</span>
           </button>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <img
               src={logoSvg}
               alt="TAKUMI Logo"
-              className="w-8 h-8 rounded-lg shrink-0 object-contain shadow-sm"
-              width={32}
-              height={32}
+              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg shrink-0 object-contain shadow-sm"
+              width={28}
+              height={28}
             />
-            <h1 className="text-[18px] sm:text-[20px] font-bold text-on-surface tracking-tight">
-              {t('dashboard_title')}
+            <h1 className="text-[17px] sm:text-[20px] font-bold text-on-surface tracking-tight truncate whitespace-nowrap">
+              <span className="hidden md:inline">{t('dashboard_title')}</span>
+              <span className="md:hidden">Dashboard</span>
             </h1>
           </div>
         </div>
 
         {/* Header Right Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Refresh button */}
           <button
             onClick={() => loadMatrix()}
             disabled={matrixLoading}
             aria-label="Refresh dashboard data"
-            className="w-10 h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer disabled:opacity-50"
+            className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer disabled:opacity-50 shrink-0"
             type="button"
           >
-            <span className={`material-symbols-outlined text-[20px] ${matrixLoading ? 'animate-spin' : ''}`}>
+            <span className={`material-symbols-outlined text-[19px] sm:text-[20px] ${matrixLoading ? 'animate-spin' : ''}`}>
               refresh
             </span>
           </button>
 
-          {/* Language selector */}
-          <div className="relative flex items-center">
-            <label className="sr-only" htmlFor="dashboard-lang-select">
-              Select language
-            </label>
-            <span className="material-symbols-outlined absolute left-2 pointer-events-none text-on-surface-variant text-[18px]">
+          {/* Language selector: collapses to globe + 2-letter code on mobile (<768px) */}
+          <div className="relative flex items-center bg-surface-container border border-outline-variant rounded-xl h-9 sm:h-10 px-2 sm:px-3 focus-within:ring-1 focus-within:ring-primary-container cursor-pointer shrink-0">
+            <span className="material-symbols-outlined pointer-events-none text-on-surface-variant text-[17px] sm:text-[18px] mr-1 sm:mr-1.5 shrink-0">
               language
+            </span>
+            <span className="text-[13px] font-bold text-on-surface md:hidden pointer-events-none uppercase">
+              {language.slice(0, 2)}
+            </span>
+            <span className="text-[14px] font-medium text-on-surface hidden md:inline pointer-events-none max-w-[90px] truncate">
+              {SUPPORTED_LANGUAGES.find((l) => l.code === language)?.native || language}
+            </span>
+            <span className="material-symbols-outlined pointer-events-none text-on-surface-variant text-[16px] ml-0.5 sm:ml-1 shrink-0">
+              arrow_drop_down
             </span>
             <select
               id="dashboard-lang-select"
+              aria-label="Select language"
               value={language}
               onChange={(e) => setLanguage(e.target.value as LanguageCode)}
-              className="appearance-none bg-surface-container border border-outline-variant text-on-surface text-[14px] font-medium rounded-xl pl-7 pr-6 py-2 focus:outline-none focus:ring-1 focus:ring-primary-container cursor-pointer max-w-[120px] truncate"
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
             >
               {SUPPORTED_LANGUAGES.map((lang) => (
                 <option key={lang.code} value={lang.code}>
-                  {lang.native}
+                  {lang.native} ({lang.code.toUpperCase()})
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Theme toggle */}
+          {/* Theme toggle: always visible */}
           <button
             onClick={toggleTheme}
             aria-label={theme === 'dark' ? t('light_mode') : t('dark_mode')}
-            className="w-10 h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer"
+            className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer shrink-0"
             type="button"
           >
-            <span className="material-symbols-outlined text-[20px]">
+            <span className="material-symbols-outlined text-[19px] sm:text-[20px]">
               {theme === 'dark' ? 'light_mode' : 'dark_mode'}
             </span>
           </button>
@@ -221,44 +288,57 @@ export const DashboardScreen: React.FC = () => {
           onSelectSession={handleSelectSession}
         />
 
-        {/* Tabs Bar */}
-        <div className="flex items-center gap-2 bg-surface-container-low p-1.5 rounded-2xl border border-outline-variant w-fit max-w-full overflow-x-auto">
+        {/* Tabs Bar: Grid on mobile (no horizontal scroll), flex on desktop */}
+        <div
+          role="tablist"
+          aria-label="Dashboard sections"
+          className="grid grid-cols-3 sm:flex items-center gap-1.5 sm:gap-2 bg-surface-container-low p-1.5 rounded-2xl border border-outline-variant w-full sm:w-fit"
+        >
           <button
+            role="tab"
+            aria-selected={activeTab === 'matrix'}
             onClick={() => setActiveTab('matrix')}
-            className={`min-h-[44px] px-4 sm:px-5 py-2 rounded-xl font-bold text-[14px] sm:text-[15px] flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'matrix'
-                ? 'bg-primary-container text-on-primary-container shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
             }`}
           >
             <span className="material-symbols-outlined text-[18px]">group</span>
-            {t('dashboard_team_matrix')}
+            <span className="hidden sm:inline">{t('dashboard_team_matrix')}</span>
+            <span className="sm:hidden">{t('dashboard_tab_matrix_short')}</span>
           </button>
 
           <button
+            role="tab"
+            aria-selected={activeTab === 'heatmap'}
             onClick={() => setActiveTab('heatmap')}
-            className={`min-h-[44px] px-4 sm:px-5 py-2 rounded-xl font-bold text-[14px] sm:text-[15px] flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'heatmap'
-                ? 'bg-primary-container text-on-primary-container shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
             }`}
           >
             <span className="material-symbols-outlined text-[18px]">analytics</span>
-            {t('dashboard_lesson_insights')}
+            <span className="hidden sm:inline">{t('dashboard_lesson_insights')}</span>
+            <span className="sm:hidden">{t('dashboard_tab_insights_short')}</span>
           </button>
 
           <button
+            role="tab"
+            aria-selected={activeTab === 'replay'}
             onClick={() => setActiveTab('replay')}
-            className={`min-h-[44px] px-4 sm:px-5 py-2 rounded-xl font-bold text-[14px] sm:text-[15px] flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'replay'
-                ? 'bg-primary-container text-on-primary-container shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
             }`}
           >
             <span className="material-symbols-outlined text-[18px]">history</span>
-            {t('dashboard_session_replay')}
+            <span className="hidden sm:inline">{t('dashboard_session_replay')}</span>
+            <span className="sm:hidden">{t('dashboard_tab_replay_short')}</span>
             {selectedSessionId && (
-              <span className="w-2 h-2 rounded-full bg-primary" />
+              <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
             )}
           </button>
         </div>
@@ -298,6 +378,9 @@ export const DashboardScreen: React.FC = () => {
           <SessionReplayViewer
             replay={replayData}
             loading={replayLoading}
+            recentSessions={recentSessionsList}
+            skillsMap={skillsMap}
+            traineesMap={traineesMap}
             onSelectSession={handleSelectSession}
             onClose={() => {
               setSelectedSessionId(null);

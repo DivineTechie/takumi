@@ -66,6 +66,12 @@
   "dashboard_retry": "Thử lại",
   "dashboard_load_failed": "Không thể tải dữ liệu bảng điều khiển.",
   "dashboard_filter_all": "Lọc học viên…",
+  "dashboard_no_mistakes": "Chưa có lỗi nào",
+  "dashboard_recent_sessions": "Các phiên gần đây",
+  "dashboard_tab_matrix_short": "Ma trận",
+  "dashboard_tab_insights_short": "Thông tin",
+  "dashboard_tab_replay_short": "Phát lại",
+  "dashboard_abandoned": "Bị bỏ dở",
   "dashboard_frame_preview": "Hình ảnh An toàn / Lỗi",
   "dashboard_close": "Đóng"
 }

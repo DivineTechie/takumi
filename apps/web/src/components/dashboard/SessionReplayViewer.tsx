@@ -1,10 +1,24 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../../i18n';
-import type { SessionReplayResponse, SessionReplayEvent } from '../../lib/api';
+import type { SessionReplayResponse, SessionReplayEvent, MatrixSkill } from '../../lib/api';
+
+export interface RecentSessionItem {
+  id: string;
+  skill_id: string;
+  trainee_uid: string;
+  first_name?: string;
+  status: 'live' | 'completed' | 'abandoned';
+  started_at: string;
+  language?: string;
+  mistakes?: number;
+}
 
 interface SessionReplayViewerProps {
   replay: SessionReplayResponse | null;
   loading: boolean;
+  recentSessions?: RecentSessionItem[];
+  skillsMap?: Record<string, MatrixSkill>;
+  traineesMap?: Record<string, string>;
   onSelectSession?: (sessionId: string) => void;
   onClose?: () => void;
 }
@@ -12,12 +26,19 @@ interface SessionReplayViewerProps {
 export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
   replay,
   loading,
+  recentSessions = [],
+  skillsMap = {},
+  traineesMap = {},
   onSelectSession,
   onClose,
 }) => {
   const { t } = useTranslation();
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [manualSessionId, setManualSessionId] = useState('');
+
+  const isDebug =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('debug') === '1';
 
   if (loading) {
     return (
@@ -41,10 +62,72 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
         <h3 className="text-[16px] font-bold text-on-surface mb-1">
           {t('dashboard_session_replay')}
         </h3>
-        <p className="text-[14px] text-on-surface-variant max-w-sm mx-auto mb-5">
+        <p className="text-[14px] text-on-surface-variant max-w-sm mx-auto mb-4">
           {t('dashboard_select_session')}
         </p>
-        {onSelectSession && (
+
+        {/* Recent Sessions List for Judges */}
+        {recentSessions.length > 0 && (
+          <div className="space-y-2.5 max-w-2xl mx-auto text-left mt-6">
+            <h4 className="text-[13px] font-bold text-on-surface-variant uppercase tracking-wider px-1">
+              {t('dashboard_recent_sessions')} ({recentSessions.length})
+            </h4>
+            <div className="divide-y divide-outline-variant/40 bg-surface-container rounded-xl border border-outline-variant overflow-hidden">
+              {recentSessions.map((s) => {
+                const sTrainee = traineesMap[s.trainee_uid] || s.first_name || 'Trainee';
+                const sSkill = skillsMap[s.skill_id]?.title || s.skill_id;
+                const sAbandoned =
+                  s.status === 'abandoned' ||
+                  (s.status === 'live' &&
+                    Date.now() - new Date(s.started_at).getTime() > 12 * 60 * 1000);
+                const sStatus = sAbandoned ? 'abandoned' : s.status;
+
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onSelectSession?.(s.id)}
+                    className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-surface-container-high transition-colors text-left cursor-pointer group"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-bold text-[15px] text-on-surface truncate">
+                          {sTrainee}
+                        </span>
+                        <span
+                          className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
+                            sStatus === 'completed'
+                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                              : sStatus === 'live'
+                              ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                              : 'bg-surface-container-high text-on-surface-variant border-outline-variant'
+                          }`}
+                        >
+                          {sStatus === 'abandoned' ? t('dashboard_abandoned') : sStatus}
+                        </span>
+                        {s.language && (
+                          <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface border border-outline-variant">
+                            {s.language}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[13px] text-on-surface-variant truncate">
+                        {sSkill} • {new Date(s.started_at).toLocaleString()}
+                        {isDebug && ` • ID: ${s.id}`}
+                      </div>
+                    </div>
+                    <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary-container group-hover:translate-x-0.5 transition-all text-[20px] shrink-0">
+                      chevron_right
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Manual session ID loader: only visible with ?debug=1 */}
+        {isDebug && onSelectSession && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -52,7 +135,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
                 onSelectSession(manualSessionId.trim());
               }
             }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-2 max-w-md mx-auto"
+            className="flex flex-col sm:flex-row items-center justify-center gap-2 max-w-md mx-auto mt-6 pt-6 border-t border-outline-variant/60"
           >
             <input
               type="text"
@@ -77,6 +160,12 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
   const { session, events } = replay;
   const startMs = new Date(session.started_at).getTime();
 
+  const isAbandoned =
+    session.status === 'abandoned' ||
+    (session.status === 'live' &&
+      Date.now() - new Date(session.started_at).getTime() > 12 * 60 * 1000);
+  const displayStatus = isAbandoned ? 'abandoned' : session.status;
+
   const formatOffset = (eventIso: string) => {
     const evMs = new Date(eventIso).getTime();
     const diffSec = Math.max(0, Math.floor((evMs - startMs) / 1000));
@@ -91,7 +180,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
         return {
           icon: 'check_circle',
           label: 'Step Done',
-          color: 'bg-success/15 text-success border-success/30',
+          color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
         };
       case 'mistake':
         return {
@@ -161,21 +250,22 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
             </span>
             <span
               className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full border ${
-                session.status === 'completed'
-                  ? 'bg-success/15 text-success border-success/30'
-                  : session.status === 'live'
-                  ? 'bg-error/15 text-error border-error/30'
+                displayStatus === 'completed'
+                  ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                  : displayStatus === 'live'
+                  ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
                   : 'bg-surface-container-high text-on-surface-variant border-outline-variant'
               }`}
             >
-              {session.status}
+              {displayStatus === 'abandoned' ? t('dashboard_abandoned') : displayStatus}
             </span>
             <span className="text-[11px] font-semibold uppercase px-2 py-0.5 rounded-md bg-surface-container text-on-surface border border-outline-variant">
               {session.language}
             </span>
           </div>
           <span className="text-[13px] text-on-surface-variant font-mono">
-            {new Date(session.started_at).toLocaleString()} • ID: {session.id}
+            {new Date(session.started_at).toLocaleString()}
+            {isDebug && ` • ID: ${session.id}`}
           </span>
         </div>
 

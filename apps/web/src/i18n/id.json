@@ -66,6 +66,12 @@
   "dashboard_retry": "Coba lagi",
   "dashboard_load_failed": "Gagal memuat data dasbor.",
   "dashboard_filter_all": "Filter peserta…",
+  "dashboard_no_mistakes": "Belum ada kesalahan",
+  "dashboard_recent_sessions": "Sesi Terbaru",
+  "dashboard_tab_matrix_short": "Matriks",
+  "dashboard_tab_insights_short": "Wawasan",
+  "dashboard_tab_replay_short": "Putar ulang",
+  "dashboard_abandoned": "Ditinggalkan",
   "dashboard_frame_preview": "Foto Keamanan / Kesalahan",
   "dashboard_close": "Tutup"
 }

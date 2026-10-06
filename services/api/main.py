@@ -879,7 +879,7 @@ async def get_insights_skill(
             median_secs = (
                 round(float(statistics.median(s_durations)), 1)
                 if s_durations
-                else 0.0
+                else None
             )
             safety_stops = s_safety_stops
         else:
@@ -943,6 +943,22 @@ async def get_session_replay(
     trainee_uid = session_data.pop("trainee_uid", None)
     first_name = get_trainee_first_name(trainee_uid)
     session_data["first_name"] = first_name
+
+    # If session is live and started > 12 minutes ago, label as abandoned
+    now = datetime.now(timezone.utc)
+    started_at_raw = session_data.get("started_at")
+    if started_at_raw and session_data.get("status") == "live":
+        try:
+            if isinstance(started_at_raw, str):
+                s_time = datetime.fromisoformat(started_at_raw)
+            elif isinstance(started_at_raw, datetime):
+                s_time = started_at_raw
+            else:
+                s_time = None
+            if s_time and (now - s_time).total_seconds() > 12 * 60:
+                session_data["status"] = "abandoned"
+        except Exception:
+            pass
 
     # Fetch events in chronological order
     events_docs = session_ref.collection("events").order_by("t").stream()

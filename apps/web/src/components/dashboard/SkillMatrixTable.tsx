@@ -125,27 +125,36 @@ export const SkillMatrixTable: React.FC<SkillMatrixTableProps> = ({
                                   </span>
                                   {t('dashboard_learning')} ({sessions})
                                 </span>
-                                {mistakesTrend.length > 0 && (
+                                {mistakesTrend && mistakesTrend.length > 0 ? (
                                   <div
                                     className="flex items-center gap-1 mt-0.5 px-1"
                                     title={`Recent mistakes: ${mistakesTrend.join(', ')}`}
                                   >
-                                    <span className="text-[10px] text-on-surface-variant font-medium">
+                                    <span className="text-[10px] text-on-surface-variant font-medium shrink-0">
                                       Mistakes:
                                     </span>
-                                    {mistakesTrend.map((m, idx) => (
-                                      <span
-                                        key={idx}
-                                        className={`w-2 h-2 rounded-full ${
-                                          m === 0
-                                            ? 'bg-success'
-                                            : m <= 2
-                                            ? 'bg-amber-400'
-                                            : 'bg-error'
-                                        }`}
-                                      />
-                                    ))}
+                                    <div className="flex items-end gap-1 h-3.5 pb-0.5">
+                                      {mistakesTrend.map((m, idx) => (
+                                        <span
+                                          key={idx}
+                                          className={`w-2 h-2 rounded-full shrink-0 ${
+                                            m === 0
+                                              ? 'bg-emerald-500'
+                                              : m <= 2
+                                              ? 'bg-amber-400'
+                                              : 'bg-rose-500'
+                                          }`}
+                                          style={{
+                                            marginBottom: m === 0 ? '0px' : `${Math.min(m * 2, 5)}px`,
+                                          }}
+                                        />
+                                      ))}
+                                    </div>
                                   </div>
+                                ) : (
+                                  <span className="text-[10px] text-on-surface-variant font-medium px-1 mt-0.5 block">
+                                    {t('dashboard_no_mistakes')}
+                                  </span>
                                 )}
                               </div>
                             )}

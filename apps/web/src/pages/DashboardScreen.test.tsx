@@ -9,6 +9,12 @@ import type {
   SessionReplayResponse,
 } from '../lib/api';
 
+// Mock Firebase & Firestore
+vi.mock('../lib/firebase', () => ({
+  db: {},
+  auth: { currentUser: null },
+}));
+
 // Mock APIs
 vi.mock('../lib/api', () => ({
   fetchInsightsMatrix: vi.fn(),
@@ -38,7 +44,7 @@ vi.mock('../lib/theme', () => ({
   }),
 }));
 
-// Mock Firestore onSnapshot for LiveNowStrip
+// Mock Firestore onSnapshot for LiveNowStrip & RecentSessions
 vi.mock('firebase/firestore', () => {
   return {
     getFirestore: vi.fn(),
@@ -46,6 +52,7 @@ vi.mock('firebase/firestore', () => {
     query: vi.fn(),
     where: vi.fn(),
     orderBy: vi.fn(),
+    limit: vi.fn(),
     onSnapshot: vi.fn((_q, callback) => {
       // Emit a mock live session (started 2 minutes ago) and an expired one (15 minutes ago)
       const now = Date.now();
