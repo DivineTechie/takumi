@@ -4,6 +4,7 @@ import type { LanguageCode } from '../../i18n';
 import { buildLiveSystemInstruction, cleanTranscript } from './prompt';
 import type {
   LiveClientCallbacks,
+  LiveClientStats,
   LiveConnectionState,
 } from './types';
 import { base64ToPCM16 } from './audio';
@@ -19,16 +20,76 @@ export interface LiveClientConfig {
   maxReconnectAttempts?: number;
 }
 
+export async function decodeWebSocketData(
+  data: unknown
+): Promise<string> {
+  if (typeof data === 'string') {
+    return data;
+  }
+  if (!data) {
+    return '';
+  }
+  // Check for Blob / Blob-like
+  const isBlobLike =
+    (typeof Blob !== 'undefined' && data instanceof Blob) ||
+    (data !== null &&
+      typeof data === 'object' &&
+      typeof (data as { size?: number }).size === 'number' &&
+      typeof (data as { type?: string }).type === 'string');
+
+  if (isBlobLike) {
+    if (typeof (data as Blob).text === 'function') {
+      return await (data as Blob).text();
+    }
+    if (typeof (data as Blob).arrayBuffer === 'function') {
+      const arrayBuffer = await (data as Blob).arrayBuffer();
+      return new TextDecoder('utf-8').decode(arrayBuffer);
+    }
+    if (typeof FileReader !== 'undefined') {
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(data as Blob, 'utf-8');
+      });
+    }
+  }
+
+  // Check for ArrayBuffer, TypedArray, DataView, Buffer, or ArrayBufferView
+  if (
+    data instanceof ArrayBuffer ||
+    ArrayBuffer.isView(data) ||
+    Object.prototype.toString.call(data) === '[object ArrayBuffer]' ||
+    typeof (data as ArrayBuffer).byteLength === 'number'
+  ) {
+    return new TextDecoder('utf-8').decode(data as BufferSource);
+  }
+  throw new Error(`Unsupported WebSocket data type: ${typeof data} [${Object.prototype.toString.call(data)}]`);
+}
+
 export class GeminiLiveClient {
   private config: LiveClientConfig;
   private ws: WebSocket | null = null;
   private state: LiveConnectionState = 'idle';
   private explicitlyClosed = false;
   private setupDone = false;
+  private hasCompletedFirstSetup = false;
   private reconnectAttempts = 0;
   private readonly maxReconnectAttempts: number;
   private reconnectTimeoutId: number | null = null;
+  private setupTimeoutId: number | null = null;
+  private connectStartTime = 0;
   private lastVideoSentTime = 0;
+  private stats: LiveClientStats = {
+    setupCompleteReceived: false,
+    setupCompleteMs: null,
+    micChunksSent: 0,
+    videoFramesSent: 0,
+    audioChunksReceived: 0,
+    transcriptsReceived: 0,
+    lastCloseCode: null,
+    lastCloseReason: '',
+  };
 
   constructor(config: LiveClientConfig) {
     this.config = config;
@@ -41,6 +102,21 @@ export class GeminiLiveClient {
 
   public isReady(): boolean {
     return this.state === 'connected' && this.setupDone;
+  }
+
+  public getStats(): LiveClientStats {
+    return { ...this.stats };
+  }
+
+  private notifyStats(): void {
+    this.config.callbacks.onStatsUpdate?.(this.getStats());
+  }
+
+  private clearSetupTimeout(): void {
+    if (this.setupTimeoutId !== null) {
+      clearTimeout(this.setupTimeoutId);
+      this.setupTimeoutId = null;
+    }
   }
 
   private setState(newState: LiveConnectionState): void {
@@ -59,6 +135,29 @@ export class GeminiLiveClient {
 
     this.setState(isReconnect ? 'reconnecting' : 'connecting');
     this.setupDone = false;
+    this.connectStartTime = Date.now();
+
+    // 8-second setup timeout: if setupComplete hasn't arrived within 8s, transition to error
+    this.clearSetupTimeout();
+    this.setupTimeoutId = window.setTimeout(() => {
+      if (!this.setupDone && !this.explicitlyClosed) {
+        console.error('Gemini Live connection timed out: setupComplete not received within 8s');
+        this.stats.lastCloseCode = 4008;
+        this.stats.lastCloseReason = 'Setup complete timed out (8s)';
+        const socketToClose = this.ws;
+        this.ws = null;
+        if (socketToClose) {
+          try {
+            socketToClose.close();
+          } catch {
+            // ignore
+          }
+        }
+        this.setState('error');
+        this.notifyStats();
+        this.config.callbacks.onError(new Error("Couldn't connect: setup complete timed out"));
+      }
+    }, 8000);
 
     try {
       // 1. Fetch fresh single-use token from backend takumi-api
@@ -70,6 +169,7 @@ export class GeminiLiveClient {
       // 2. Open WebSocket
       const wsUrl = `${WS_BASE_URL}?access_token=${encodeURIComponent(token)}`;
       const ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
       this.ws = ws;
 
       ws.onopen = () => {
@@ -79,7 +179,7 @@ export class GeminiLiveClient {
 
       ws.onmessage = (event: MessageEvent) => {
         if (this.ws !== ws) return;
-        this.handleMessage(event.data);
+        void this.handleMessage(event.data);
       };
 
       ws.onerror = (err) => {
@@ -88,8 +188,12 @@ export class GeminiLiveClient {
 
       ws.onclose = (event) => {
         if (this.ws !== ws) return;
+        this.clearSetupTimeout();
         this.ws = null;
         this.setupDone = false;
+        this.stats.lastCloseCode = event.code;
+        this.stats.lastCloseReason = event.reason || '';
+        this.notifyStats();
 
         if (!this.explicitlyClosed) {
           console.warn(`WebSocket closed unexpectedly (code: ${event.code}), scheduling reconnect...`);
@@ -100,6 +204,10 @@ export class GeminiLiveClient {
       };
     } catch (err) {
       console.error('Failed to establish Live session connection:', err);
+      this.clearSetupTimeout();
+      this.stats.lastCloseCode = 5000;
+      this.stats.lastCloseReason = err instanceof Error ? err.message : String(err);
+      this.notifyStats();
       if (!this.explicitlyClosed) {
         this.scheduleReconnect();
       } else {
@@ -177,27 +285,42 @@ export class GeminiLiveClient {
     }
   }
 
-  private handleMessage(data: string | Blob): void {
-    if (typeof data !== 'string') {
-      console.warn('Received non-string WebSocket message, ignoring');
+  public async handleMessage(data: unknown): Promise<void> {
+    let rawText: string;
+    try {
+      rawText = await decodeWebSocketData(data);
+    } catch (err) {
+      console.error('Failed to decode WebSocket message:', err);
       return;
     }
 
     try {
-      const msg = JSON.parse(data);
+      const msg = JSON.parse(rawText);
 
       // 1. Setup complete confirmation
       if (msg.setupComplete) {
+        this.clearSetupTimeout();
+        this.stats.setupCompleteReceived = true;
+        this.stats.setupCompleteMs = Date.now() - this.connectStartTime;
         this.setupDone = true;
-        const wasReconnecting = this.state === 'reconnecting';
         this.reconnectAttempts = 0;
         this.setState('connected');
+        this.notifyStats();
 
-        if (wasReconnecting) {
+        if (!this.hasCompletedFirstSetup) {
+          this.hasCompletedFirstSetup = true;
+          this.sendText(
+            '[SESSION START] The trainee is ready at the bench. Greet them briefly and announce step 1.'
+          );
+        } else {
+          // Reconnect continuity
           const currentStep = this.config.getCurrentStep();
-          const stepObj = this.config.skill.steps.find((s) => s.n === currentStep) || this.config.skill.steps[0];
+          const stepObj =
+            this.config.skill.steps.find((s) => s.n === currentStep) ||
+            this.config.skill.steps[0];
           const instruction =
-            stepObj.translations?.[this.config.language]?.instruction || stepObj.instruction;
+            stepObj.translations?.[this.config.language]?.instruction ||
+            stepObj.instruction;
           this.sendText(`Resume at step ${currentStep}: ${instruction}`);
         }
         return;
@@ -206,6 +329,8 @@ export class GeminiLiveClient {
       // 2. GoAway / server graceful close -> trigger reconnect
       if (msg.goAway) {
         console.warn('Server sent goAway, reconnecting...');
+        this.stats.lastCloseReason = 'Server goAway';
+        this.notifyStats();
         this.ws?.close();
         return;
       }
@@ -222,14 +347,17 @@ export class GeminiLiveClient {
         if (sc.modelTurn?.parts) {
           for (const part of sc.modelTurn.parts) {
             if (part.inlineData?.data) {
+              this.stats.audioChunksReceived++;
               const pcm16 = base64ToPCM16(part.inlineData.data);
               this.config.callbacks.onAudioChunk?.(pcm16.buffer);
             }
           }
+          this.notifyStats();
         }
 
         // Output transcription (coach speech)
         if (sc.outputTranscription?.text) {
+          this.stats.transcriptsReceived++;
           const cleaned = cleanTranscript(sc.outputTranscription.text);
           if (cleaned) {
             this.config.callbacks.onTranscript({
@@ -239,10 +367,12 @@ export class GeminiLiveClient {
               timestamp: Date.now(),
             });
           }
+          this.notifyStats();
         }
 
         // Input transcription (trainee speech)
         if (sc.inputTranscription?.text) {
+          this.stats.transcriptsReceived++;
           const cleaned = cleanTranscript(sc.inputTranscription.text);
           if (cleaned) {
             this.config.callbacks.onTranscript({
@@ -252,12 +382,14 @@ export class GeminiLiveClient {
               timestamp: Date.now(),
             });
           }
+          this.notifyStats();
         }
       }
 
       // 4. Tool calls
       if (msg.toolCall?.functionCalls) {
         this.handleToolCalls(msg.toolCall.functionCalls);
+        this.notifyStats();
       }
     } catch (err) {
       console.error('Error handling WebSocket message:', err);
@@ -327,8 +459,9 @@ export class GeminiLiveClient {
   }
 
   public manualRetry(): void {
+    this.clearSetupTimeout();
     this.reconnectAttempts = 0;
-    this.connect(true);
+    this.connect(this.hasCompletedFirstSetup);
   }
 
   /**
@@ -338,6 +471,9 @@ export class GeminiLiveClient {
     if (!this.isReady() || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
     }
+
+    this.stats.micChunksSent++;
+    this.notifyStats();
 
     const payload = {
       realtimeInput: {
@@ -366,6 +502,9 @@ export class GeminiLiveClient {
     }
 
     this.lastVideoSentTime = now;
+    this.stats.videoFramesSent++;
+    this.notifyStats();
+
     const payload = {
       realtimeInput: {
         video: {
@@ -409,6 +548,7 @@ export class GeminiLiveClient {
    */
   public close(): void {
     this.explicitlyClosed = true;
+    this.clearSetupTimeout();
     if (this.reconnectTimeoutId !== null) {
       clearTimeout(this.reconnectTimeoutId);
       this.reconnectTimeoutId = null;

@@ -21,6 +21,17 @@ export interface LiveToolCall {
   args: Record<string, unknown>;
 }
 
+export interface LiveClientStats {
+  setupCompleteReceived: boolean;
+  setupCompleteMs: number | null;
+  micChunksSent: number;
+  videoFramesSent: number;
+  audioChunksReceived: number;
+  transcriptsReceived: number;
+  lastCloseCode: number | null;
+  lastCloseReason: string;
+}
+
 export interface LiveClientCallbacks {
   onStateChange: (state: LiveConnectionState) => void;
   onAudioChunk?: (chunk: ArrayBuffer) => void;
@@ -28,6 +39,7 @@ export interface LiveClientCallbacks {
   onTranscript: (item: LiveTranscriptItem) => void;
   onToolCall: (call: LiveToolCall) => Promise<Record<string, unknown>> | Record<string, unknown>;
   onError: (err: Error) => void;
+  onStatsUpdate?: (stats: LiveClientStats) => void;
 }
 
 export interface SystemInstructionOptions {

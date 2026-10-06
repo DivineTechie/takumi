@@ -2,7 +2,12 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Skill } from '../../../../shared/schema/ts/skills';
 import type { LanguageCode } from '../i18n';
-import { LANGUAGE_DISPLAY_NAMES, type LiveConnectionState, type LiveTranscriptItem } from '../lib/live/types';
+import {
+  LANGUAGE_DISPLAY_NAMES,
+  type LiveClientStats,
+  type LiveConnectionState,
+  type LiveTranscriptItem,
+} from '../lib/live/types';
 import { GeminiLiveClient } from '../lib/live/client';
 import { OutputAudioQueue, setupMicCapture, type MicCaptureHandle } from '../lib/live/audio';
 import { isCameraMirrored, captureVideoFrame } from '../lib/live/video';
@@ -26,6 +31,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   onEnd,
 }) => {
   const navigate = useNavigate();
+  const isDebug = new URLSearchParams(window.location.search).get('debug') === '1';
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -37,6 +43,17 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const [showCaption, setShowCaption] = useState<boolean>(false);
   const [sessionWarning, setSessionWarning] = useState<boolean>(false);
   const [remainingSeconds, setRemainingSeconds] = useState<number>(600);
+  const [debugOpen, setDebugOpen] = useState<boolean>(true);
+  const [stats, setStats] = useState<LiveClientStats>({
+    setupCompleteReceived: false,
+    setupCompleteMs: null,
+    micChunksSent: 0,
+    videoFramesSent: 0,
+    audioChunksReceived: 0,
+    transcriptsReceived: 0,
+    lastCloseCode: null,
+    lastCloseReason: '',
+  });
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
   const audioQueueRef = useRef<OutputAudioQueue | null>(null);
@@ -127,12 +144,25 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         onError: (err) => {
           console.error('Live client error:', err);
         },
+        onStatsUpdate: (s) => {
+          setStats(s);
+        },
       },
     });
     clientRef.current = client;
 
     // Connect client
     client.connect();
+
+    // Stats polling interval when ?debug=1 is active
+    let statsInterval: number | null = null;
+    if (isDebug) {
+      statsInterval = window.setInterval(() => {
+        if (clientRef.current) {
+          setStats(clientRef.current.getStats());
+        }
+      }, 300);
+    }
 
     // 3. Connect microphone capture
     setupMicCapture(stream, micAudioContext, (b64Audio) => {
@@ -217,6 +247,9 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       if (videoFrameIntervalRef.current !== null) {
         clearInterval(videoFrameIntervalRef.current);
       }
+      if (statsInterval !== null) {
+        clearInterval(statsInterval);
+      }
       sessionTimer.stop();
       wakeLockRef.current?.release().catch(() => {});
       audioQueue.flush();
@@ -231,6 +264,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     micAudioContext,
     handleTranscript,
     onEnd,
+    isDebug,
   ]);
 
   // Handle "Why?" button action
@@ -319,6 +353,73 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         </div>
       </header>
 
+      {/* 3.5 Debug Drawer (Enabled via ?debug=1) */}
+      {isDebug && (
+        <aside
+          aria-label="Debug telemetry drawer"
+          className="relative z-40 bg-black/90 backdrop-blur-md border-b border-primary/30 px-4 py-2 text-xs font-mono text-white/90 shadow-2xl transition-all"
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+              <span className="font-bold tracking-wider text-primary uppercase text-[11px]">
+                Debug Telemetry (?debug=1)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDebugOpen((prev) => !prev)}
+              className="text-[11px] px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white font-medium cursor-pointer"
+            >
+              {debugOpen ? 'Hide' : 'Show'}
+            </button>
+          </div>
+
+          {debugOpen && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-1.5 border-t border-white/10 text-[11px]">
+              <div>
+                <span className="text-white/60">setupComplete: </span>
+                <span
+                  className={
+                    stats.setupCompleteReceived
+                      ? 'text-emerald-400 font-bold'
+                      : 'text-amber-300 font-semibold'
+                  }
+                >
+                  {stats.setupCompleteReceived
+                    ? `yes (${stats.setupCompleteMs ?? 0}ms)`
+                    : 'no'}
+                </span>
+              </div>
+              <div>
+                <span className="text-white/60">mic chunks sent: </span>
+                <span className="text-white font-bold">{stats.micChunksSent}</span>
+              </div>
+              <div>
+                <span className="text-white/60">video frames sent: </span>
+                <span className="text-white font-bold">{stats.videoFramesSent}</span>
+              </div>
+              <div>
+                <span className="text-white/60">audio chunks recvd: </span>
+                <span className="text-white font-bold">{stats.audioChunksReceived}</span>
+              </div>
+              <div>
+                <span className="text-white/60">transcripts recvd: </span>
+                <span className="text-white font-bold">{stats.transcriptsReceived}</span>
+              </div>
+              <div className="col-span-2 truncate">
+                <span className="text-white/60">last close: </span>
+                <span className="text-white/80">
+                  {stats.lastCloseCode !== null
+                    ? `code ${stats.lastCloseCode}${stats.lastCloseReason ? ` (${stats.lastCloseReason})` : ''}`
+                    : 'none'}
+                </span>
+              </div>
+            </div>
+          )}
+        </aside>
+      )}
+
       {/* 4. 10-Minute Warning Banner (if active) */}
       {sessionWarning && (
         <div className="relative z-30 mx-4 mt-2 p-2.5 rounded-xl bg-amber-500/90 text-black text-center font-bold text-xs tracking-wide shadow-lg">
@@ -380,7 +481,14 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             <div className="flex-1 min-w-0 flex flex-col justify-center">
               {/* Status Chip */}
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                {connectionState === 'reconnecting' ? (
+                {connectionState === 'connecting' ? (
+                  <>
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                    <span className="text-[13px] text-amber-300 uppercase tracking-wider font-bold">
+                      Connecting…
+                    </span>
+                  </>
+                ) : connectionState === 'reconnecting' ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
                     <span className="text-[13px] text-amber-300 uppercase tracking-wider font-bold">
@@ -390,12 +498,15 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 ) : connectionState === 'error' ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
+                    <span className="text-[13px] text-red-300 uppercase tracking-wider font-bold">
+                      Couldn't connect
+                    </span>
                     <button
                       type="button"
                       onClick={() => clientRef.current?.manualRetry()}
-                      className="text-[13px] text-red-300 underline font-bold cursor-pointer"
+                      className="px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 active:scale-95 text-white text-[12px] font-bold tracking-wide uppercase border border-white/20 transition-all cursor-pointer"
                     >
-                      Connection lost. Tap to retry
+                      Retry
                     </button>
                   </>
                 ) : isCoachSpeaking ? (
