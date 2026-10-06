@@ -65,6 +65,7 @@
   "dashboard_select_session": "Chọn phiên",
   "dashboard_retry": "Thử lại",
   "dashboard_load_failed": "Không thể tải dữ liệu bảng điều khiển.",
+  "dashboard_filter_all": "Lọc học viên…",
   "dashboard_frame_preview": "Hình ảnh An toàn / Lỗi",
   "dashboard_close": "Đóng"
 }

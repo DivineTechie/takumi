@@ -65,6 +65,7 @@
   "dashboard_select_session": "Pilih sesi",
   "dashboard_retry": "Coba lagi",
   "dashboard_load_failed": "Gagal memuat data dasbor.",
+  "dashboard_filter_all": "Filter peserta…",
   "dashboard_frame_preview": "Foto Keamanan / Kesalahan",
   "dashboard_close": "Tutup"
 }

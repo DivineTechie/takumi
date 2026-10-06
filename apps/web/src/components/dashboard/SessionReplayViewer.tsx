@@ -5,16 +5,19 @@ import type { SessionReplayResponse, SessionReplayEvent } from '../../lib/api';
 interface SessionReplayViewerProps {
   replay: SessionReplayResponse | null;
   loading: boolean;
+  onSelectSession?: (sessionId: string) => void;
   onClose?: () => void;
 }
 
 export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
   replay,
   loading,
+  onSelectSession,
   onClose,
 }) => {
   const { t } = useTranslation();
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [manualSessionId, setManualSessionId] = useState('');
 
   if (loading) {
     return (
@@ -31,16 +34,42 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
 
   if (!replay) {
     return (
-      <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm text-center">
+      <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 sm:p-8 shadow-sm text-center">
         <span className="material-symbols-outlined text-[36px] text-on-surface-variant mb-2 block opacity-40">
           history
         </span>
         <h3 className="text-[16px] font-bold text-on-surface mb-1">
           {t('dashboard_session_replay')}
         </h3>
-        <p className="text-[14px] text-on-surface-variant max-w-sm mx-auto">
+        <p className="text-[14px] text-on-surface-variant max-w-sm mx-auto mb-5">
           {t('dashboard_select_session')}
         </p>
+        {onSelectSession && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (manualSessionId.trim()) {
+                onSelectSession(manualSessionId.trim());
+              }
+            }}
+            className="flex flex-col sm:flex-row items-center justify-center gap-2 max-w-md mx-auto"
+          >
+            <input
+              type="text"
+              value={manualSessionId}
+              onChange={(e) => setManualSessionId(e.target.value)}
+              placeholder="Session ID (e.g. ses_1f136365e52d71cd)…"
+              className="w-full bg-surface-container border border-outline-variant rounded-xl px-3.5 py-2 text-[14px] font-mono text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-container placeholder:text-on-surface-variant/60"
+            />
+            <button
+              type="submit"
+              disabled={!manualSessionId.trim()}
+              className="w-full sm:w-auto px-4 py-2 rounded-xl bg-primary-container text-on-primary-container font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity cursor-pointer shrink-0"
+            >
+              Load Replay
+            </button>
+          </form>
+        )}
       </section>
     );
   }

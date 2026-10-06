@@ -65,6 +65,7 @@
   "dashboard_select_session": "セッションを選択",
   "dashboard_retry": "再試行",
   "dashboard_load_failed": "ダッシュボードデータの読み込みに失敗しました。",
+  "dashboard_filter_all": "研修生を絞り込み…",
   "dashboard_frame_preview": "安全／ミス検出画像",
   "dashboard_close": "閉じる"
 }

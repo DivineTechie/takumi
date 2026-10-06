@@ -65,6 +65,7 @@
   "dashboard_select_session": "Pumili ng sesyon",
   "dashboard_retry": "Subukang muli",
   "dashboard_load_failed": "Nabigong i-load ang data ng dashboard.",
+  "dashboard_filter_all": "I-filter ang mga trainee…",
   "dashboard_frame_preview": "Larawan ng Kaligtasan / Pagkakamali",
   "dashboard_close": "Isara"
 }

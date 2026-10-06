@@ -44,8 +44,8 @@ export const DashboardScreen: React.FC = () => {
     try {
       const data = await fetchInsightsMatrix();
       setMatrixData(data);
-      if (data.skills.length > 0 && !selectedSkillId) {
-        setSelectedSkillId(data.skills[0].id);
+      if (data.skills.length > 0) {
+        setSelectedSkillId((prev) => prev || data.skills[0].id);
       }
     } catch (err) {
       console.error('Failed to load matrix:', err);
@@ -53,7 +53,7 @@ export const DashboardScreen: React.FC = () => {
     } finally {
       setMatrixLoading(false);
     }
-  }, [t, selectedSkillId]);
+  }, [t]);
 
   useEffect(() => {
     loadMatrix();
@@ -298,6 +298,7 @@ export const DashboardScreen: React.FC = () => {
           <SessionReplayViewer
             replay={replayData}
             loading={replayLoading}
+            onSelectSession={handleSelectSession}
             onClose={() => {
               setSelectedSessionId(null);
               setReplayData(null);

@@ -120,6 +120,15 @@ export interface CreateSessionEventRequest {
  * Throws NotSignedInError if unauthenticated.
  */
 export async function getIdToken(): Promise<string> {
+  if (
+    typeof window !== 'undefined' &&
+    (window as unknown as { __TAKUMI_MOCK_AUTH__?: { user?: { getIdToken?: () => Promise<string> } } })
+      .__TAKUMI_MOCK_AUTH__?.user?.getIdToken
+  ) {
+    return await (
+      window as unknown as { __TAKUMI_MOCK_AUTH__: { user: { getIdToken: () => Promise<string> } } }
+    ).__TAKUMI_MOCK_AUTH__.user.getIdToken();
+  }
   const currentUser = auth.currentUser;
   if (!currentUser) {
     throw new NotSignedInError();
