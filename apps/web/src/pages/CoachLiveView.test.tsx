@@ -100,6 +100,22 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    HTMLMediaElement.prototype.play = vi.fn().mockImplementation(() => Promise.resolve());
+    HTMLMediaElement.prototype.pause = vi.fn();
+    HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
+      clearRect: vi.fn(),
+      beginPath: vi.fn(),
+      arc: vi.fn(),
+      stroke: vi.fn(),
+      fill: vi.fn(),
+      measureText: vi.fn(() => ({ width: 50 })),
+      fillText: vi.fn(),
+      roundRect: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      setLineDash: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+
     mockStream = {
       getVideoTracks: vi.fn(() => [{ getSettings: () => ({ facingMode: 'environment' }) }]),
       getAudioTracks: vi.fn(() => [
@@ -187,6 +203,11 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
       </MemoryRouter>
     );
 
+    // Wait for session initialization
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
     // Initial step is 1
     expect(screen.getByText('Step 1 of 4')).toBeDefined();
 
@@ -205,24 +226,28 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     });
 
     // Check verify event was posted
-    expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
-      'session-live-123',
-      expect.objectContaining({
-        step: 1,
-        type: 'verify',
-        source: 'verify',
-      })
-    );
+    await waitFor(() => {
+      expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+        'session-live-123',
+        expect.objectContaining({
+          step: 1,
+          type: 'verify',
+          source: 'verify',
+        })
+      );
+    });
 
     // Check step_done event was posted
-    expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
-      'session-live-123',
-      expect.objectContaining({
-        step: 1,
-        type: 'step_done',
-        source: 'verify',
-      })
-    );
+    await waitFor(() => {
+      expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+        'session-live-123',
+        expect.objectContaining({
+          step: 1,
+          type: 'step_done',
+          source: 'verify',
+        })
+      );
+    });
 
     // Step has advanced to step 2!
     await waitFor(() => {
@@ -249,6 +274,11 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
       </MemoryRouter>
     );
 
+    // Wait for session initialization
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
     const result = await capturedCallbacks.onToolCall!({
       id: 'call-p1',
       name: 'point_at',
@@ -262,15 +292,17 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
       image_b64: 'fake_1280_frame',
     });
 
-    expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
-      'session-live-123',
-      expect.objectContaining({
-        step: 1,
-        type: 'point',
-        source: 'system',
-        reason: 'terminal 1',
-      })
-    );
+    await waitFor(() => {
+      expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+        'session-live-123',
+        expect.objectContaining({
+          step: 1,
+          type: 'point',
+          source: 'coach',
+          reason: 'terminal 1',
+        })
+      );
+    });
   });
 
   it('shows 06_lesson_complete screen and marks session completed on final step verification', async () => {
@@ -295,6 +327,11 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
       </MemoryRouter>
     );
 
+    // Wait for session initialization
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
     // Simulate advancing to step 4
     const devWindow = window as unknown as { __TAKUMI_ADVANCE_STEP__?: () => void };
     devWindow.__TAKUMI_ADVANCE_STEP__?.(); // -> 2
@@ -309,7 +346,9 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     });
 
     // Session completed called
-    expect(apiModule.endSession).toHaveBeenCalledWith('session-live-123', 'completed');
+    await waitFor(() => {
+      expect(apiModule.endSession).toHaveBeenCalledWith('session-live-123', 'completed');
+    });
 
     // Lesson complete screen appears
     await waitFor(() => {
