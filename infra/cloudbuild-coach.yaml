@@ -32,8 +32,14 @@ steps:
     args:
       - '-c'
       - |
-        echo "=== Installing JRE for Firebase Emulators ==="
-        apt-get update -qq && apt-get install -y -qq --no-install-recommends default-jre-headless
+        echo "=== Installing OpenJDK 21 for Firebase Emulators ==="
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates
+        mkdir -p /opt/java
+        curl -fsSL "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse" -o /tmp/jre21.tar.gz
+        tar -xzf /tmp/jre21.tar.gz -C /opt/java --strip-components=1
+        export PATH="/opt/java/bin:$PATH"
+        export JAVA_HOME="/opt/java"
+        java -version
         echo "=== Installing rules-tests dependencies ==="
         cd infra/rules-tests
         npm ci
