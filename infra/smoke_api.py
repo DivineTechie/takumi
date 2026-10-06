@@ -37,16 +37,27 @@ SMOKE_UID = "smoke-trainee"
 def get_web_api_key() -> str:
     """Reads VITE_FIREBASE_API_KEY from apps/web/.env.local without logging or printing it."""
     env_local = Path(__file__).resolve().parent.parent / "apps" / "web" / ".env.local"
-    if not env_local.exists():
-        raise RuntimeError("apps/web/.env.local not found. Cannot retrieve web API key.")
+    if env_local.exists():
+        with open(env_local, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("VITE_FIREBASE_API_KEY="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
 
-    with open(env_local, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+    # Fallback to Secret Manager FIREBASE_WEB_CONFIG
+    try:
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{PROJECT_ID}/secrets/FIREBASE_WEB_CONFIG/versions/latest"
+        payload = client.access_secret_version(request={"name": name}).payload.data.decode("utf-8")
+        for line in payload.splitlines():
+            line = line.strip().lstrip("\ufeff")
             if line.startswith("VITE_FIREBASE_API_KEY="):
                 return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
 
-    raise RuntimeError("VITE_FIREBASE_API_KEY not found in apps/web/.env.local")
+    raise RuntimeError("VITE_FIREBASE_API_KEY not found in apps/web/.env.local or Secret Manager")
 
 
 def ensure_seed_skill(db: firestore.Client) -> None:
