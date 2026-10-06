@@ -26,6 +26,7 @@ interface CoachLiveViewProps {
   micAudioContext: AudioContext;
   speakerMode?: boolean;
   onEnd: () => void;
+  handleTranscript?: (item: LiveTranscriptItem) => void;
 }
 
 export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
@@ -36,6 +37,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   micAudioContext,
   speakerMode = true,
   onEnd,
+  handleTranscript: externalHandleTranscript,
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -67,6 +69,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const [stats, setStats] = useState<LiveClientStats>({
     setupCompleteReceived: false,
     setupCompleteMs: null,
+    kickoffSentCount: 0,
     micChunksSent: 0,
     videoFramesSent: 0,
     audioChunksReceived: 0,
@@ -85,6 +88,26 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     lastToolLatencyMs: null,
     medianToolLatencyMs: null,
   });
+
+  // Latest refs pattern for props and callbacks to ensure client/mic/video effect runs once
+  const skillRef = useRef<Skill>(skill);
+  skillRef.current = skill;
+
+  const languageRef = useRef<LanguageCode>(language);
+  languageRef.current = language;
+
+  const speakerModeRef = useRef<boolean>(speakerMode);
+  speakerModeRef.current = speakerMode;
+
+  const isDebugRef = useRef<boolean>(isDebug);
+  isDebugRef.current = isDebug;
+
+  const onEndRef = useRef<() => void>(onEnd);
+  onEndRef.current = onEnd;
+
+  // Track client instances created
+  const clientInstancesCreatedRef = useRef<number>(0);
+  const [clientInstancesCount, setClientInstancesCount] = useState<number>(0);
 
   const clientRef = useRef<GeminiLiveClient | null>(null);
   const audioQueueRef = useRef<OutputAudioQueue | null>(null);
@@ -127,9 +150,9 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       if (isCompletedRef.current) {
         return false;
       }
-      if (stepToAdvance >= skill.steps.length) {
+      if (stepToAdvance >= skillRef.current.steps.length) {
         isCompletedRef.current = true;
-        currentStepRef.current = skill.steps.length + 1;
+        currentStepRef.current = skillRef.current.steps.length + 1;
         return true;
       }
       const next = stepToAdvance + 1;
@@ -137,8 +160,11 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       setCurrentStep(next);
       return true;
     },
-    [skill.steps.length]
+    []
   );
+
+  const advanceStepRef = useRef(advanceStep);
+  advanceStepRef.current = advanceStep;
 
   // Decision-to-audio timing helper
   const trackDecisionToAudio = useCallback(
@@ -188,6 +214,9 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     []
   );
 
+  const trackDecisionToAudioRef = useRef(trackDecisionToAudio);
+  trackDecisionToAudioRef.current = trackDecisionToAudio;
+
   // Handle caption updates with 4s auto-fade
   const handleTranscript = useCallback((item: LiveTranscriptItem) => {
     if (item.source === 'coach') {
@@ -209,6 +238,12 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       captionFadeTimeoutRef.current = null;
     }, 4000);
   }, []);
+
+  const handleTranscriptRef = useRef<(item: LiveTranscriptItem) => void>(handleTranscript);
+  handleTranscriptRef.current = (item: LiveTranscriptItem) => {
+    externalHandleTranscript?.(item);
+    handleTranscript(item);
+  };
 
   // Expose advance and simulate transcript hooks for testing/preview harness
   useEffect(() => {
@@ -298,13 +333,20 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
   // 2. Initialize Live Client, Audio Queue, Mic, and Video Loop
   useEffect(() => {
+    clientInstancesCreatedRef.current++;
+    setClientInstancesCount(clientInstancesCreatedRef.current);
+
     const audioQueue = new OutputAudioQueue(outputAudioContext);
     audioQueueRef.current = audioQueue;
 
     const client = new GeminiLiveClient({
-      skill,
-      language,
-      speakerMode,
+      get skill() {
+        return skillRef.current;
+      },
+      get language() {
+        return languageRef.current;
+      },
+      speakerMode: speakerModeRef.current,
       audioQueue,
       getCurrentStep: () => currentStepRef.current,
       callbacks: {
@@ -325,7 +367,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           setIsCoachSpeaking(false);
         },
         onTranscript: (item) => {
-          handleTranscript(item);
+          handleTranscriptRef.current(item);
         },
         onToolCall: async (call) => {
           // --- Tool 1: verify_step ---
@@ -338,8 +380,9 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   ? (call.args.step as number)
                   : stepN;
               const stepDiffers = modelStep !== stepN;
+              const currentSkill = skillRef.current;
               const stepObj =
-                skill.steps.find((s) => s.n === stepN) || skill.steps[0];
+                currentSkill.steps.find((s) => s.n === stepN) || currentSkill.steps[0];
               const frame = videoRef.current
                 ? captureVideoFrame(videoRef.current, {
                     targetWidth: 1280,
@@ -369,7 +412,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   success_criteria: Array.isArray(stepObj.success_criteria)
                     ? stepObj.success_criteria.join('; ')
                     : String(stepObj.success_criteria),
-                  safety_rules: skill.safety_rules || [],
+                  safety_rules: currentSkill.safety_rules || [],
                   image_b64: frame,
                 });
                 const latencyMs = Math.round(performance.now() - start);
@@ -391,7 +434,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 }
 
                 if (resp.passed) {
-                  const advanced = advanceStep(stepN);
+                  const advanced = advanceStepRef.current(stepN);
                   if (advanced && sessionIdRef.current) {
                     const postPromise = postSessionEvent(sessionIdRef.current, {
                       step: stepN,
@@ -400,7 +443,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                       latency_ms: latencyMs,
                     });
 
-                    if (stepN >= skill.steps.length) {
+                    if (stepN >= currentSkill.steps.length) {
                       setIsLessonComplete(true);
                       try {
                         await Promise.race([
@@ -418,7 +461,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                         }
                       }
                     }
-                  } else if (advanced && stepN >= skill.steps.length) {
+                  } else if (advanced && stepN >= currentSkill.steps.length) {
                     setIsLessonComplete(true);
                     if (sessionIdRef.current) {
                       try {
@@ -531,7 +574,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
     // Stats polling interval when ?debug=1 is active
     let statsInterval: number | null = null;
-    if (isDebug) {
+    if (isDebugRef.current) {
       statsInterval = window.setInterval(() => {
         if (clientRef.current) {
           setStats(clientRef.current.getStats());
@@ -609,7 +652,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       },
       onTimeout: () => {
         alert('Session time limit of 10 minutes reached.');
-        onEnd();
+        onEndRef.current();
       },
       onTick: (sec) => {
         setRemainingSeconds(sec);
@@ -650,18 +693,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       micHandleRef.current?.stop();
       client.close();
     };
-  }, [
-    skill,
-    language,
-    stream,
-    outputAudioContext,
-    micAudioContext,
-    speakerMode,
-    handleTranscript,
-    advanceStep,
-    onEnd,
-    isDebug,
-  ]);
+  }, [stream, outputAudioContext, micAudioContext]);
 
   // Sync speakerMode updates dynamically
   useEffect(() => {
@@ -699,7 +731,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       }
 
       const stepN = currentStepRef.current;
-      const stepObj = skill.steps.find((s) => s.n === stepN) || skill.steps[0];
+      const currentSkill = skillRef.current;
+      const stepObj = currentSkill.steps.find((s) => s.n === stepN) || currentSkill.steps[0];
       const frame = captureVideoFrame(video, {
         targetWidth: 640,
         mirrored: isMirroredRef.current,
@@ -722,7 +755,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             ? stepObj.success_criteria.join('; ')
             : String(stepObj.success_criteria),
           common_mistakes: stepObj.common_mistakes || [],
-          safety_rules: skill.safety_rules || [],
+          safety_rules: currentSkill.safety_rules || [],
           image_b64: frame,
         };
 
@@ -781,10 +814,10 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           }
         } else if (effect.type === 'ADVANCE_STEP') {
           // done x2 -> advance step
-          const advanced = advanceStep(stepN);
+          const advanced = advanceStepRef.current(stepN);
           if (advanced) {
-            const nextStepObj = skill.steps.find((s) => s.n === stepN + 1);
-            const isLast = stepN >= skill.steps.length;
+            const nextStepObj = currentSkill.steps.find((s) => s.n === stepN + 1);
+            const isLast = stepN >= currentSkill.steps.length;
 
             if (isLast) {
               const msg =
@@ -799,7 +832,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             }
 
             // Post step_done when first coach audio arrives (or at 3s timeout)
-            trackDecisionToAudio('step_done', stepN, effect.reason, () => {
+            trackDecisionToAudioRef.current('step_done', stepN, effect.reason, () => {
               if (isLast) {
                 setIsLessonComplete(true);
                 if (sessionIdRef.current) {
@@ -815,7 +848,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           const msg = `Mistake on step ${stepN}: ${effect.reason}. Fix: ${effect.fix}. Tell the trainee now in one sentence and call point_at on the exact thing to fix.`;
           clientRef.current?.sendCameraEvent(msg);
           lastCameraEventRef.current = msg;
-          trackDecisionToAudio('mistake', stepN, effect.reason);
+          trackDecisionToAudioRef.current('mistake', stepN, effect.reason);
         } else if (effect.type === 'NUDGE_NOT_VISIBLE') {
           // not_visible x4
           const msg =
@@ -851,14 +884,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         clearTimeout(loopTimeout);
       }
     };
-  }, [
-    connectionState,
-    isLessonComplete,
-    isSafetyStopOpen,
-    skill,
-    advanceStep,
-    trackDecisionToAudio,
-  ]);
+  }, [connectionState, isLessonComplete, isSafetyStopOpen]);
 
   // Handle "I've made it safe" in Safety Stop overlay
   const handleMadeSafe = () => {
@@ -871,7 +897,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     };
     setWatcherStreakDisplay('none x 0');
     const stepN = currentStepRef.current;
-    const stepObj = skill.steps.find((s) => s.n === stepN) || skill.steps[0];
+    const currentSkill = skillRef.current;
+    const stepObj = currentSkill.steps.find((s) => s.n === stepN) || currentSkill.steps[0];
     const msg = `The trainee says the hazard is fixed. Continue with step ${stepN}: ${stepObj.instruction}`;
     clientRef.current?.sendCameraEvent(msg);
     lastCameraEventRef.current = msg;
@@ -880,9 +907,10 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   // Simulate hazard for testing and debug mode
   const triggerSimulatedHazard = useCallback(() => {
     setIsSafetyStopOpen(true);
+    const currentSkill = skillRef.current;
     const hazardRule =
-      skill.safety_rules && skill.safety_rules.length > 0
-        ? skill.safety_rules[0]
+      currentSkill.safety_rules && currentSkill.safety_rules.length > 0
+        ? currentSkill.safety_rules[0]
         : null;
     setActiveHazardRule(hazardRule);
     audioQueueRef.current?.flush();
@@ -901,7 +929,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         latency_ms: 0,
       }).catch((err) => console.warn('Failed to log simulated safety_stop event:', err));
     }
-  }, [skill.safety_rules]);
+  }, []);
 
   // Expose simulated hazard in debug mode for test harness
   useEffect(() => {
@@ -933,13 +961,14 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const handleEndSession = () => {
     if (window.confirm('Are you sure you want to end this coaching session?')) {
       if (sessionIdRef.current) {
+        const currentSkill = skillRef.current;
         const finalStatus =
-          currentStepRef.current >= skill.steps.length ? 'completed' : 'abandoned';
+          currentStepRef.current >= currentSkill.steps.length ? 'completed' : 'abandoned';
         endSession(sessionIdRef.current, finalStatus).catch((err) =>
           console.warn('Failed to end session:', err)
         );
       }
-      onEnd();
+      onEndRef.current();
       navigate('/coach');
     }
   };
@@ -986,7 +1015,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                onEnd();
+                onEndRef.current();
                 navigate('/coach');
               }}
               aria-label="Back to lessons"
@@ -1068,7 +1097,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             <button
               type="button"
               onClick={() => {
-                onEnd();
+                onEndRef.current();
                 navigate('/coach');
               }}
               className="w-full min-h-[56px] h-14 bg-primary-container hover:brightness-105 active:scale-[0.98] text-on-primary-container rounded-xl font-bold text-[17px] flex items-center justify-center gap-2 shadow-md cursor-pointer transition-transform"
@@ -1224,6 +1253,14 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
             {debugOpen && (
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-1.5 border-t border-white/10 text-[11px]">
+                <div>
+                  <span className="text-white/60">client instances created: </span>
+                  <span className="text-white font-bold">{clientInstancesCount}</span>
+                </div>
+                <div>
+                  <span className="text-white/60">kickoff sent: </span>
+                  <span className="text-white font-bold">{stats.kickoffSentCount ?? 0}</span>
+                </div>
                 <div>
                   <span className="text-white/60">setupComplete: </span>
                   <span

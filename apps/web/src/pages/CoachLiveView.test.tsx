@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { CoachLiveView } from './CoachLiveView';
 import * as apiModule from '../lib/api';
+import { GeminiLiveClient } from '../lib/live/client';
 import type { LiveClientCallbacks } from '../lib/live/types';
 import type { Skill } from '../../../../shared/schema/ts/skills';
 import type { Session } from '../../../../shared/schema/ts/sessions';
@@ -35,6 +36,9 @@ const mockStopGating = vi.fn();
 const mockClose = vi.fn();
 const mockConnect = vi.fn().mockImplementation(() => {
   capturedCallbacks.onStateChange?.('connected');
+  mockSendText(
+    '[SESSION START] The trainee is ready at the bench. Greet them briefly and announce step 1.'
+  );
 });
 let capturedCallbacks: Partial<LiveClientCallbacks> = {};
 
@@ -615,4 +619,55 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     const chip = screen.getByTestId('watcher-status-chip');
     expect(chip.textContent).toMatch(/Step 1: in progress|checking…|Can't see the work area/i);
   });
+
+  it('creates GeminiLiveClient once per session and sends kickoff once across re-renders', async () => {
+    let onEndFn = vi.fn();
+    let handleTranscriptFn = vi.fn();
+
+    const { rerender } = render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={onEndFn}
+          handleTranscript={handleTranscriptFn}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    // Re-render 3 times with new onEnd and handleTranscript identities and a new-but-equal skill object
+    for (let i = 1; i <= 3; i++) {
+      onEndFn = vi.fn();
+      handleTranscriptFn = vi.fn();
+      const clonedSkill = JSON.parse(JSON.stringify(typedSkill));
+      rerender(
+        <MemoryRouter>
+          <CoachLiveView
+            skill={clonedSkill}
+            language="en"
+            stream={mockStream}
+            outputAudioContext={mockAudioContext}
+            micAudioContext={mockAudioContext}
+            onEnd={onEndFn}
+            handleTranscript={handleTranscriptFn}
+          />
+        </MemoryRouter>
+      );
+    }
+
+    expect(GeminiLiveClient).toHaveBeenCalledTimes(1);
+
+    const kickoffCalls = mockSendText.mock.calls.filter(
+      (args) => typeof args[0] === 'string' && args[0].includes('[SESSION START]')
+    );
+    expect(kickoffCalls).toHaveLength(1);
+  });
 });
+

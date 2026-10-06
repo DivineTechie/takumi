@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -188,9 +188,22 @@ export const CoachBeforeStartScreen: React.FC = () => {
     }
   };
 
-  const handleEndLiveSession = () => {
-    if (activeStream) {
-      activeStream.getTracks().forEach((t) => t.stop());
+  // Stable reference to skill and stream during an active live session
+  const activeSkillRef = useRef<Skill | null>(null);
+  if (activeStream && skill && !activeSkillRef.current) {
+    activeSkillRef.current = skill;
+  }
+  if (!activeStream) {
+    activeSkillRef.current = null;
+  }
+  const liveSessionSkill = activeSkillRef.current || skill;
+
+  const activeStreamRef = useRef<MediaStream | null>(null);
+  activeStreamRef.current = activeStream;
+
+  const handleEndLiveSession = useCallback(() => {
+    if (activeStreamRef.current) {
+      activeStreamRef.current.getTracks().forEach((t) => t.stop());
       setActiveStream(null);
     }
     if (outputAudioContextRef.current) {
@@ -201,13 +214,14 @@ export const CoachBeforeStartScreen: React.FC = () => {
       micAudioContextRef.current.close().catch(() => {});
       micAudioContextRef.current = null;
     }
-  };
+    activeSkillRef.current = null;
+  }, []);
 
   // If a live session is active, render CoachLiveView
-  if (activeStream && skill && outputAudioContextRef.current && micAudioContextRef.current) {
+  if (activeStream && liveSessionSkill && outputAudioContextRef.current && micAudioContextRef.current) {
     return (
       <CoachLiveView
-        skill={skill}
+        skill={liveSessionSkill}
         language={selectedLang}
         stream={activeStream}
         outputAudioContext={outputAudioContextRef.current}

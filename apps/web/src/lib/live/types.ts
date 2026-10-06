@@ -24,6 +24,7 @@ export interface LiveToolCall {
 export interface LiveClientStats {
   setupCompleteReceived: boolean;
   setupCompleteMs: number | null;
+  kickoffSentCount: number;
   micChunksSent: number;
   videoFramesSent: number;
   audioChunksReceived: number;

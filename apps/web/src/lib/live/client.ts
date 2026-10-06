@@ -104,6 +104,7 @@ export class GeminiLiveClient {
   private stats: LiveClientStats = {
     setupCompleteReceived: false,
     setupCompleteMs: null,
+    kickoffSentCount: 0,
     micChunksSent: 0,
     videoFramesSent: 0,
     audioChunksReceived: 0,
@@ -288,6 +289,10 @@ export class GeminiLiveClient {
         this.stats.lastCloseReason = event.reason || '';
         this.notifyStats();
 
+        console.warn(
+          `WebSocket closed by server (code: ${event.code}${event.reason ? `, reason: "${event.reason}"` : ''})`
+        );
+
         if (!this.explicitlyClosed) {
           console.warn(`WebSocket closed unexpectedly (code: ${event.code}), scheduling reconnect...`);
           this.scheduleReconnect();
@@ -408,6 +413,8 @@ export class GeminiLiveClient {
 
         if (!this.hasCompletedFirstSetup) {
           this.hasCompletedFirstSetup = true;
+          this.stats.kickoffSentCount++;
+          this.notifyStats();
           this.sendText(
             '[SESSION START] The trainee is ready at the bench. Greet them briefly and announce step 1.'
           );

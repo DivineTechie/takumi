@@ -164,6 +164,7 @@ describe('GeminiLiveClient', () => {
     expect(kickoffMsg.realtimeInput.text).toBe(
       '[SESSION START] The trainee is ready at the bench. Greet them briefly and announce step 1.'
     );
+    expect(client.getStats().kickoffSentCount).toBe(1);
   });
 
   it('decodes setupComplete arriving as ArrayBuffer and as Blob', async () => {
