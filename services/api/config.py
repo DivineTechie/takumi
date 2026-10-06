@@ -44,4 +44,4 @@ SESSIONS_ENABLED = os.environ.get("SESSIONS_ENABLED", "true").lower() in ("true"
 # Supervisor insight exclusions
 EXCLUDED_UIDS = set(
     filter(None, [u.strip() for u in os.environ.get("EXCLUDED_UIDS", "").split(",")])
-) | {"smoke-trainee"}
+) | {"smoke-trainee"} | {f"loadtest-{i}" for i in range(1, 11)}

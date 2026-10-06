@@ -283,7 +283,7 @@ export const StatusScreen: React.FC = () => {
 
             {/* Privacy & SLA Notice */}
             <footer className="text-center text-xs text-on-surface-variant/80 flex flex-col gap-1 py-4">
-              <p>TAKUMI Telemetry • Anonymous latency statistics only • Zero personal data retained</p>
+              <p>TAKUMI Telemetry • This page shows anonymous latency statistics only.</p>
               <p>Monitored with Google Cloud Monitoring & Model Armor security screening</p>
             </footer>
           </>
