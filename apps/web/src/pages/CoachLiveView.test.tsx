@@ -15,6 +15,12 @@ const typedSkill = seedSkill as unknown as Skill;
 vi.mock('../lib/api', () => ({
   verify: vi.fn(),
   point: vi.fn(),
+  watch: vi.fn().mockResolvedValue({
+    state: 'in_progress',
+    reason: 'in progress',
+    fix: '',
+    secs: 0.5,
+  }),
   createSession: vi.fn(),
   postSessionEvent: vi.fn(),
   endSession: vi.fn(),
@@ -23,14 +29,18 @@ vi.mock('../lib/api', () => ({
 
 // Mock Live Client
 const mockSendText = vi.fn();
+const mockSendCameraEvent = vi.fn();
 const mockManualRetry = vi.fn();
 const mockStopGating = vi.fn();
 const mockClose = vi.fn();
-const mockConnect = vi.fn();
+const mockConnect = vi.fn().mockImplementation(() => {
+  capturedCallbacks.onStateChange?.('connected');
+});
 let capturedCallbacks: Partial<LiveClientCallbacks> = {};
 
 vi.mock('../lib/live/client', () => {
   return {
+    computeMedian: vi.fn(() => 500),
     GeminiLiveClient: vi.fn().mockImplementation((config: { callbacks: LiveClientCallbacks }) => {
       capturedCallbacks = config.callbacks;
       return {
@@ -38,6 +48,7 @@ vi.mock('../lib/live/client', () => {
         sendAudio: vi.fn(),
         sendVideoFrame: vi.fn(),
         sendText: mockSendText,
+        sendCameraEvent: mockSendCameraEvent,
         stopGating: mockStopGating,
         manualRetry: mockManualRetry,
         setSpeakerMode: vi.fn(),
@@ -99,6 +110,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.history.pushState({}, '', '?debug=1');
 
     HTMLMediaElement.prototype.play = vi.fn().mockImplementation(() => Promise.resolve());
     HTMLMediaElement.prototype.pause = vi.fn();
@@ -132,6 +144,19 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     mockAudioContext = {
       resume: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
+      currentTime: 0,
+      destination: {},
+      createOscillator: vi.fn().mockReturnValue({
+        type: 'sine',
+        frequency: { setValueAtTime: vi.fn() },
+        connect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+      }),
+      createGain: vi.fn().mockReturnValue({
+        gain: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
+        connect: vi.fn(),
+      }),
     } as unknown as AudioContext;
 
     vi.mocked(apiModule.createSession).mockResolvedValue({
@@ -391,5 +416,203 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
         source: 'trainee',
       })
     );
+  });
+
+  it('0a: verify_step always checks current step regardless of step arg and returns current_step on mismatch', async () => {
+    vi.mocked(apiModule.verify).mockResolvedValue({
+      passed: false,
+      visible: true,
+      reason: 'Bare wire still loose',
+      fix: 'Tighten screw completely',
+      secs: 0.9,
+    });
+
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    // Model attempts to verify step 3 while user is actually on step 1
+    const result = await capturedCallbacks.onToolCall!({
+      id: 'call-mismatch',
+      name: 'verify_step',
+      args: { step: 3 },
+    });
+
+    // verify API was called with step 1's instruction, not step 3
+    expect(apiModule.verify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step: 1,
+        instruction: typedSkill.steps[0].instruction,
+      })
+    );
+
+    // tool result includes current_step: 1 indicating mismatch
+    expect(result).toEqual({
+      passed: false,
+      visible: true,
+      reason: 'Bare wire still loose',
+      fix: 'Tighten screw completely',
+      current_step: 1,
+    });
+  });
+
+  it('0b: advanceStep is idempotent and logs step_done only when actually advancing', async () => {
+    vi.mocked(apiModule.verify).mockResolvedValue({
+      passed: true,
+      visible: true,
+      reason: 'Done',
+      fix: '',
+      secs: 0.8,
+    });
+
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    // First verification on step 1 passes and advances
+    await capturedCallbacks.onToolCall!({
+      id: 'call-adv-1',
+      name: 'verify_step',
+      args: { step: 1 },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/Step\s+2\s+of\s+4/i)).toBeDefined();
+    });
+
+    // Call advanceStep with old step (1) again via debug hook
+    const devWindow = window as unknown as { __TAKUMI_ADVANCE_STEP__?: (from?: number) => boolean };
+    const secondAdvanceResult = devWindow.__TAKUMI_ADVANCE_STEP__?.(1);
+
+    expect(secondAdvanceResult).toBe(false);
+    // Still on step 2
+    expect(screen.getByText(/Step\s+2\s+of\s+4/i)).toBeDefined();
+  });
+
+  it('A4: Safety Sentinel triggers STOP overlay and resumes on Made Safe button tap', async () => {
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    // Trigger simulated hazard
+    const devWindow = window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: () => void };
+    devWindow.__TAKUMI_SIMULATE_HAZARD__?.();
+
+    // Alert dialog STOP is displayed
+    await waitFor(() => {
+      expect(screen.getByRole('alertdialog')).toBeDefined();
+    });
+    expect(screen.getByText('STOP')).toBeDefined();
+    expect(screen.getByText("I've made it safe")).toBeDefined();
+
+    // Verify safety_stop session event was logged
+    expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+      'session-live-123',
+      expect.objectContaining({
+        type: 'safety_stop',
+        source: 'watcher',
+      })
+    );
+
+    // Tap "I've made it safe"
+    const safeBtn = screen.getByRole('button', { name: "I've made it safe" });
+    fireEvent.click(safeBtn);
+
+    // Overlay is removed
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+  });
+
+  it('A4: Safety Sentinel displays localized Unsafe condition when hazard rule is null', async () => {
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={{ ...typedSkill, safety_rules: [] }}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    const devWindow = window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: () => void };
+    devWindow.__TAKUMI_SIMULATE_HAZARD__?.();
+
+    await waitFor(() => {
+      expect(screen.getByRole('alertdialog')).toBeDefined();
+    });
+    expect(screen.getByText('Unsafe condition')).toBeDefined();
+  });
+
+  it('A3: Step Watcher status chip is displayed in DOM', async () => {
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    // Watcher status chip is present
+    await waitFor(() => {
+      expect(screen.getByTestId('watcher-status-chip')).toBeDefined();
+    });
+    const chip = screen.getByTestId('watcher-status-chip');
+    expect(chip.textContent).toMatch(/Step 1: in progress|checking…|Can't see the work area/i);
   });
 });

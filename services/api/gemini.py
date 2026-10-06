@@ -98,6 +98,52 @@ async def create_live_token(purpose: str) -> dict[str, Any]:
     }
 
 
+def match_closest_safety_rule(raw_rule: str | None, safety_rules: list[str]) -> str | None:
+    """Matches raw_rule to the closest safety_rule from request's safety_rules.
+
+    Strategy:
+    1. Exact match (case-insensitive stripped).
+    2. Substring match (raw_rule in rule or rule in raw_rule).
+    3. Best word overlap (highest number of shared words with at least 1 word match).
+    4. If nothing matches, returns None and logs warning.
+    """
+    if not raw_rule or not safety_rules:
+        return None
+
+    cleaned_raw = raw_rule.strip().lower()
+    if not cleaned_raw:
+        return None
+
+    # 1. Exact match (case-insensitive)
+    for rule in safety_rules:
+        if rule.strip().lower() == cleaned_raw:
+            return rule
+
+    # 2. Substring match
+    for rule in safety_rules:
+        cleaned_rule = rule.strip().lower()
+        if cleaned_raw in cleaned_rule or cleaned_rule in cleaned_raw:
+            return rule
+
+    # 3. Best word overlap
+    raw_words = set(cleaned_raw.split())
+    best_match: str | None = None
+    best_overlap = 0
+
+    for rule in safety_rules:
+        rule_words = set(rule.strip().lower().split())
+        overlap = len(raw_words.intersection(rule_words))
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best_match = rule
+
+    if best_match and best_overlap > 0:
+        return best_match
+
+    logger.warning("Hazard rule '%s' could not be mapped to any safety_rules: %s", raw_rule, safety_rules)
+    return None
+
+
 async def call_watch(
     step: int,
     instruction: str,
@@ -165,16 +211,22 @@ async def call_watch(
         reason = _truncate_words(str(parsed.get("reason", "")), 12)
         fix = _truncate_words(str(parsed.get("fix", "")), 10)
 
+        rule: str | None = None
+        if state == "hazard":
+            raw_rule = parsed.get("rule")
+            rule = match_closest_safety_rule(str(raw_rule) if raw_rule else None, safety_rules)
+
         # Log state and latency, never the image
         logger.info(
             "Watch call completed",
-            extra={"props": {"endpoint": "watch", "state": state, "latency_s": secs}},
+            extra={"props": {"endpoint": "watch", "state": state, "latency_s": secs, "rule": rule}},
         )
 
         return {
             "state": state,
             "reason": reason,
             "fix": fix,
+            "rule": rule,
             "secs": secs,
         }
 
@@ -189,6 +241,7 @@ async def call_watch(
             "state": "error",
             "reason": error_class,
             "fix": "",
+            "rule": None,
             "secs": secs,
         }
 

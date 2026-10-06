@@ -32,5 +32,12 @@
   "light_mode": "Chế độ sáng",
   "dark_mode": "Chế độ tối",
   "sign_out": "Đăng xuất",
-  "loading": "Đang tải..."
+  "loading": "Đang tải...",
+  "safety_stop_title": "DỪNG LẠI",
+  "safety_stop_unsafe_condition": "Điều kiện không an toàn",
+  "safety_stop_keep_hands": "Giữ tay của bạn tránh xa.",
+  "safety_stop_action_btn": "Tôi đã xử lý an toàn",
+  "watcher_in_progress": "Bước {step}: đang thực hiện",
+  "watcher_checking": "đang kiểm tra…",
+  "watcher_cant_see": "Không nhìn thấy khu vực làm việc"
 }

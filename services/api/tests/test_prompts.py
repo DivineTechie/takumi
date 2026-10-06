@@ -41,3 +41,7 @@ def test_verifier_and_pointer_templates():
 
     assert verifier_safety_rule in VERIFIER_PROMPT_TEMPLATE
     assert verifier_passed_rule in VERIFIER_PROMPT_TEMPLATE
+
+    from services.api.prompts import WatcherResponse
+    assert "when state is hazard, copy the violated rule exactly into rule" in WATCHER_PROMPT_TEMPLATE.lower()
+    assert "rule" in WatcherResponse.model_fields

@@ -65,6 +65,7 @@ export interface WatchResponse {
   state: 'done' | 'in_progress' | 'mistake' | 'not_visible' | 'hazard' | 'error';
   reason: string;
   fix: string;
+  rule?: string | null;
   secs: number;
 }
 

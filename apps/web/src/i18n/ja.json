@@ -32,5 +32,12 @@
   "light_mode": "ライトモード",
   "dark_mode": "ダークモード",
   "sign_out": "ログアウト",
-  "loading": "読み込み中..."
+  "loading": "読み込み中...",
+  "safety_stop_title": "STOP",
+  "safety_stop_unsafe_condition": "安全ではない状態",
+  "safety_stop_keep_hands": "手を離してください。",
+  "safety_stop_action_btn": "安全を確認しました",
+  "watcher_in_progress": "ステップ {step}: 進行中",
+  "watcher_checking": "確認中…",
+  "watcher_cant_see": "作業エリアが見えません"
 }

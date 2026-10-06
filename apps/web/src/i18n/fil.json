@@ -32,5 +32,12 @@
   "light_mode": "Maliwanag na mode",
   "dark_mode": "Madilim na mode",
   "sign_out": "Mag-sign out",
-  "loading": "Naglo-load..."
+  "loading": "Naglo-load...",
+  "safety_stop_title": "TIGIL",
+  "safety_stop_unsafe_condition": "Hindi ligtas na kondisyon",
+  "safety_stop_keep_hands": "Ilayo ang iyong mga kamay.",
+  "safety_stop_action_btn": "Ginawa ko na itong ligtas",
+  "watcher_in_progress": "Hakbang {step}: isinasagawa",
+  "watcher_checking": "sinusuri…",
+  "watcher_cant_see": "Hindi makita ang lugar ng trabaho"
 }

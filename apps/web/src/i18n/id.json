@@ -32,5 +32,12 @@
   "light_mode": "Mode terang",
   "dark_mode": "Mode gelap",
   "sign_out": "Keluar",
-  "loading": "Memuat..."
+  "loading": "Memuat...",
+  "safety_stop_title": "BERHENTI",
+  "safety_stop_unsafe_condition": "Kondisi tidak aman",
+  "safety_stop_keep_hands": "Jauhkan tangan Anda.",
+  "safety_stop_action_btn": "Sudah saya amankan",
+  "watcher_in_progress": "Langkah {step}: sedang berlangsung",
+  "watcher_checking": "memeriksa…",
+  "watcher_cant_see": "Tidak dapat melihat area kerja"
 }

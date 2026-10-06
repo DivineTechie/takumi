@@ -94,4 +94,125 @@ def test_watch_fast_error_fallback():
                 # Error class name only, never text that could be spoken to the trainee
                 assert data["reason"] == "TimeoutError"
                 assert data["fix"] == ""
+                assert data["rule"] is None
                 assert isinstance(data["secs"], (int, float))
+
+
+def test_watch_hazard_rule_mapping():
+    sample_b64 = _create_sample_jpeg_b64()
+    safety_rules = [
+        "No bare copper visible outside a terminal",
+        "Disconnect power before servicing",
+    ]
+
+    mock_resp = MagicMock()
+    mock_genai_client = MagicMock()
+    mock_genai_client.models.generate_content.return_value = mock_resp
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}):
+        with patch("services.api.main.check_rate_limit"):
+            with patch("services.api.gemini.get_genai_client", return_value=mock_genai_client):
+                # 1. Exact match (case-insensitive)
+                mock_resp.text = json.dumps({
+                    "state": "hazard",
+                    "reason": "Exposed copper seen",
+                    "fix": "Push wire in",
+                    "rule": "no bare copper visible outside a terminal",
+                })
+                res = client.post(
+                    "/api/watch",
+                    json={
+                        "step": 1,
+                        "instruction": "Insert wire",
+                        "success_criteria": "Done",
+                        "safety_rules": safety_rules,
+                        "image_b64": sample_b64,
+                    },
+                    headers={"Authorization": "Bearer token"},
+                )
+                assert res.status_code == 200
+                assert res.json()["rule"] == "No bare copper visible outside a terminal"
+
+                # 2. Substring match
+                mock_resp.text = json.dumps({
+                    "state": "hazard",
+                    "reason": "Power connected",
+                    "fix": "Cut power",
+                    "rule": "power before servicing",
+                })
+                res = client.post(
+                    "/api/watch",
+                    json={
+                        "step": 1,
+                        "instruction": "Insert wire",
+                        "success_criteria": "Done",
+                        "safety_rules": safety_rules,
+                        "image_b64": sample_b64,
+                    },
+                    headers={"Authorization": "Bearer token"},
+                )
+                assert res.status_code == 200
+                assert res.json()["rule"] == "Disconnect power before servicing"
+
+                # 3. Word overlap match
+                mock_resp.text = json.dumps({
+                    "state": "hazard",
+                    "reason": "Bare copper seen",
+                    "fix": "Cover copper",
+                    "rule": "bare copper terminal area",
+                })
+                res = client.post(
+                    "/api/watch",
+                    json={
+                        "step": 1,
+                        "instruction": "Insert wire",
+                        "success_criteria": "Done",
+                        "safety_rules": safety_rules,
+                        "image_b64": sample_b64,
+                    },
+                    headers={"Authorization": "Bearer token"},
+                )
+                assert res.status_code == 200
+                assert res.json()["rule"] == "No bare copper visible outside a terminal"
+
+                # 4. Unmatched rule -> returns None
+                mock_resp.text = json.dumps({
+                    "state": "hazard",
+                    "reason": "Slippery floor",
+                    "fix": "Clean up",
+                    "rule": "wet floor slippery hazard",
+                })
+                res = client.post(
+                    "/api/watch",
+                    json={
+                        "step": 1,
+                        "instruction": "Insert wire",
+                        "success_criteria": "Done",
+                        "safety_rules": safety_rules,
+                        "image_b64": sample_b64,
+                    },
+                    headers={"Authorization": "Bearer token"},
+                )
+                assert res.status_code == 200
+                assert res.json()["rule"] is None
+
+                # 5. Non-hazard -> rule is None
+                mock_resp.text = json.dumps({
+                    "state": "in_progress",
+                    "reason": "Working",
+                    "fix": "",
+                    "rule": "No bare copper visible outside a terminal",
+                })
+                res = client.post(
+                    "/api/watch",
+                    json={
+                        "step": 1,
+                        "instruction": "Insert wire",
+                        "success_criteria": "Done",
+                        "safety_rules": safety_rules,
+                        "image_b64": sample_b64,
+                    },
+                    headers={"Authorization": "Bearer token"},
+                )
+                assert res.status_code == 200
+                assert res.json()["rule"] is None

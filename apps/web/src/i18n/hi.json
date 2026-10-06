@@ -32,5 +32,12 @@
   "light_mode": "लाइट मोड",
   "dark_mode": "डार्क मोड",
   "sign_out": "साइन आउट",
-  "loading": "लोड हो रहा है..."
+  "loading": "लोड हो रहा है...",
+  "safety_stop_title": "रुकें",
+  "safety_stop_unsafe_condition": "असुरक्षित स्थिति",
+  "safety_stop_keep_hands": "अपने हाथ दूर रखें।",
+  "safety_stop_action_btn": "मैंने इसे सुरक्षित कर दिया है",
+  "watcher_in_progress": "कदम {step}: प्रगति पर है",
+  "watcher_checking": "जाँच हो रही है…",
+  "watcher_cant_see": "कार्य क्षेत्र दिखाई नहीं दे रहा है"
 }

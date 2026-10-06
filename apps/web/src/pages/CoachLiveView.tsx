@@ -2,18 +2,21 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Skill } from '../../../../shared/schema/ts/skills';
 import type { LanguageCode } from '../i18n';
+import { useTranslation } from '../i18n';
 import {
   LANGUAGE_DISPLAY_NAMES,
   type LiveClientStats,
   type LiveConnectionState,
   type LiveTranscriptItem,
 } from '../lib/live/types';
-import { GeminiLiveClient } from '../lib/live/client';
+import { GeminiLiveClient, computeMedian } from '../lib/live/client';
 import { OutputAudioQueue, setupMicCapture, type MicCaptureHandle } from '../lib/live/audio';
 import { isCameraMirrored, captureVideoFrame, captureVideoFrameAsync } from '../lib/live/video';
 import { SessionCapTimer } from '../lib/live/sessionCap';
 import { renderReticles, type ReticlePoint } from '../lib/live/reticle';
-import { verify, point, createSession, postSessionEvent, endSession } from '../lib/api';
+import { verify, point, watch, createSession, postSessionEvent, endSession, type WatchRequest } from '../lib/api';
+import { SafetyStop } from '../components/SafetyStop';
+import { watcherReducer, INITIAL_WATCHER_STATE, type WatcherStreakState } from '../lib/live/watcher';
 
 interface CoachLiveViewProps {
   skill: Skill;
@@ -34,6 +37,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   speakerMode = true,
   onEnd,
 }) => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const isDebug = new URLSearchParams(window.location.search).get('debug') === '1';
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -50,6 +54,15 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const [debugOpen, setDebugOpen] = useState<boolean>(true);
   const [isLessonComplete, setIsLessonComplete] = useState<boolean>(false);
   const [activeReticles, setActiveReticles] = useState<ReticlePoint[]>([]);
+
+  // Watcher & Safety Stop state (Features A3/A4)
+  const [isSafetyStopOpen, setIsSafetyStopOpen] = useState<boolean>(false);
+  const [activeHazardRule, setActiveHazardRule] = useState<string | null>(null);
+  const [watcherChipState, setWatcherChipState] = useState<'in_progress' | 'checking' | 'cant_see'>('in_progress');
+  const [watcherStreakDisplay, setWatcherStreakDisplay] = useState<string>('none x 0');
+  const [watchReadsCount, setWatchReadsCount] = useState<number>(0);
+  const [watchP50Ms, setWatchP50Ms] = useState<number | null>(null);
+  const [decisionToAudioDisplay, setDecisionToAudioDisplay] = useState<string>('n/a');
 
   const [stats, setStats] = useState<LiveClientStats>({
     setupCompleteReceived: false,
@@ -85,6 +98,16 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const sessionIdRef = useRef<string | null>(null);
   const sessionStartTimeRef = useRef<number>(Date.now());
 
+  // Watcher loop refs
+  const isToolInFlightRef = useRef<boolean>(false);
+  const isWatchInFlightRef = useRef<boolean>(false);
+  const watcherStateRef = useRef<WatcherStreakState>(INITIAL_WATCHER_STATE);
+  const watchReadsCountRef = useRef<number>(0);
+  const watchLatenciesRef = useRef<number[]>([]);
+  const lastCameraEventRef = useRef<string>('');
+  const decisionToAudioLatenciesRef = useRef<number[]>([]);
+  const pendingAudioCallbackRef = useRef<(() => void) | null>(null);
+
   // Determine mirroring
   const videoTrack = stream.getVideoTracks()[0];
   const mirrored = isCameraMirrored(videoTrack);
@@ -92,14 +115,78 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
   const currentStepRef = useRef<number>(currentStep);
   currentStepRef.current = currentStep;
+  const isCompletedRef = useRef<boolean>(false);
 
-  // Advance step hook (used by verifier, watcher, and manual)
-  const advanceStep = useCallback(() => {
-    setCurrentStep((prev) => {
-      const next = Math.min(skill.steps.length, prev + 1);
-      return next;
-    });
-  }, [skill.steps.length]);
+  // Advance step hook (idempotent: advances only if currentStepRef matches fromStep)
+  const advanceStep = useCallback(
+    (fromStep?: number): boolean => {
+      const stepToAdvance = fromStep !== undefined ? fromStep : currentStepRef.current;
+      if (currentStepRef.current !== stepToAdvance) {
+        return false;
+      }
+      if (isCompletedRef.current) {
+        return false;
+      }
+      if (stepToAdvance >= skill.steps.length) {
+        isCompletedRef.current = true;
+        currentStepRef.current = skill.steps.length + 1;
+        return true;
+      }
+      const next = stepToAdvance + 1;
+      currentStepRef.current = next;
+      setCurrentStep(next);
+      return true;
+    },
+    [skill.steps.length]
+  );
+
+  // Decision-to-audio timing helper
+  const trackDecisionToAudio = useCallback(
+    (
+      type: 'step_done' | 'mistake',
+      step: number,
+      reason: string,
+      onPosted?: () => void
+    ) => {
+      const decisionTime = performance.now();
+      let resolved = false;
+
+      const triggerPost = (arrivalMs: number) => {
+        if (resolved) return;
+        resolved = true;
+        pendingAudioCallbackRef.current = null;
+        const latencyMs = Math.round(arrivalMs - decisionTime);
+        decisionToAudioLatenciesRef.current.push(latencyMs);
+        const last = latencyMs;
+        const med = computeMedian(decisionToAudioLatenciesRef.current) ?? last;
+        setDecisionToAudioDisplay(`${last}ms / med ${med}ms`);
+
+        if (sessionIdRef.current) {
+          postSessionEvent(sessionIdRef.current, {
+            step,
+            type,
+            source: 'watcher',
+            reason,
+            latency_ms: latencyMs,
+          })
+            .then(() => onPosted?.())
+            .catch((err) => {
+              console.warn(`Failed to log ${type} event:`, err);
+              onPosted?.();
+            });
+        } else {
+          onPosted?.();
+        }
+      };
+
+      pendingAudioCallbackRef.current = () => triggerPost(performance.now());
+
+      window.setTimeout(() => {
+        triggerPost(decisionTime + 3000);
+      }, 3000);
+    },
+    []
+  );
 
   // Handle caption updates with 4s auto-fade
   const handleTranscript = useCallback((item: LiveTranscriptItem) => {
@@ -125,13 +212,16 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
   // Expose advance and simulate transcript hooks for testing/preview harness
   useEffect(() => {
-    (window as unknown as { __TAKUMI_ADVANCE_STEP__?: () => void }).__TAKUMI_ADVANCE_STEP__ = advanceStep;
+    if (isDebug) {
+      (window as unknown as { __TAKUMI_ADVANCE_STEP__?: (fromStep?: number) => boolean }).__TAKUMI_ADVANCE_STEP__ =
+        (fromStep?: number) => advanceStep(fromStep ?? currentStepRef.current);
+    }
     (window as unknown as { __TAKUMI_SIMULATE_TRANSCRIPT__?: (item: LiveTranscriptItem) => void }).__TAKUMI_SIMULATE_TRANSCRIPT__ = handleTranscript;
     return () => {
-      delete (window as unknown as { __TAKUMI_ADVANCE_STEP__?: () => void }).__TAKUMI_ADVANCE_STEP__;
-      delete (window as unknown as { __TAKUMI_SIMULATE_TRANSCRIPT__?: (item: LiveTranscriptItem) => void }).__TAKUMI_SIMULATE_TRANSCRIPT__;
+      delete (window as unknown as { __TAKUMI_ADVANCE_STEP__?: unknown }).__TAKUMI_ADVANCE_STEP__;
+      delete (window as unknown as { __TAKUMI_SIMULATE_TRANSCRIPT__?: unknown }).__TAKUMI_SIMULATE_TRANSCRIPT__;
     };
-  }, [advanceStep, handleTranscript]);
+  }, [advanceStep, handleTranscript, isDebug]);
 
   // Canvas reticle animation loop
   useEffect(() => {
@@ -224,6 +314,11 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         onAudioChunk: (chunk) => {
           setIsCoachSpeaking(true);
           audioQueue.enqueue(chunk);
+          if (pendingAudioCallbackRef.current) {
+            const cb = pendingAudioCallbackRef.current;
+            pendingAudioCallbackRef.current = null;
+            cb();
+          }
         },
         onInterrupted: () => {
           audioQueue.flush();
@@ -235,146 +330,187 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         onToolCall: async (call) => {
           // --- Tool 1: verify_step ---
           if (call.name === 'verify_step') {
-            const stepN =
-              typeof call.args?.step === 'number'
-                ? (call.args.step as number)
-                : currentStepRef.current;
-            const stepObj =
-              skill.steps.find((s) => s.n === stepN) || skill.steps[0];
-            const frame = videoRef.current
-              ? captureVideoFrame(videoRef.current, {
-                  targetWidth: 1280,
-                  mirrored: isMirroredRef.current,
-                  quality: 0.85,
-                })
-              : null;
-
-            if (!frame) {
-              return {
-                passed: false,
-                visible: false,
-                reason: 'Camera frame not available',
-                fix: 'Hold camera steady and ensure workspace is visible',
-              };
-            }
-
-            const start = performance.now();
+            isToolInFlightRef.current = true;
             try {
-              const resp = await verify({
-                step: stepN,
-                instruction: stepObj.instruction,
-                success_criteria: Array.isArray(stepObj.success_criteria)
-                  ? stepObj.success_criteria.join('; ')
-                  : String(stepObj.success_criteria),
-                safety_rules: skill.safety_rules || [],
-                image_b64: frame,
-              });
-              const latencyMs = Math.round(performance.now() - start);
+              const stepN = currentStepRef.current;
+              const modelStep =
+                typeof call.args?.step === 'number'
+                  ? (call.args.step as number)
+                  : stepN;
+              const stepDiffers = modelStep !== stepN;
+              const stepObj =
+                skill.steps.find((s) => s.n === stepN) || skill.steps[0];
+              const frame = videoRef.current
+                ? captureVideoFrame(videoRef.current, {
+                    targetWidth: 1280,
+                    mirrored: isMirroredRef.current,
+                    quality: 0.85,
+                  })
+                : null;
 
-              // Log verify event
-              if (sessionIdRef.current) {
-                postSessionEvent(sessionIdRef.current, {
-                  step: stepN,
-                  type: 'verify',
-                  source: 'verify',
-                  reason: JSON.stringify({
-                    passed: resp.passed,
-                    visible: resp.visible,
-                    reason: resp.reason,
-                    fix: resp.fix,
-                  }),
-                  latency_ms: latencyMs,
-                }).catch((err) => console.warn('Failed to log verify event:', err));
+              if (!frame) {
+                const res: Record<string, unknown> = {
+                  passed: false,
+                  visible: false,
+                  reason: 'Camera frame not available',
+                  fix: 'Hold camera steady and ensure workspace is visible',
+                };
+                if (stepDiffers) {
+                  res.current_step = stepN;
+                }
+                return res;
               }
 
-              if (resp.passed) {
-                // Log step_done event
+              const start = performance.now();
+              try {
+                const resp = await verify({
+                  step: stepN,
+                  instruction: stepObj.instruction,
+                  success_criteria: Array.isArray(stepObj.success_criteria)
+                    ? stepObj.success_criteria.join('; ')
+                    : String(stepObj.success_criteria),
+                  safety_rules: skill.safety_rules || [],
+                  image_b64: frame,
+                });
+                const latencyMs = Math.round(performance.now() - start);
+
+                // Log verify event
                 if (sessionIdRef.current) {
                   postSessionEvent(sessionIdRef.current, {
                     step: stepN,
-                    type: 'step_done',
+                    type: 'verify',
                     source: 'verify',
+                    reason: JSON.stringify({
+                      passed: resp.passed,
+                      visible: resp.visible,
+                      reason: resp.reason,
+                      fix: resp.fix,
+                    }),
                     latency_ms: latencyMs,
-                  }).catch((err) => console.warn('Failed to log step_done event:', err));
+                  }).catch((err) => console.warn('Failed to log verify event:', err));
                 }
 
-                advanceStep();
+                if (resp.passed) {
+                  const advanced = advanceStep(stepN);
+                  if (advanced && sessionIdRef.current) {
+                    const postPromise = postSessionEvent(sessionIdRef.current, {
+                      step: stepN,
+                      type: 'step_done',
+                      source: 'verify',
+                      latency_ms: latencyMs,
+                    });
 
-                if (stepN >= skill.steps.length) {
-                  setIsLessonComplete(true);
-                  if (sessionIdRef.current) {
-                    endSession(sessionIdRef.current, 'completed').catch((err) =>
-                      console.warn('Failed to complete session:', err)
-                    );
+                    if (stepN >= skill.steps.length) {
+                      setIsLessonComplete(true);
+                      try {
+                        await Promise.race([
+                          postPromise,
+                          new Promise((resolve) => setTimeout(resolve, 3000)),
+                        ]);
+                      } catch (err) {
+                        console.warn('Failed or timed out posting final step_done:', err);
+                      }
+                      if (sessionIdRef.current) {
+                        try {
+                          await endSession(sessionIdRef.current, 'completed');
+                        } catch (err) {
+                          console.warn('Failed to complete session:', err);
+                        }
+                      }
+                    }
+                  } else if (advanced && stepN >= skill.steps.length) {
+                    setIsLessonComplete(true);
+                    if (sessionIdRef.current) {
+                      try {
+                        await endSession(sessionIdRef.current, 'completed');
+                      } catch (err) {
+                        console.warn('Failed to complete session:', err);
+                      }
+                    }
                   }
                 }
-              }
 
-              return {
-                passed: resp.passed,
-                visible: resp.visible,
-                reason: resp.reason,
-                fix: resp.fix,
-              };
-            } catch (err) {
-              console.error('verify_step execution failed:', err);
-              return {
-                passed: false,
-                visible: false,
-                reason: 'Verification request failed',
-                fix: 'Please try again',
-              };
+                const result: Record<string, unknown> = {
+                  passed: resp.passed,
+                  visible: resp.visible,
+                  reason: resp.reason,
+                  fix: resp.fix,
+                };
+                if (stepDiffers) {
+                  result.current_step = stepN;
+                }
+                return result;
+              } catch (err) {
+                console.error('verify_step execution failed:', err);
+                const errResult: Record<string, unknown> = {
+                  passed: false,
+                  visible: false,
+                  reason: 'Verification request failed',
+                  fix: 'Please try again',
+                };
+                if (stepDiffers) {
+                  errResult.current_step = stepN;
+                }
+                return errResult;
+              }
+            } finally {
+              isToolInFlightRef.current = false;
             }
           }
 
           // --- Tool 2: point_at ---
           if (call.name === 'point_at') {
-            const target = String(call.args?.target || 'target component');
-            const frame = videoRef.current
-              ? captureVideoFrame(videoRef.current, {
-                  targetWidth: 1280,
-                  mirrored: isMirroredRef.current,
-                  quality: 0.85,
-                })
-              : null;
-
-            if (!frame) {
-              return { result: { status: 'no visible target' } };
-            }
-
-            const start = performance.now();
+            isToolInFlightRef.current = true;
             try {
-              const resp = await point({ target, image_b64: frame });
-              const latencyMs = Math.round(performance.now() - start);
+              const target = String(call.args?.target || 'target component');
+              const frame = videoRef.current
+                ? captureVideoFrame(videoRef.current, {
+                    targetWidth: 1280,
+                    mirrored: isMirroredRef.current,
+                    quality: 0.85,
+                  })
+                : null;
 
-              if (sessionIdRef.current) {
-                postSessionEvent(sessionIdRef.current, {
-                  step: currentStepRef.current,
-                  type: 'point',
-                  source: 'coach',
-                  reason: target,
-                  latency_ms: latencyMs,
-                }).catch((err) => console.warn('Failed to log point event:', err));
-              }
-
-              if (resp.points && resp.points.length > 0) {
-                setActiveReticles(resp.points);
-                if (reticleClearTimeoutRef.current !== null) {
-                  clearTimeout(reticleClearTimeoutRef.current);
-                }
-                reticleClearTimeoutRef.current = window.setTimeout(() => {
-                  setActiveReticles([]);
-                  reticleClearTimeoutRef.current = null;
-                }, 6000);
-
-                return { result: { shown: resp.points.length } };
-              } else {
-                setActiveReticles([]);
+              if (!frame) {
                 return { result: { status: 'no visible target' } };
               }
-            } catch (err) {
-              console.error('point_at execution failed:', err);
-              return { result: { status: 'no visible target' } };
+
+              const start = performance.now();
+              try {
+                const resp = await point({ target, image_b64: frame });
+                const latencyMs = Math.round(performance.now() - start);
+
+                if (sessionIdRef.current) {
+                  postSessionEvent(sessionIdRef.current, {
+                    step: currentStepRef.current,
+                    type: 'point',
+                    source: 'coach',
+                    reason: target,
+                    latency_ms: latencyMs,
+                  }).catch((err) => console.warn('Failed to log point event:', err));
+                }
+
+                if (resp.points && resp.points.length > 0) {
+                  setActiveReticles(resp.points);
+                  if (reticleClearTimeoutRef.current !== null) {
+                    clearTimeout(reticleClearTimeoutRef.current);
+                  }
+                  reticleClearTimeoutRef.current = window.setTimeout(() => {
+                    setActiveReticles([]);
+                    reticleClearTimeoutRef.current = null;
+                  }, 6000);
+
+                  return { result: { shown: resp.points.length } };
+                } else {
+                  setActiveReticles([]);
+                  return { result: { status: 'no visible target' } };
+                }
+              } catch (err) {
+                console.error('point_at execution failed:', err);
+                return { result: { status: 'no visible target' } };
+              }
+            } finally {
+              isToolInFlightRef.current = false;
             }
           }
 
@@ -532,6 +668,252 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     clientRef.current?.setSpeakerMode(speakerMode);
   }, [speakerMode]);
 
+  // 3. Watcher Loop (Features A3 & A4)
+  useEffect(() => {
+    if (connectionState !== 'connected' || isLessonComplete || isSafetyStopOpen) {
+      return;
+    }
+
+    let isCancelled = false;
+    let loopTimeout: number | null = null;
+
+    const runWatcherTick = async () => {
+      if (isCancelled || connectionState !== 'connected' || isLessonComplete || isSafetyStopOpen) {
+        return;
+      }
+
+      // Skip conditions: tool call in flight, watch in flight, or tab hidden
+      if (
+        document.visibilityState === 'hidden' ||
+        isToolInFlightRef.current ||
+        isWatchInFlightRef.current
+      ) {
+        loopTimeout = window.setTimeout(runWatcherTick, 400);
+        return;
+      }
+
+      const video = videoRef.current;
+      if (!video || !video.videoWidth || !video.videoHeight) {
+        loopTimeout = window.setTimeout(runWatcherTick, 400);
+        return;
+      }
+
+      const stepN = currentStepRef.current;
+      const stepObj = skill.steps.find((s) => s.n === stepN) || skill.steps[0];
+      const frame = captureVideoFrame(video, {
+        targetWidth: 640,
+        mirrored: isMirroredRef.current,
+        quality: 0.8,
+      });
+
+      if (!frame) {
+        loopTimeout = window.setTimeout(runWatcherTick, 400);
+        return;
+      }
+
+      isWatchInFlightRef.current = true;
+      setWatcherChipState('checking');
+
+      try {
+        const watchReq: WatchRequest = {
+          step: stepN,
+          instruction: stepObj.instruction,
+          success_criteria: Array.isArray(stepObj.success_criteria)
+            ? stepObj.success_criteria.join('; ')
+            : String(stepObj.success_criteria),
+          common_mistakes: stepObj.common_mistakes || [],
+          safety_rules: skill.safety_rules || [],
+          image_b64: frame,
+        };
+
+        const resp = await watch(watchReq);
+
+        watchReadsCountRef.current++;
+        setWatchReadsCount(watchReadsCountRef.current);
+        const watchLatencyMs = Math.round(resp.secs * 1000);
+        watchLatenciesRef.current.push(watchLatencyMs);
+        setWatchP50Ms(computeMedian(watchLatenciesRef.current));
+
+        if (resp.state === 'not_visible') {
+          setWatcherChipState('cant_see');
+        } else {
+          setWatcherChipState('in_progress');
+        }
+
+        const now = Date.now();
+        const { state: nextWatcherState, effect } = watcherReducer(
+          watcherStateRef.current,
+          {
+            type: 'READ',
+            step: stepN,
+            watchResponse: resp,
+            now,
+          }
+        );
+        watcherStateRef.current = nextWatcherState;
+        setWatcherStreakDisplay(
+          `${nextWatcherState.lastState ?? 'none'} x ${nextWatcherState.consecutiveCount}`
+        );
+
+        // Process effect
+        if (effect.type === 'SAFETY_STOP') {
+          // Hazard x1 -> SAFETY STOP immediately
+          setIsSafetyStopOpen(true);
+          const hazardRule = effect.rule ?? null;
+          setActiveHazardRule(hazardRule);
+          audioQueueRef.current?.flush();
+          clientRef.current?.stopGating();
+
+          const ruleText = hazardRule || 'Unsafe condition';
+          const msg = `SAFETY STOP: ${ruleText}. Tell the trainee to stop and keep their hands away, in under 8 words, now.`;
+          clientRef.current?.sendCameraEvent(msg);
+          lastCameraEventRef.current = msg;
+
+          // Event timing: post safety_stop IMMEDIATELY with latency_ms = watch latency
+          if (sessionIdRef.current) {
+            postSessionEvent(sessionIdRef.current, {
+              step: stepN,
+              type: 'safety_stop',
+              source: 'watcher',
+              reason: hazardRule || 'Unsafe condition',
+              latency_ms: watchLatencyMs,
+            }).catch((err) => console.warn('Failed to log safety_stop event:', err));
+          }
+        } else if (effect.type === 'ADVANCE_STEP') {
+          // done x2 -> advance step
+          const advanced = advanceStep(stepN);
+          if (advanced) {
+            const nextStepObj = skill.steps.find((s) => s.n === stepN + 1);
+            const isLast = stepN >= skill.steps.length;
+
+            if (isLast) {
+              const msg =
+                'All steps are verified complete. Congratulate the trainee in one sentence.';
+              clientRef.current?.sendCameraEvent(msg);
+              lastCameraEventRef.current = msg;
+            } else {
+              const nextInstruction = nextStepObj?.instruction || 'Next step';
+              const msg = `Step ${stepN} is verified complete (${effect.reason}). Give brief praise and announce step ${stepN + 1}: ${nextInstruction}`;
+              clientRef.current?.sendCameraEvent(msg);
+              lastCameraEventRef.current = msg;
+            }
+
+            // Post step_done when first coach audio arrives (or at 3s timeout)
+            trackDecisionToAudio('step_done', stepN, effect.reason, () => {
+              if (isLast) {
+                setIsLessonComplete(true);
+                if (sessionIdRef.current) {
+                  endSession(sessionIdRef.current, 'completed').catch((err) =>
+                    console.warn('Failed to complete session:', err)
+                  );
+                }
+              }
+            });
+          }
+        } else if (effect.type === 'WARN_MISTAKE') {
+          // mistake x2
+          const msg = `Mistake on step ${stepN}: ${effect.reason}. Fix: ${effect.fix}. Tell the trainee now in one sentence and call point_at on the exact thing to fix.`;
+          clientRef.current?.sendCameraEvent(msg);
+          lastCameraEventRef.current = msg;
+          trackDecisionToAudio('mistake', stepN, effect.reason);
+        } else if (effect.type === 'NUDGE_NOT_VISIBLE') {
+          // not_visible x4
+          const msg =
+            'The camera cannot see the work area. In one short sentence, ask the trainee to move their hands aside or hold the phone steady.';
+          clientRef.current?.sendCameraEvent(msg);
+          lastCameraEventRef.current = msg;
+
+          if (sessionIdRef.current) {
+            postSessionEvent(sessionIdRef.current, {
+              step: stepN,
+              type: 'blocked',
+              source: 'watcher',
+              reason: effect.reason || "Can't see work area",
+              latency_ms: 0,
+            }).catch((err) => console.warn('Failed to log blocked event:', err));
+          }
+        }
+      } catch (err) {
+        console.warn('Watcher tick error:', err);
+      } finally {
+        isWatchInFlightRef.current = false;
+        if (!isCancelled) {
+          loopTimeout = window.setTimeout(runWatcherTick, 400);
+        }
+      }
+    };
+
+    loopTimeout = window.setTimeout(runWatcherTick, 400);
+
+    return () => {
+      isCancelled = true;
+      if (loopTimeout !== null) {
+        clearTimeout(loopTimeout);
+      }
+    };
+  }, [
+    connectionState,
+    isLessonComplete,
+    isSafetyStopOpen,
+    skill,
+    advanceStep,
+    trackDecisionToAudio,
+  ]);
+
+  // Handle "I've made it safe" in Safety Stop overlay
+  const handleMadeSafe = () => {
+    setIsSafetyStopOpen(false);
+    setActiveHazardRule(null);
+    watcherStateRef.current = {
+      ...watcherStateRef.current,
+      lastState: null,
+      consecutiveCount: 0,
+    };
+    setWatcherStreakDisplay('none x 0');
+    const stepN = currentStepRef.current;
+    const stepObj = skill.steps.find((s) => s.n === stepN) || skill.steps[0];
+    const msg = `The trainee says the hazard is fixed. Continue with step ${stepN}: ${stepObj.instruction}`;
+    clientRef.current?.sendCameraEvent(msg);
+    lastCameraEventRef.current = msg;
+  };
+
+  // Simulate hazard for testing and debug mode
+  const triggerSimulatedHazard = useCallback(() => {
+    setIsSafetyStopOpen(true);
+    const hazardRule =
+      skill.safety_rules && skill.safety_rules.length > 0
+        ? skill.safety_rules[0]
+        : null;
+    setActiveHazardRule(hazardRule);
+    audioQueueRef.current?.flush();
+    clientRef.current?.stopGating();
+    const ruleText = hazardRule || 'Unsafe condition';
+    const msg = `SAFETY STOP: ${ruleText}. Tell the trainee to stop and keep their hands away, in under 8 words, now.`;
+    clientRef.current?.sendCameraEvent(msg);
+    lastCameraEventRef.current = msg;
+
+    if (sessionIdRef.current) {
+      postSessionEvent(sessionIdRef.current, {
+        step: currentStepRef.current,
+        type: 'safety_stop',
+        source: 'watcher',
+        reason: ruleText,
+        latency_ms: 0,
+      }).catch((err) => console.warn('Failed to log simulated safety_stop event:', err));
+    }
+  }, [skill.safety_rules]);
+
+  // Expose simulated hazard in debug mode for test harness
+  useEffect(() => {
+    if (isDebug) {
+      (window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: () => void }).__TAKUMI_SIMULATE_HAZARD__ =
+        triggerSimulatedHazard;
+    }
+    return () => {
+      delete (window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: unknown }).__TAKUMI_SIMULATE_HAZARD__;
+    };
+  }, [triggerSimulatedHazard, isDebug]);
+
   // Handle "Why?" button action
   const handleAskWhy = () => {
     if (clientRef.current) {
@@ -564,15 +946,20 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
   // Restart for "Practise again" on Lesson Complete
   const handlePractiseAgain = () => {
+    isCompletedRef.current = false;
     setIsLessonComplete(false);
     setCurrentStep(1);
+    currentStepRef.current = 1;
     sessionStartTimeRef.current = Date.now();
     clientRef.current?.sendText(
       '[SESSION RESTART] The trainee wants to practise again from step 1. Greet them and announce step 1.'
     );
   };
 
-  const activeStepObj = skill.steps.find((s) => s.n === currentStep) || skill.steps[0];
+  const activeStepObj =
+    skill.steps.find((s) => s.n === currentStep) ||
+    skill.steps[skill.steps.length - 1] ||
+    skill.steps[0];
   const localizedStep = activeStepObj.translations?.[language];
   const activeInstruction = localizedStep?.instruction || activeStepObj.instruction;
   const isTranslatedLive = !localizedStep && language !== 'en';
@@ -939,6 +1326,41 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                       : 'none'}
                   </span>
                 </div>
+                <div>
+                  <span className="text-white/60">watch reads: </span>
+                  <span className="text-white font-bold">{watchReadsCount}</span>
+                </div>
+                <div>
+                  <span className="text-white/60">watch p50: </span>
+                  <span className="text-white font-bold">
+                    {watchP50Ms != null ? `${watchP50Ms}ms` : 'n/a'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-white/60">streak: </span>
+                  <span className="text-white font-bold">{watcherStreakDisplay}</span>
+                </div>
+                <div>
+                  <span className="text-white/60">decision-to-audio: </span>
+                  <span className="text-white font-bold">{decisionToAudioDisplay}</span>
+                </div>
+                <div className="col-span-2 truncate">
+                  <span className="text-white/60">last camera event: </span>
+                  <span className="text-white/80" title={lastCameraEventRef.current}>
+                    {lastCameraEventRef.current || 'none'}
+                  </span>
+                </div>
+                <div className="col-span-2 pt-2 border-t border-white/10 flex items-center justify-between">
+                  <span className="text-white/60">hazard test:</span>
+                  <button
+                    type="button"
+                    onClick={triggerSimulatedHazard}
+                    data-testid="simulate-hazard-btn"
+                    className="px-2.5 py-1 rounded bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-[11px] uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    Simulate Hazard
+                  </button>
+                </div>
               </div>
             )}
           </aside>
@@ -1042,6 +1464,32 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   </>
                 )}
 
+                {/* Watcher Status Chip (A3 Step Watcher) */}
+                {connectionState === 'connected' && (
+                  <span
+                    data-testid="watcher-status-chip"
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide border transition-colors ${
+                      watcherChipState === 'checking'
+                        ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                        : watcherChipState === 'cant_see'
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-white/10 text-white/80 border-white/15'
+                    }`}
+                  >
+                    {watcherChipState === 'checking' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
+                    )}
+                    {watcherChipState === 'cant_see' && (
+                      <span className="material-symbols-outlined text-[12px]">visibility_off</span>
+                    )}
+                    {watcherChipState === 'checking'
+                      ? t('watcher_checking')
+                      : watcherChipState === 'cant_see'
+                      ? t('watcher_cant_see')
+                      : t('watcher_in_progress', { step: currentStep })}
+                  </span>
+                )}
+
                 {isTranslatedLive && (
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-surface-container-high border border-outline-variant text-on-surface-variant">
                     Translated live
@@ -1080,6 +1528,15 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           </div>
         </section>
       </div>
+
+      {/* Safety Stop Full-Screen Overlay (A4 Safety Sentinel) */}
+      {isSafetyStopOpen && (
+        <SafetyStop
+          rule={activeHazardRule}
+          onMadeSafe={handleMadeSafe}
+          outputAudioContext={outputAudioContext}
+        />
+      )}
     </main>
   );
 };

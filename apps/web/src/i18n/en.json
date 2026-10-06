@@ -32,5 +32,12 @@
   "light_mode": "Light mode",
   "dark_mode": "Dark mode",
   "sign_out": "Sign out",
-  "loading": "Loading..."
+  "loading": "Loading...",
+  "safety_stop_title": "STOP",
+  "safety_stop_unsafe_condition": "Unsafe condition",
+  "safety_stop_keep_hands": "Keep your hands away.",
+  "safety_stop_action_btn": "I've made it safe",
+  "watcher_in_progress": "Step {step}: in progress",
+  "watcher_checking": "checking…",
+  "watcher_cant_see": "Can't see the work area"
 }

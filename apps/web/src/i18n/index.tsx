@@ -75,8 +75,11 @@ export function getTranslation(
   return text;
 }
 
-export const I18nProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [language, setLanguageState] = useState<LanguageCode>(detectLanguage);
+export const I18nProvider: React.FC<{ children: ReactNode; initialLanguage?: LanguageCode }> = ({
+  children,
+  initialLanguage,
+}) => {
+  const [language, setLanguageState] = useState<LanguageCode>(() => initialLanguage || detectLanguage());
 
   const setLanguage = (newLang: LanguageCode) => {
     setLanguageState(newLang);
@@ -110,3 +113,6 @@ export function useTranslation(): I18nContextType {
   }
   return ctx;
 }
+
+export const useI18n = useTranslation;
+

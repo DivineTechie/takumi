@@ -28,6 +28,10 @@ class WatcherResponse(BaseModel):
         ...,
         description="Short corrective action (maximum 10 words, or empty if done)",
     )
+    rule: str | None = Field(
+        default=None,
+        description="When state is hazard, the violated safety_rule copied verbatim from safety_rules; otherwise null",
+    )
 
 
 class VerifierResponse(BaseModel):
@@ -81,7 +85,7 @@ STATE DETERMINATION:
 - "done": success_criteria is completely met in this frame.
 - "in_progress": worker is actively working towards the step, no mistake or hazard.
 - "mistake": a common mistake visual cue is clearly seen.
-- "hazard": a safety rule is clearly and visibly violated in this frame.
+- "hazard": a safety rule is clearly and visibly violated in this frame. When state is hazard, copy the violated rule exactly into rule.
 - "not_visible": relevant work area or parts are occluded, blurred, or outside frame.
 If more than one state applies, choose the first in this order: hazard, mistake, done, in_progress, not_visible.
 
