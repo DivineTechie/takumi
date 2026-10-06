@@ -262,6 +262,7 @@ async def issue_live_token(
     response: Response,
     user: AuthUser = Depends(verify_auth_token),
 ) -> dict[str, Any]:
+    t_handler_start = time.perf_counter()
     # Role permissions: interview -> master only, coach -> trainee or supervisor
     if req.purpose == "interview":
         if user.role != "master":
@@ -285,16 +286,17 @@ async def issue_live_token(
 
     check_rate_limit(user.uid, "live_tokens")
 
-    t0 = time.perf_counter()
+    t_model_start = time.perf_counter()
     token_data = await create_live_token(req.purpose)
-    tot_ms = int((time.perf_counter() - t0) * 1000)
+    model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+    total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
 
     stream_api_call({
         "ts": datetime.now(timezone.utc).isoformat(),
         "endpoint": "live-token",
         "status": 200,
-        "model_ms": None,
-        "total_ms": tot_ms,
+        "model_ms": model_ms,
+        "total_ms": total_ms,
     })
 
     response.headers["Cache-Control"] = "no-store"
@@ -306,6 +308,7 @@ async def watch_step(
     req: WatchRequest,
     user: AuthUser = Depends(require_trainee_or_supervisor),
 ) -> dict[str, Any]:
+    t_handler_start = time.perf_counter()
     check_rate_limit(user.uid, "checks")
 
     # Validate image and resize to at most 640 px
@@ -313,7 +316,7 @@ async def watch_step(
     jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=640)
 
     mistakes_dicts = [m.model_dump() for m in req.common_mistakes]
-    t0 = time.perf_counter()
+    t_model_start = time.perf_counter()
     res = await call_watch(
         step=req.step,
         instruction=req.instruction,
@@ -322,15 +325,15 @@ async def watch_step(
         safety_rules=req.safety_rules,
         jpeg_bytes=jpeg_bytes,
     )
-    tot_ms = int((time.perf_counter() - t0) * 1000)
-    model_ms = int(res.get("secs", 0.0) * 1000) if "secs" in res else None
+    model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+    total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
 
     stream_api_call({
         "ts": datetime.now(timezone.utc).isoformat(),
         "endpoint": "watch",
         "status": 200,
         "model_ms": model_ms,
-        "total_ms": tot_ms,
+        "total_ms": total_ms,
     })
     return res
 
@@ -340,13 +343,14 @@ async def verify_step(
     req: VerifyRequest,
     user: AuthUser = Depends(require_trainee_or_supervisor),
 ) -> dict[str, Any]:
+    t_handler_start = time.perf_counter()
     check_rate_limit(user.uid, "checks")
 
     # Validate image and resize to at most 1280 px
     img = decode_and_validate_image(req.image_b64)
     jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=1280)
 
-    t0 = time.perf_counter()
+    t_model_start = time.perf_counter()
     res = await call_verify(
         step=req.step,
         instruction=req.instruction,
@@ -354,15 +358,15 @@ async def verify_step(
         safety_rules=req.safety_rules,
         jpeg_bytes=jpeg_bytes,
     )
-    tot_ms = int((time.perf_counter() - t0) * 1000)
-    model_ms = int(res.get("secs", 0.0) * 1000) if "secs" in res else None
+    model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+    total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
 
     stream_api_call({
         "ts": datetime.now(timezone.utc).isoformat(),
         "endpoint": "verify",
         "status": 200,
         "model_ms": model_ms,
-        "total_ms": tot_ms,
+        "total_ms": total_ms,
     })
     return res
 
@@ -372,30 +376,39 @@ async def point_target(
     req: PointRequest,
     user: AuthUser = Depends(require_any_authenticated_user),
 ) -> dict[str, Any]:
+    t_handler_start = time.perf_counter()
     check_rate_limit(user.uid, "checks")
 
     # Screen target text with Model Armor (fail-open)
     screening = screen_text(req.target, purpose="point_target")
     if not screening.get("allowed", True):
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "point",
+            "status": 200,
+            "model_ms": None,
+            "total_ms": total_ms,
+        })
         return {"points": [], "secs": 0.0, "blocked": True}
 
     img = decode_and_validate_image(req.image_b64)
     jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=1280)
 
-    t0 = time.perf_counter()
+    t_model_start = time.perf_counter()
     res = await call_point(
         target=req.target,
         jpeg_bytes=jpeg_bytes,
     )
-    tot_ms = int((time.perf_counter() - t0) * 1000)
-    model_ms = int(res.get("secs", 0.0) * 1000) if "secs" in res else None
+    model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+    total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
 
     stream_api_call({
         "ts": datetime.now(timezone.utc).isoformat(),
         "endpoint": "point",
         "status": 200,
         "model_ms": model_ms,
-        "total_ms": tot_ms,
+        "total_ms": total_ms,
     })
     return res
 

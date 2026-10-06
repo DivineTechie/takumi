@@ -94,3 +94,48 @@ def test_csp_report_returns_204_and_logs():
 
     resp = client.post("/api/csp-report", json=csp_payload)
     assert resp.status_code == 204
+
+
+def test_api_calls_timing_measurement_with_delay():
+    import asyncio
+    import base64
+    import io
+    from PIL import Image
+
+    img = Image.new("RGB", (100, 100), color=(0, 128, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    sample_b64 = base64.b64encode(buf.getvalue()).decode()
+
+    async def fake_call_watch(*args, **kwargs):
+        await asyncio.sleep(1.234)
+        return {"state": "in_progress", "reason": "ok", "fix": "", "rule": None, "secs": 1.23}
+
+    recorded_rows = []
+
+    client = TestClient(app)
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}), \
+         patch("services.api.main.check_rate_limit"), \
+         patch("services.api.main.call_watch", side_effect=fake_call_watch), \
+         patch("services.api.main.stream_api_call", side_effect=lambda row: recorded_rows.append(row)):
+
+        response = client.post(
+            "/api/watch",
+            headers={"Authorization": "Bearer fake_token"},
+            json={
+                "step": 1,
+                "instruction": "Insert wire",
+                "success_criteria": "Wire in slot",
+                "common_mistakes": [],
+                "safety_rules": [],
+                "image_b64": sample_b64,
+            },
+        )
+        assert response.status_code == 200
+        assert len(recorded_rows) == 1
+        row = recorded_rows[0]
+        assert row["endpoint"] == "watch"
+        assert row["status"] == 200
+        assert 1200 <= row["total_ms"] <= 1300, f"Expected total_ms in [1200, 1300], got {row['total_ms']}"
+        assert 1200 <= row["model_ms"] <= 1300, f"Expected model_ms in [1200, 1300], got {row['model_ms']}"
+

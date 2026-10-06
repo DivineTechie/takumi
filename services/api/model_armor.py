@@ -11,7 +11,7 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 logger = logging.getLogger("model_armor")
 
 MODEL_ARMOR_PROJECT = "takumi-cup-2026"
-MODEL_ARMOR_LOCATION = "us-central1"
+MODEL_ARMOR_LOCATION = "asia-southeast1"
 MODEL_ARMOR_TEMPLATE = "takumi-user-text"
 MODEL_ARMOR_URL = (
     f"https://modelarmor.{MODEL_ARMOR_LOCATION}.rep.googleapis.com/v1/"

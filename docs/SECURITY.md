@@ -47,9 +47,9 @@ Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' https
 
 Untrusted text input from users (such as spatial pointing targets and trainee questions) is screened using Google Cloud Model Armor before hitting generative AI models.
 
-- **Resource Location**: `us-central1`
-  - Selected because `us-central1` fully supports all 3 security capabilities simultaneously: Prompt Injection & Jailbreak detection (`pi_and_jailbreak`), Responsible AI safety rules (`rai`), and Malicious URI detection (`malicious_uris`). Regional host: `https://modelarmor.us-central1.rep.googleapis.com/v1/...`.
-- **Template ID**: `projects/takumi-cup-2026/locations/us-central1/templates/takumi-user-text`
+- **Resource Location**: `asia-southeast1` (Singapore)
+  - **Regional Placement & Trade-Off**: To keep trainee text strictly in-region (colocated with Cloud Run, Firestore, and BigQuery) and minimize inter-region roundtrip latency, the template is provisioned in `asia-southeast1`. Because `asia-southeast1` currently supports Prompt Injection & Jailbreak (`pi_and_jailbreak`) and Responsible AI (`rai`) safety filters but does not support the Malicious URI filter, the Malicious URI filter is omitted. This trade-off is well-justified because manufacturing trainee inputs and pointing targets consist of technical physical object names and assembly questions rather than web links.
+- **Template ID**: `projects/takumi-cup-2026/locations/asia-southeast1/templates/takumi-user-text`
 - **Fail-Safe Behavior**:
   - `point_target`: **Fail-OPEN** with 1.5s timeout. If Model Armor is temporarily unreachable, spatial pointer continues so live hands-on assembly coaching is not disrupted.
   - `question`: **Fail-CLOSED** with 1.5s timeout. Free-form text queries are blocked if safety screening cannot be completed.

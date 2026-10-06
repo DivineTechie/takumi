@@ -1,8 +1,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { lazy, Suspense } from 'react';
-import { createBrowserRouter, type RouteObject } from 'react-router-dom';
+import { createBrowserRouter, Outlet, type RouteObject } from 'react-router-dom';
 import { RoleGuard } from './components/RoleGuard';
 import { featureRoutes, type FeatureRoute } from './features/routes';
+import { VersionBanner } from './components/VersionBanner';
 
 const SignInScreen = lazy(() => import('./pages/SignInScreen'));
 const SignInFinishScreen = lazy(() => import('./pages/SignInFinishScreen'));
@@ -26,8 +27,16 @@ export const LoadingFallback: React.FC = () => (
 
 export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes): RouteObject[] {
   return [
-    // Public routes
     {
+      element: (
+        <>
+          <VersionBanner />
+          <Outlet />
+        </>
+      ),
+      children: [
+        // Public routes
+        {
       path: '/signin',
       element: (
         <Suspense fallback={<LoadingFallback />}>
@@ -138,6 +147,8 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
           <NotFoundScreen />
         </Suspense>
       ),
+    },
+      ],
     },
   ];
 }
