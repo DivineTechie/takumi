@@ -3,7 +3,7 @@
 import logging
 from typing import Any
 from google.cloud import bigquery
-from services.api.config import GCP_PROJECT
+from services.api.config import GCP_PROJECT, BQ_LOCATION
 
 logger = logging.getLogger("takumi.bigquery")
 
@@ -13,7 +13,7 @@ _bq_client: bigquery.Client | None = None
 def get_bigquery_client() -> bigquery.Client:
     global _bq_client
     if _bq_client is None:
-        _bq_client = bigquery.Client(project=GCP_PROJECT)
+        _bq_client = bigquery.Client(project=GCP_PROJECT, location=BQ_LOCATION)
     return _bq_client
 
 
@@ -36,3 +36,25 @@ def stream_session_event(row: dict[str, Any]) -> None:
             "BigQuery streaming insert exception",
             extra={"props": {"error": str(e), "session_id": row.get("session_id")}},
         )
+
+
+def stream_api_call(row: dict[str, Any]) -> None:
+    """Streams an API call timing metric row into BigQuery table takumi.api_calls.
+    Row contains: ts, endpoint, status, model_ms, total_ms.
+    Fire-and-forget: logs warning on failure but never raises.
+    """
+    try:
+        client = get_bigquery_client()
+        table_id = f"{GCP_PROJECT}.takumi.api_calls"
+        errors = client.insert_rows_json(table_id, [row])
+        if errors:
+            logger.warning(
+                "BigQuery api_calls streaming insert failed",
+                extra={"props": {"errors": str(errors)}},
+            )
+    except Exception as e:
+        logger.warning(
+            "BigQuery api_calls streaming insert exception",
+            extra={"props": {"error": str(e)}},
+        )
+

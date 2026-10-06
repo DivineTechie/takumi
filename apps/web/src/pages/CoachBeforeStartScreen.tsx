@@ -49,6 +49,23 @@ export const CoachBeforeStartScreen: React.FC = () => {
 
   const [isStarting, setIsStarting] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [sessionsEnabled, setSessionsEnabled] = useState<boolean>(true);
+
+  // Check system status on mount for kill switch
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/status')
+      .then((r) => r.json())
+      .then((data) => {
+        if (isMounted && data && typeof data.sessions_enabled === 'boolean') {
+          setSessionsEnabled(data.sessions_enabled);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Active live session state
   const [activeStream, setActiveStream] = useState<MediaStream | null>(null);
@@ -410,21 +427,28 @@ export const CoachBeforeStartScreen: React.FC = () => {
 
         {/* Pinned Bottom Action Zone */}
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[420px] p-4 bg-surface-container-lowest/95 backdrop-blur-md border-t border-outline-variant z-30">
-          <button
-            type="button"
-            disabled={isStarting}
-            onClick={handleStartCoaching}
-            className="w-full min-h-[56px] h-14 rounded-xl bg-primary-container text-on-primary-container font-headline-sm font-extrabold flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow-lg cursor-pointer disabled:opacity-50"
-          >
-            {isStarting ? (
-              <div className="w-6 h-6 border-3 border-on-primary-container border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                <span className="material-symbols-outlined text-[24px]">play_arrow</span>
-                <span className="text-[18px]">Start coaching</span>
-              </>
-            )}
-          </button>
+          {!sessionsEnabled ? (
+            <div className="w-full min-h-[56px] h-14 rounded-xl bg-surface-container-high border border-outline-variant text-on-surface-variant font-headline-sm font-semibold flex items-center justify-center gap-2 px-3 text-center">
+              <span className="material-symbols-outlined text-[22px] text-amber-500 shrink-0">construction</span>
+              <span className="text-[15px]">Coaching is paused for maintenance.</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={isStarting}
+              onClick={handleStartCoaching}
+              className="w-full min-h-[56px] h-14 rounded-xl bg-primary-container text-on-primary-container font-headline-sm font-extrabold flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow-lg cursor-pointer disabled:opacity-50"
+            >
+              {isStarting ? (
+                <div className="w-6 h-6 border-3 border-on-primary-container border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[24px]">play_arrow</span>
+                  <span className="text-[18px]">Start coaching</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
       </main>
     </div>

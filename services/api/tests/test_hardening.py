@@ -1,0 +1,96 @@
+from unittest.mock import MagicMock, patch
+from fastapi.testclient import TestClient
+
+from services.api.main import app
+
+
+def test_kill_switch_sessions_disabled():
+    from services.api.auth import AuthUser, verify_auth_token
+    from services.api.main import require_trainee_or_supervisor
+
+    mock_user = AuthUser(uid="trainee_1", role="trainee", email="t@example.com", email_verified=True, display_name="Trainee")
+    app.dependency_overrides[verify_auth_token] = lambda: mock_user
+    app.dependency_overrides[require_trainee_or_supervisor] = lambda: mock_user
+    client = TestClient(app)
+
+    try:
+        with patch("services.api.main.SESSIONS_ENABLED", False), \
+             patch("services.api.main.check_rate_limit"):
+
+            # 1. POST /api/live-token for purpose 'coach' returns 503
+            resp_token = client.post(
+                "/api/live-token",
+                headers={"Authorization": "Bearer fake_token"},
+                json={"purpose": "coach"},
+            )
+            assert resp_token.status_code == 503
+            assert resp_token.json()["detail"] == "Coaching is paused for maintenance."
+
+            # 2. POST /api/sessions returns 503
+            resp_session = client.post(
+                "/api/sessions",
+                headers={"Authorization": "Bearer fake_token"},
+                json={"skill_id": "skill_1", "language": "en"},
+            )
+            assert resp_session.status_code == 503
+            assert resp_session.json()["detail"] == "Coaching is paused for maintenance."
+    finally:
+        app.dependency_overrides.pop(verify_auth_token, None)
+        app.dependency_overrides.pop(require_trainee_or_supervisor, None)
+
+
+def test_api_status_public_and_returns_metrics():
+    client = TestClient(app)
+
+    mock_bq = MagicMock()
+    # Mock sessions count query
+    mock_job_sessions = MagicMock()
+    mock_job_sessions.result.return_value = [{"session_count": 8}]
+
+    # Mock decision_to_audio query
+    mock_job_d2a = MagicMock()
+    mock_job_d2a.result.return_value = [{"p50": 420, "p90": 650}]
+
+    # Mock api_calls query
+    mock_job_apis = MagicMock()
+    mock_job_apis.result.return_value = [
+        {"endpoint": "watch", "p50": 380, "p90": 510},
+        {"endpoint": "verify", "p50": 620, "p90": 890},
+        {"endpoint": "point", "p50": 410, "p90": 590},
+    ]
+
+    mock_bq.query.side_effect = [mock_job_sessions, mock_job_d2a, mock_job_apis]
+
+    with patch("services.api.main.get_bigquery_client", return_value=mock_bq), \
+         patch.dict("services.api.main._STATUS_CACHE", {"data": None, "cached_at": 0.0}):
+        resp = client.get("/api/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["api"] == "ok"
+        assert "sessions_enabled" in data
+        last_24h = data["last_24h"]
+        assert last_24h["sessions"] == 8
+        assert last_24h["p50_ms"]["watch"] == 380
+        assert last_24h["p50_ms"]["verify"] == 620
+        assert last_24h["p50_ms"]["point"] == 410
+        assert last_24h["p50_ms"]["decision_to_audio"] == 420
+        assert last_24h["p90_ms"]["watch"] == 510
+
+
+def test_csp_report_returns_204_and_logs():
+    client = TestClient(app)
+    csp_payload = {
+        "csp-report": {
+            "document-uri": "https://takumi-cup-2026.web.app/",
+            "referrer": "",
+            "violated-directive": "style-src",
+            "effective-directive": "style-src",
+            "original-policy": "default-src 'self' ...",
+            "disposition": "report",
+            "blocked-uri": "http://evil.com/style.css",
+            "status-code": 200
+        }
+    }
+
+    resp = client.post("/api/csp-report", json=csp_payload)
+    assert resp.status_code == 204

@@ -38,6 +38,8 @@ MAX_REQUEST_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
 
 # Cloud Storage Bucket
 STORAGE_BUCKET = os.environ.get("FIREBASE_STORAGE_BUCKET", "takumi-cup-2026.firebasestorage.app")
+BQ_LOCATION = os.environ.get("BIGQUERY_LOCATION", "asia-southeast1")
+SESSIONS_ENABLED = os.environ.get("SESSIONS_ENABLED", "true").lower() in ("true", "1", "yes")
 
 # Supervisor insight exclusions
 EXCLUDED_UIDS = set(

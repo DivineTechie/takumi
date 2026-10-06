@@ -414,3 +414,31 @@ export async function fetchMyPassports(): Promise<{ passports: MyPassport[] }> {
   return await apiFetch<{ passports: MyPassport[] }>('/api/me/passports');
 }
 
+export interface SystemStatusResponse {
+  api: string;
+  sessions_enabled: boolean;
+  last_24h: {
+    sessions: number;
+    p50_ms: {
+      watch: number | null;
+      verify: number | null;
+      point: number | null;
+      decision_to_audio: number | null;
+    };
+    p90_ms: {
+      watch: number | null;
+      verify: number | null;
+      point: number | null;
+      decision_to_audio: number | null;
+    };
+  };
+}
+
+export async function fetchSystemStatus(): Promise<SystemStatusResponse> {
+  const res = await fetch('/api/status');
+  if (!res.ok) {
+    throw new ApiError(await res.text(), res.status);
+  }
+  return await res.json();
+}
+

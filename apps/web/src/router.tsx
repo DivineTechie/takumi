@@ -10,6 +10,7 @@ const HomeScreen = lazy(() => import('./pages/HomeScreen'));
 const ChooseLessonScreen = lazy(() => import('./pages/ChooseLessonScreen'));
 const CoachBeforeStartScreen = lazy(() => import('./pages/CoachBeforeStartScreen'));
 const PassportScreen = lazy(() => import('./pages/PassportScreen'));
+const StatusScreen = lazy(() => import('./pages/StatusScreen'));
 const DashboardScreen = lazy(() => import('./pages/DashboardScreen'));
 const EvalsScreen = lazy(() => import('./pages/EvalsScreen'));
 const NotFoundScreen = lazy(() => import('./pages/NotFoundScreen'));
@@ -47,6 +48,14 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
       element: (
         <Suspense fallback={<LoadingFallback />}>
           <PassportScreen />
+        </Suspense>
+      ),
+    },
+    {
+      path: '/status',
+      element: (
+        <Suspense fallback={<LoadingFallback />}>
+          <StatusScreen />
         </Suspense>
       ),
     },

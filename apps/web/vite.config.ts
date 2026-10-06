@@ -10,7 +10,7 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     env: {
-      VITE_FIREBASE_API_KEY: 'test-api-key',
+      VITE_FIREBASE_API_KEY: 'test-api-key', // gitleaks:allow
       VITE_FIREBASE_AUTH_DOMAIN: 'takumi-cup-2026.web.app',
       VITE_FIREBASE_PROJECT_ID: 'takumi-cup-2026',
       VITE_FIREBASE_STORAGE_BUCKET: 'takumi-cup-2026.firebasestorage.app',

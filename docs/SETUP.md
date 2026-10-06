@@ -122,3 +122,52 @@ Cloud Build uses 2nd-generation GitHub repository integration (`DivineTechie/tak
   - 50% spend alert
   - 100% spend alert
 - Filtered to project `takumi-cup-2026`.
+
+---
+
+## 8. Kill Switch (`SESSIONS_ENABLED`)
+
+TAKUMI includes a production kill switch to pause live coaching sessions during maintenance or incident response without disabling the entire application.
+
+- **Effect**:
+  - `POST /api/live-token` (with purpose `coach`) and `POST /api/sessions` return `503 Service Unavailable` with message `"Coaching is paused for maintenance."`.
+  - All other services (`/status`, `/passports`, `/insights`, `/skills`, and inspection replay) remain active.
+  - The Web UI automatically detects the status and replaces the Start coaching action with `"Coaching is paused for maintenance."`.
+- **Toggle via gcloud**:
+  ```bash
+  # Pause live coaching:
+  gcloud run services update takumi-api --update-env-vars SESSIONS_ENABLED=false --region=asia-southeast1 --project=takumi-cup-2026
+
+  # Resume live coaching:
+  gcloud run services update takumi-api --update-env-vars SESSIONS_ENABLED=true --region=asia-southeast1 --project=takumi-cup-2026
+  ```
+
+---
+
+## 9. Cloud Monitoring Uptime Check & Alerting
+
+- **Uptime Check**:
+  - **Resource**: `https://takumi-cup-2026.web.app/api/healthz`
+  - **Check Config**: `takumi-api-healthz-SM5cuHasLbE`
+  - **Period**: 5 minutes
+  - **Timeout**: 10 seconds
+  - **Monitored Regions**: 3 global regions (`asia-pacific`, `europe`, `usa-iowa`)
+  - **Validation**: Strict SSL certificate verification & 2xx status class check.
+- **Alert Policy**:
+  - **Policy ID**: `projects/takumi-cup-2026/alertPolicies/17025416737999609139`
+  - **Condition**: Triggers when 2 consecutive checks fail across regions (10-minute failure threshold).
+  - **Notification Channel**: `projects/takumi-cup-2026/notificationChannels/7000437531509274607` (project owner notification).
+- **Setup Command**:
+  ```bash
+  gcloud monitoring uptime create takumi-api-healthz \
+    --resource-type=uptime-url \
+    --resource-labels="host=takumi-cup-2026.web.app" \
+    --protocol=https \
+    --path="/api/healthz" \
+    --period=5 \
+    --timeout=10 \
+    --regions="asia-pacific,europe,usa-iowa" \
+    --validate-ssl=true \
+    --status-classes=2xx \
+    --project=takumi-cup-2026
+  ```

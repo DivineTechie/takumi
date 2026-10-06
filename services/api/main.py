@@ -31,14 +31,20 @@ from services.api.auth import (
     init_firebase_admin,
     verify_auth_token,
 )
-from services.api.bigquery_client import get_bigquery_client, stream_session_event
+from services.api.bigquery_client import (
+    get_bigquery_client,
+    stream_api_call,
+    stream_session_event,
+)
 from services.api.config import (
     EXCLUDED_UIDS,
     GCP_PROJECT,
     LOCAL_DEV,
     MAX_REQUEST_SIZE_BYTES,
+    SESSIONS_ENABLED,
     STORAGE_BUCKET,
 )
+from services.api.model_armor import screen_text
 from services.api.storage_client import get_signed_url_for_gs_uri, upload_frame_jpeg
 from services.api.gemini import (
     call_point,
@@ -264,6 +270,11 @@ async def issue_live_token(
                 detail="Forbidden: purpose 'interview' requires role 'master'",
             )
     elif req.purpose == "coach":
+        if not SESSIONS_ENABLED:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Coaching is paused for maintenance.",
+            )
         if user.role not in ("trainee", "supervisor"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -274,7 +285,17 @@ async def issue_live_token(
 
     check_rate_limit(user.uid, "live_tokens")
 
+    t0 = time.perf_counter()
     token_data = await create_live_token(req.purpose)
+    tot_ms = int((time.perf_counter() - t0) * 1000)
+
+    stream_api_call({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "endpoint": "live-token",
+        "status": 200,
+        "model_ms": None,
+        "total_ms": tot_ms,
+    })
 
     response.headers["Cache-Control"] = "no-store"
     return token_data
@@ -292,7 +313,8 @@ async def watch_step(
     jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=640)
 
     mistakes_dicts = [m.model_dump() for m in req.common_mistakes]
-    return await call_watch(
+    t0 = time.perf_counter()
+    res = await call_watch(
         step=req.step,
         instruction=req.instruction,
         success_criteria=req.success_criteria,
@@ -300,6 +322,17 @@ async def watch_step(
         safety_rules=req.safety_rules,
         jpeg_bytes=jpeg_bytes,
     )
+    tot_ms = int((time.perf_counter() - t0) * 1000)
+    model_ms = int(res.get("secs", 0.0) * 1000) if "secs" in res else None
+
+    stream_api_call({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "endpoint": "watch",
+        "status": 200,
+        "model_ms": model_ms,
+        "total_ms": tot_ms,
+    })
+    return res
 
 
 @app.post("/api/verify")
@@ -313,13 +346,25 @@ async def verify_step(
     img = decode_and_validate_image(req.image_b64)
     jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=1280)
 
-    return await call_verify(
+    t0 = time.perf_counter()
+    res = await call_verify(
         step=req.step,
         instruction=req.instruction,
         success_criteria=req.success_criteria,
         safety_rules=req.safety_rules,
         jpeg_bytes=jpeg_bytes,
     )
+    tot_ms = int((time.perf_counter() - t0) * 1000)
+    model_ms = int(res.get("secs", 0.0) * 1000) if "secs" in res else None
+
+    stream_api_call({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "endpoint": "verify",
+        "status": 200,
+        "model_ms": model_ms,
+        "total_ms": tot_ms,
+    })
+    return res
 
 
 @app.post("/api/point")
@@ -329,13 +374,30 @@ async def point_target(
 ) -> dict[str, Any]:
     check_rate_limit(user.uid, "checks")
 
+    # Screen target text with Model Armor (fail-open)
+    screening = screen_text(req.target, purpose="point_target")
+    if not screening.get("allowed", True):
+        return {"points": [], "secs": 0.0, "blocked": True}
+
     img = decode_and_validate_image(req.image_b64)
     jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=1280)
 
-    return await call_point(
+    t0 = time.perf_counter()
+    res = await call_point(
         target=req.target,
         jpeg_bytes=jpeg_bytes,
     )
+    tot_ms = int((time.perf_counter() - t0) * 1000)
+    model_ms = int(res.get("secs", 0.0) * 1000) if "secs" in res else None
+
+    stream_api_call({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "endpoint": "point",
+        "status": 200,
+        "model_ms": model_ms,
+        "total_ms": tot_ms,
+    })
+    return res
 
 
 @app.post("/api/sessions", status_code=status.HTTP_201_CREATED)
@@ -343,6 +405,12 @@ async def create_session(
     req: SessionCreateRequest,
     user: AuthUser = Depends(require_trainee_or_supervisor),
 ) -> dict[str, Any]:
+    if not SESSIONS_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Coaching is paused for maintenance.",
+        )
+
     db = get_firestore_client()
 
     # Verify skill exists and is published
@@ -1076,3 +1144,137 @@ async def get_my_passports(
     # Sort descending by issued_at
     results.sort(key=lambda x: x.get("issued_at", ""), reverse=True)
     return {"passports": results}
+
+
+# --- Public Status & Telemetry ---
+
+_STATUS_CACHE: dict[str, Any] = {"data": None, "cached_at": 0.0}
+
+
+@app.get("/api/status")
+async def get_system_status(request: Request) -> dict[str, Any]:
+    """Public system health and 24-hour latency metrics computed from BigQuery.
+
+    Cached for 60 seconds. Rate limited per IP (60/min).
+    Returns pure numeric metrics with no user identifiers, personal names, or emails.
+    """
+    check_public_rate_limit(request, limit=60, window_s=60)
+
+    now_epoch = time.time()
+    if _STATUS_CACHE["data"] is not None and (now_epoch - _STATUS_CACHE["cached_at"]) < 60:
+        return _STATUS_CACHE["data"]
+
+    bq = get_bigquery_client()
+    excluded_list = list(EXCLUDED_UIDS)
+
+    # 1. Total sessions in last 24h from takumi.session_events
+    q_sessions = f"""
+    SELECT COUNT(DISTINCT session_id) as session_count
+    FROM `{GCP_PROJECT}.takumi.session_events`
+    WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+      AND (trainee_uid IS NULL OR (trainee_uid NOT IN UNNEST(@excluded_uids) AND trainee_uid != 'smoke-trainee'))
+    """
+    job_cfg_sessions = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ArrayQueryParameter("excluded_uids", "STRING", excluded_list),
+        ]
+    )
+    sessions_count = 0
+    try:
+        rows = list(bq.query(q_sessions, job_config=job_cfg_sessions).result())
+        if rows:
+            sessions_count = int(rows[0]["session_count"] or 0)
+    except Exception as exc:
+        logger.warning(f"Failed to query 24h sessions for /api/status: {exc}")
+
+    # 2. decision_to_audio latencies in last 24h from takumi.session_events
+    q_d2a = f"""
+    SELECT
+      APPROX_QUANTILES(latency_ms, 100)[OFFSET(50)] as p50,
+      APPROX_QUANTILES(latency_ms, 100)[OFFSET(90)] as p90
+    FROM `{GCP_PROJECT}.takumi.session_events`
+    WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+      AND source = 'watcher'
+      AND type IN ('step_done', 'mistake')
+      AND latency_ms IS NOT NULL
+      AND (trainee_uid IS NULL OR (trainee_uid NOT IN UNNEST(@excluded_uids) AND trainee_uid != 'smoke-trainee'))
+    """
+    p50_d2a, p90_d2a = None, None
+    try:
+        rows = list(bq.query(q_d2a, job_config=job_cfg_sessions).result())
+        if rows and rows[0]["p50"] is not None:
+            p50_d2a = int(rows[0]["p50"])
+            p90_d2a = int(rows[0]["p90"])
+    except Exception as exc:
+        logger.warning(f"Failed to query decision_to_audio latencies: {exc}")
+
+    # 3. watch/verify/point latencies in last 24h from takumi.api_calls
+    q_apis = f"""
+    SELECT
+      endpoint,
+      APPROX_QUANTILES(total_ms, 100)[OFFSET(50)] as p50,
+      APPROX_QUANTILES(total_ms, 100)[OFFSET(90)] as p90
+    FROM `{GCP_PROJECT}.takumi.api_calls`
+    WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+      AND status = 200
+      AND endpoint IN ('watch', 'verify', 'point')
+    GROUP BY endpoint
+    """
+    p50_map: dict[str, int | None] = {"watch": None, "verify": None, "point": None, "decision_to_audio": p50_d2a}
+    p90_map: dict[str, int | None] = {"watch": None, "verify": None, "point": None, "decision_to_audio": p90_d2a}
+
+    try:
+        rows = list(bq.query(q_apis).result())
+        for row in rows:
+            ep = str(row["endpoint"])
+            if ep in p50_map and row["p50"] is not None:
+                p50_map[ep] = int(row["p50"])
+                p90_map[ep] = int(row["p90"])
+    except Exception as exc:
+        logger.warning(f"Failed to query api_calls latencies: {exc}")
+
+    result = {
+        "api": "ok",
+        "sessions_enabled": SESSIONS_ENABLED,
+        "last_24h": {
+            "sessions": sessions_count,
+            "p50_ms": p50_map,
+            "p90_ms": p90_map,
+        },
+    }
+
+    _STATUS_CACHE["data"] = result
+    _STATUS_CACHE["cached_at"] = now_epoch
+    return result
+
+
+# --- CSP Violation Reporting ---
+
+@app.post("/api/csp-report", status_code=status.HTTP_204_NO_CONTENT)
+async def post_csp_report(request: Request) -> Response:
+    """Endpoint for Content-Security-Policy-Report-Only violations.
+
+    Rate-limited per IP. Logs violation details as structured warnings.
+    """
+    check_public_rate_limit(request, limit=120, window_s=60)
+    try:
+        body = await request.body()
+        if body:
+            data = json.loads(body.decode("utf-8"))
+            report_payload = data.get("csp-report", data)
+            logger.warning(
+                "CSP violation reported",
+                extra={
+                    "event": "csp_violation",
+                    "document_uri": report_payload.get("document-uri"),
+                    "violated_directive": report_payload.get("violated-directive"),
+                    "effective_directive": report_payload.get("effective-directive"),
+                    "blocked_uri": report_payload.get("blocked-uri"),
+                    "status_code": report_payload.get("status-code"),
+                },
+            )
+    except Exception as exc:
+        logger.warning(f"Failed to parse CSP report: {exc}")
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
