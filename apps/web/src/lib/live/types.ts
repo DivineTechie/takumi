@@ -51,6 +51,7 @@ export interface LiveClientCallbacks {
   onTranscript: (item: LiveTranscriptItem) => void;
   onToolCall: (call: LiveToolCall) => Promise<Record<string, unknown>> | Record<string, unknown>;
   onError: (err: Error) => void;
+  onClose?: (code: number, reason: string) => void;
   onStatsUpdate?: (stats: LiveClientStats) => void;
 }
 

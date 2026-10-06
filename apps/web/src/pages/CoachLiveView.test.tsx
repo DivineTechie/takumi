@@ -669,5 +669,66 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     );
     expect(kickoffCalls).toHaveLength(1);
   });
+
+  it('server close logs blocked event with reason live_closed:<code>:<reason>', async () => {
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    // Simulate server-side socket close
+    capturedCallbacks.onClose?.(1006, 'Abnormal closure');
+
+    await waitFor(() => {
+      expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+        'session-live-123',
+        expect.objectContaining({
+          type: 'blocked',
+          source: 'coach',
+          reason: 'live_closed:1006:Abnormal closure',
+        })
+      );
+    });
+  });
+
+  it('shows "Connection keeps dropping" with Retry button on repeated connection drops', async () => {
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    capturedCallbacks.onStateChange?.('error');
+    capturedCallbacks.onError?.(new Error('Connection keeps dropping'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Connection keeps dropping')).toBeDefined();
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
+    });
+  });
 });
+
 

@@ -451,7 +451,9 @@ describe('GeminiLiveClient', () => {
     // Resumed session sends resume instruction at step 2
     expect(ws2.sentMessages.length).toBeGreaterThan(1);
     const resumeTextMsg = JSON.parse(ws2.sentMessages[ws2.sentMessages.length - 1]);
-    expect(resumeTextMsg.realtimeInput.text).toContain('Resume at step 2:');
+    expect(resumeTextMsg.realtimeInput.text).toContain(
+      '[RESUME] The connection dropped. Do NOT greet again. Continue from step 2:'
+    );
     expect(resumeTextMsg.realtimeInput.text).toContain('भूरे तार को टर्मिनल 2 में डालें');
   });
 
@@ -692,4 +694,111 @@ describe('GeminiLiveClient', () => {
     // Gating is back ON for the new turn!
     expect(client.isGating()).toBe(true);
   });
+
+  it('bounds reconnects to at most 3 in rolling 60s window even when setupComplete succeeds, stops with error and logs close info', async () => {
+    vi.useFakeTimers();
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    try {
+      const onStateChange = vi.fn();
+      const onError = vi.fn();
+      const onClose = vi.fn();
+
+      const client = createClient({
+        callbacks: {
+          onStateChange,
+          onTranscript: vi.fn(),
+          onToolCall: vi.fn(),
+          onError,
+          onClose,
+        },
+      });
+
+      // 1. Initial connection
+      const connectPromise = client.connect();
+      await vi.advanceTimersByTimeAsync(20); // triggers ws1.onopen
+      await connectPromise;
+
+      const ws1 = MockWebSocket.instances[0];
+      expect(ws1).toBeDefined();
+
+      // Setup 1 completes
+      ws1.simulateServerMessage({ setupComplete: {} });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(client.isReady()).toBe(true);
+
+      // Closes 2s after setup
+      await vi.advanceTimersByTimeAsync(2000);
+      ws1.close(1006, 'Abnormal socket drop 1');
+      expect(onClose).toHaveBeenCalledWith(1006, 'Abnormal socket drop 1');
+
+      // Reconnect #1: scheduled with 500ms backoff
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(20);
+
+      const ws2 = MockWebSocket.instances[1];
+      expect(ws2).toBeDefined();
+
+      // Setup 2 completes
+      ws2.simulateServerMessage({ setupComplete: {} });
+      await vi.advanceTimersByTimeAsync(50);
+
+      // Closes 2s after setup
+      await vi.advanceTimersByTimeAsync(2000);
+      ws2.close(1006, 'Abnormal socket drop 2');
+
+      // Reconnect #2: scheduled with 1000ms backoff
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(20);
+
+      const ws3 = MockWebSocket.instances[2];
+      expect(ws3).toBeDefined();
+
+      // Setup 3 completes
+      ws3.simulateServerMessage({ setupComplete: {} });
+      await vi.advanceTimersByTimeAsync(50);
+
+      // Closes 2s after setup
+      await vi.advanceTimersByTimeAsync(2000);
+      ws3.close(1006, 'Abnormal socket drop 3');
+
+      // Reconnect #3: scheduled with 2000ms backoff
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(20);
+
+      const ws4 = MockWebSocket.instances[3];
+      expect(ws4).toBeDefined();
+
+      // Setup 4 completes
+      ws4.simulateServerMessage({ setupComplete: {} });
+      await vi.advanceTimersByTimeAsync(50);
+
+      // Closes 2s after setup
+      await vi.advanceTimersByTimeAsync(2000);
+      ws4.close(1006, 'Abnormal socket drop 4');
+
+      // Now 3 reconnects have occurred within rolling 60s window!
+      // Must NOT schedule another reconnect; must stop in error state
+      expect(onStateChange).toHaveBeenLastCalledWith('error');
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('Connection keeps dropping') })
+      );
+      expect(client.getStats().lastCloseCode).toBe(1006);
+      expect(client.getStats().lastCloseReason).toBe('Abnormal socket drop 4');
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Connection keeps dropping')
+      );
+      // Exactly 4 WebSocket instances created (initial + 3 reconnects)
+      expect(MockWebSocket.instances.length).toBe(4);
+
+      // User taps Retry -> manualRetry clears rolling window and reconnects
+      client.manualRetry();
+      await vi.advanceTimersByTimeAsync(20);
+      expect(MockWebSocket.instances.length).toBe(5);
+    } finally {
+      consoleErrorSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
 });
+

@@ -47,6 +47,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [connectionState, setConnectionState] = useState<LiveConnectionState>('connecting');
+  const [connectionErrorText, setConnectionErrorText] = useState<string>("Couldn't connect");
   const [isCoachSpeaking, setIsCoachSpeaking] = useState<boolean>(false);
   const [latestCoachTranscript, setLatestCoachTranscript] = useState<string>('');
   const [latestTraineeTranscript, setLatestTraineeTranscript] = useState<string>('');
@@ -561,6 +562,22 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         },
         onError: (err) => {
           console.error('Live client error:', err);
+          if (err.message && err.message.includes('keeps dropping')) {
+            setConnectionErrorText('Connection keeps dropping');
+          } else {
+            setConnectionErrorText("Couldn't connect");
+          }
+        },
+        onClose: (code, reason) => {
+          if (sessionIdRef.current) {
+            postSessionEvent(sessionIdRef.current, {
+              step: currentStepRef.current,
+              type: 'blocked',
+              source: 'coach',
+              reason: `live_closed:${code}:${reason}`,
+              latency_ms: 0,
+            }).catch((err) => console.warn('Failed to log live_closed event:', err));
+          }
         },
         onStatsUpdate: (s) => {
           setStats(s);
@@ -583,8 +600,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     }
 
     // Connect microphone capture
-    setupMicCapture(stream, micAudioContext, (b64Audio) => {
-      client.sendAudio(b64Audio);
+    setupMicCapture(stream, micAudioContext, (b64Audio, byteLength) => {
+      client.sendAudio(b64Audio, byteLength);
     })
       .then((handle) => {
         micHandleRef.current = handle;
@@ -1475,11 +1492,14 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
                     <span className="text-[13px] text-red-300 uppercase tracking-wider font-bold">
-                      Couldn't connect
+                      {connectionErrorText}
                     </span>
                     <button
                       type="button"
-                      onClick={() => clientRef.current?.manualRetry()}
+                      onClick={() => {
+                        setConnectionErrorText("Couldn't connect");
+                        clientRef.current?.manualRetry();
+                      }}
                       className="px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 active:scale-95 text-white text-[12px] font-bold tracking-wide uppercase border border-white/20 transition-all cursor-pointer"
                     >
                       Retry

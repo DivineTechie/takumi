@@ -4,7 +4,7 @@ import {
   base64ToPCM16,
   arrayBufferToBase64,
   setupMicCapture,
-  createSilenceBase64,
+  createSilencePcmBase64,
 } from './audio';
 
 interface MockAudioBufferSource {
@@ -155,14 +155,36 @@ describe('PCM Base64 conversion helpers', () => {
     }
   });
 
-  it('createSilenceBase64 produces base64 zeros of exact length', () => {
-    const b64Silence = createSilenceBase64(64);
-    expect(b64Silence.length).toBe(64);
-    expect(b64Silence).toBe('A'.repeat(64));
+  it('for chunk sizes 1280, 1282 and 640 bytes, silence decodes to exact even byte count, is all zeros, and padding matches real chunk', () => {
+    const chunkSizes = [1280, 1282, 640];
+    for (const size of chunkSizes) {
+      // Create a dummy real PCM chunk with non-zero bytes
+      const realChunkBytes = new Uint8Array(size);
+      for (let i = 0; i < size; i++) {
+        realChunkBytes[i] = (i % 250) + 1;
+      }
+      const realBase64 = arrayBufferToBase64(realChunkBytes.buffer);
 
-    const pcm = base64ToPCM16(b64Silence);
-    for (let i = 0; i < pcm.length; i++) {
-      expect(pcm[i]).toBe(0);
+      // Generate silence at PCM level
+      const silenceBase64 = createSilencePcmBase64(size);
+
+      // 1. Base64 padding matches the real chunk's
+      const realPad = (realBase64.match(/=+$/) || [''])[0];
+      const silencePad = (silenceBase64.match(/=+$/) || [''])[0];
+      expect(silencePad).toBe(realPad);
+      expect(silenceBase64.length).toBe(realBase64.length);
+
+      // 2. Decodes to exactly the same, even, byte count
+      const decodedPcm = base64ToPCM16(silenceBase64);
+      expect(decodedPcm.byteLength).toBe(size);
+      expect(decodedPcm.byteLength % 2).toBe(0);
+
+      // 3. All bytes are zeros
+      const decodedBytes = new Uint8Array(decodedPcm.buffer);
+      expect(decodedBytes.length).toBe(size);
+      for (let i = 0; i < decodedBytes.length; i++) {
+        expect(decodedBytes[i]).toBe(0);
+      }
     }
   });
 });

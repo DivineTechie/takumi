@@ -7,7 +7,7 @@ import type {
   LiveClientStats,
   LiveConnectionState,
 } from './types';
-import { base64ToPCM16, createSilenceBase64, OutputAudioQueue } from './audio';
+import { base64ToPCM16, createSilencePcmBase64, OutputAudioQueue } from './audio';
 
 const WS_BASE_URL =
   'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained';
@@ -87,6 +87,7 @@ export class GeminiLiveClient {
   private setupDone = false;
   private hasCompletedFirstSetup = false;
   private reconnectAttempts = 0;
+  private reconnectTimestamps: number[] = [];
   private readonly maxReconnectAttempts: number;
   private reconnectTimeoutId: number | null = null;
   private setupTimeoutId: number | null = null;
@@ -294,6 +295,7 @@ export class GeminiLiveClient {
         );
 
         if (!this.explicitlyClosed) {
+          this.config.callbacks.onClose?.(event.code, event.reason || '');
           console.warn(`WebSocket closed unexpectedly (code: ${event.code}), scheduling reconnect...`);
           this.scheduleReconnect();
         } else {
@@ -307,6 +309,7 @@ export class GeminiLiveClient {
       this.stats.lastCloseReason = err instanceof Error ? err.message : String(err);
       this.notifyStats();
       if (!this.explicitlyClosed) {
+        this.config.callbacks.onClose?.(5000, this.stats.lastCloseReason);
         this.scheduleReconnect();
       } else {
         this.setState('error');
@@ -407,7 +410,6 @@ export class GeminiLiveClient {
         this.stats.setupCompleteReceived = true;
         this.stats.setupCompleteMs = Date.now() - this.connectStartTime;
         this.setupDone = true;
-        this.reconnectAttempts = 0;
         this.setState('connected');
         this.notifyStats();
 
@@ -424,10 +426,13 @@ export class GeminiLiveClient {
           const stepObj =
             this.config.skill.steps.find((s) => s.n === currentStep) ||
             this.config.skill.steps[0];
-          const instruction =
+          const rawInstruction =
             stepObj.translations?.[this.config.language]?.instruction ||
             stepObj.instruction;
-          this.sendText(`Resume at step ${currentStep}: ${instruction}`);
+          const instruction = rawInstruction.trim().replace(/\.+$/, '');
+          this.sendText(
+            `[RESUME] The connection dropped. Do NOT greet again. Continue from step ${currentStep}: ${instruction}.`
+          );
         }
         return;
       }
@@ -574,12 +579,21 @@ export class GeminiLiveClient {
   private scheduleReconnect(): void {
     if (this.explicitlyClosed) return;
 
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error(`Max reconnect attempts (${this.maxReconnectAttempts}) reached.`);
+    const now = Date.now();
+    // Rolling 60s window: prune timestamps older than 60s
+    this.reconnectTimestamps = this.reconnectTimestamps.filter((t) => now - t < 60000);
+
+    const maxReconnectsInWindow = this.maxReconnectAttempts || 3;
+    if (this.reconnectTimestamps.length >= maxReconnectsInWindow) {
+      console.error(
+        `Connection keeps dropping (${this.reconnectTimestamps.length} reconnects within rolling 60s). Last close code: ${this.stats.lastCloseCode}, reason: "${this.stats.lastCloseReason}"`
+      );
       this.setState('error');
+      this.config.callbacks.onError(new Error('Connection keeps dropping'));
       return;
     }
 
+    this.reconnectTimestamps.push(now);
     this.reconnectAttempts++;
     this.setState('reconnecting');
 
@@ -600,13 +614,14 @@ export class GeminiLiveClient {
   public manualRetry(): void {
     this.clearSetupTimeout();
     this.reconnectAttempts = 0;
+    this.reconnectTimestamps = [];
     this.connect(this.hasCompletedFirstSetup);
   }
 
   /**
    * Streams a ~40ms chunk of 16 kHz PCM16 audio.
    */
-  public sendAudio(base64PCM16: string): void {
+  public sendAudio(base64PCM16: string, byteLength?: number): void {
     if (!this.isReady() || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
     }
@@ -616,7 +631,11 @@ export class GeminiLiveClient {
 
     let dataToSend = base64PCM16;
     if (this.isGating()) {
-      dataToSend = createSilenceBase64(base64PCM16.length);
+      const actualByteLength =
+        byteLength !== undefined
+          ? byteLength
+          : base64ToPCM16(base64PCM16).byteLength;
+      dataToSend = createSilencePcmBase64(actualByteLength);
     }
 
     const payload = {
@@ -693,6 +712,7 @@ export class GeminiLiveClient {
   public close(): void {
     this.explicitlyClosed = true;
     this.clearSetupTimeout();
+    this.reconnectTimestamps = [];
     if (this.reconnectTimeoutId !== null) {
       clearTimeout(this.reconnectTimeoutId);
       this.reconnectTimeoutId = null;

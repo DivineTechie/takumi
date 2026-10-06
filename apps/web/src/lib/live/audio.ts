@@ -47,9 +47,10 @@ export function createAndResumeAudioContexts(): {
   return { outputContext, micContext };
 }
 
-export function createSilenceBase64(base64Length: number): string {
-  if (base64Length <= 0) return '';
-  return 'A'.repeat(base64Length);
+export function createSilencePcmBase64(byteLength: number): string {
+  if (byteLength <= 0) return '';
+  const zeros = new Uint8Array(byteLength);
+  return arrayBufferToBase64(zeros.buffer);
 }
 
 /**
@@ -179,7 +180,7 @@ export interface MicCaptureHandle {
 export async function setupMicCapture(
   stream: MediaStream,
   initialMicContext: AudioContext,
-  onChunk: (base64Chunk: string) => void
+  onChunk: (base64Chunk: string, byteLength?: number) => void
 ): Promise<MicCaptureHandle> {
   let activeContext = initialMicContext;
   let sourceNode: MediaStreamAudioSourceNode | null = null;
@@ -207,7 +208,7 @@ export async function setupMicCapture(
   workletNode.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
     if (event.data && event.data.byteLength > 0) {
       const b64 = arrayBufferToBase64(event.data);
-      onChunk(b64);
+      onChunk(b64, event.data.byteLength);
     }
   };
 
