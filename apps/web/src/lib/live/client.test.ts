@@ -542,6 +542,7 @@ describe('GeminiLiveClient', () => {
     const mockAudioQueue = {
       isPlayingWithTail: vi.fn(() => true),
       getUnderrunCount: vi.fn(() => 0),
+      flush: vi.fn(),
     } as unknown as OutputAudioQueue;
 
     const client = createClient({
@@ -573,6 +574,7 @@ describe('GeminiLiveClient', () => {
     const mockAudioQueue = {
       isPlayingWithTail: vi.fn(() => true),
       getUnderrunCount: vi.fn(() => 0),
+      flush: vi.fn(),
     } as unknown as OutputAudioQueue;
 
     const client = createClient({
@@ -611,5 +613,82 @@ describe('GeminiLiveClient', () => {
 
     const stats = client.getStats();
     expect(stats.playbackUnderruns).toBe(4);
+  });
+
+  it('tap mid-turn -> playback flushed, mic ungated for rest of turn, gating back on for next turn', async () => {
+    let mockPlayingWithTail = true;
+    const mockAudioQueue = {
+      isPlayingWithTail: vi.fn(() => mockPlayingWithTail),
+      getUnderrunCount: vi.fn(() => 0),
+      flush: vi.fn(() => {
+        mockPlayingWithTail = false;
+      }),
+      endTurn: vi.fn(),
+    } as unknown as OutputAudioQueue;
+
+    const client = createClient({
+      speakerMode: true,
+      audioQueue: mockAudioQueue,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const ws = MockWebSocket.instances[0];
+    ws.simulateServerMessage({ setupComplete: {} });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Turn 1 chunk 1 arrives (8 base64 chars = 6 bytes = 3 16-bit PCM samples)
+    ws.simulateServerMessage({
+      serverContent: {
+        modelTurn: {
+          parts: [{ inlineData: { data: 'AAAAAAAA', mimeType: 'audio/pcm;rate=24000' } }],
+        },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    mockPlayingWithTail = true;
+    expect(client.isGating()).toBe(true);
+
+    // Trainee taps mid-turn
+    client.stopGating();
+    expect(mockAudioQueue.flush).toHaveBeenCalledTimes(1);
+    expect(client.isGating()).toBe(false);
+
+    // Turn 1 chunk 2 arrives before turnComplete
+    ws.simulateServerMessage({
+      serverContent: {
+        modelTurn: {
+          parts: [{ inlineData: { data: 'BBBBBBBB', mimeType: 'audio/pcm;rate=24000' } }],
+        },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Mic must REMAIN ungated for the rest of Turn 1
+    expect(client.isGating()).toBe(false);
+
+    // Turn 1 completes
+    ws.simulateServerMessage({
+      serverContent: {
+        turnComplete: true,
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Turn 2 chunk 1 arrives (NEW model turn)
+    mockPlayingWithTail = true;
+    ws.simulateServerMessage({
+      serverContent: {
+        modelTurn: {
+          parts: [{ inlineData: { data: 'CCCCCCCC', mimeType: 'audio/pcm;rate=24000' } }],
+        },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Gating is back ON for the new turn!
+    expect(client.isGating()).toBe(true);
   });
 });

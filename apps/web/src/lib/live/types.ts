@@ -33,6 +33,14 @@ export interface LiveClientStats {
   interruptedCount: number;
   playbackUnderruns: number;
   isGating: boolean;
+  tokenFetchMs: number | null;
+  timeToFirstAudioMs: number | null;
+  lastVerifyLatencyMs: number | null;
+  medianVerifyLatencyMs: number | null;
+  lastPointLatencyMs: number | null;
+  medianPointLatencyMs: number | null;
+  lastToolLatencyMs: number | null;
+  medianToolLatencyMs: number | null;
 }
 
 export interface LiveClientCallbacks {

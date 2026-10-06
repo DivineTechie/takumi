@@ -30,7 +30,13 @@ describe('buildLiveSystemInstruction', () => {
       'When the trainee says they are done, call verify_step for the current step.'
     );
     expect(prompt).toContain(
+      'When verify_step returns passed=true: give one short sentence of praise and announce the next step. When passed=false and visible=true: say the fix in one sentence. When visible=false: ask the trainee to hold the camera steady and move their hands out of the way. Never read the raw result aloud.'
+    );
+    expect(prompt).toContain(
       'When the trainee seems unsure where to act, call point_at with a short visual target.'
+    );
+    expect(prompt).toContain(
+      "When point_at returns a result, say one short sentence like 'Look at the yellow circle.'"
     );
   });
 

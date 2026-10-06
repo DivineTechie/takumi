@@ -69,6 +69,16 @@ export async function decodeWebSocketData(
   throw new Error(`Unsupported WebSocket data type: ${typeof data} [${Object.prototype.toString.call(data)}]`);
 }
 
+export function computeMedian(arr: number[]): number | null {
+  if (arr.length === 0) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+  }
+  return sorted[mid];
+}
+
 export class GeminiLiveClient {
   private config: LiveClientConfig;
   private ws: WebSocket | null = null;
@@ -85,7 +95,12 @@ export class GeminiLiveClient {
   private speakerMode = true;
   private audioQueue?: OutputAudioQueue;
   private gatingOverridden = false;
+  private turnEnded = true;
+  private simulatedAudioEndMs = 0;
   private simulatedGatingUntil = 0;
+  private verifyLatencies: number[] = [];
+  private pointLatencies: number[] = [];
+  private toolLatencies: number[] = [];
   private stats: LiveClientStats = {
     setupCompleteReceived: false,
     setupCompleteMs: null,
@@ -98,6 +113,14 @@ export class GeminiLiveClient {
     interruptedCount: 0,
     playbackUnderruns: 0,
     isGating: false,
+    tokenFetchMs: null,
+    timeToFirstAudioMs: null,
+    lastVerifyLatencyMs: null,
+    medianVerifyLatencyMs: null,
+    lastPointLatencyMs: null,
+    medianPointLatencyMs: null,
+    lastToolLatencyMs: null,
+    medianToolLatencyMs: null,
   };
 
   constructor(config: LiveClientConfig) {
@@ -126,6 +149,11 @@ export class GeminiLiveClient {
 
   public stopGating(): void {
     this.gatingOverridden = true;
+    if (this.audioQueue && typeof this.audioQueue.flush === 'function') {
+      this.audioQueue.flush();
+    }
+    this.simulatedAudioEndMs = 0;
+    this.simulatedGatingUntil = 0;
     this.notifyStats();
   }
 
@@ -140,6 +168,27 @@ export class GeminiLiveClient {
       return this.audioQueue.isPlayingWithTail(0.3);
     }
     return Date.now() < this.simulatedGatingUntil;
+  }
+
+  public recordVerifyLatency(ms: number): void {
+    this.verifyLatencies.push(ms);
+    this.stats.lastVerifyLatencyMs = ms;
+    this.stats.medianVerifyLatencyMs = computeMedian(this.verifyLatencies);
+    this.recordToolLatency(ms);
+  }
+
+  public recordPointLatency(ms: number): void {
+    this.pointLatencies.push(ms);
+    this.stats.lastPointLatencyMs = ms;
+    this.stats.medianPointLatencyMs = computeMedian(this.pointLatencies);
+    this.recordToolLatency(ms);
+  }
+
+  public recordToolLatency(ms: number): void {
+    this.toolLatencies.push(ms);
+    this.stats.lastToolLatencyMs = ms;
+    this.stats.medianToolLatencyMs = computeMedian(this.toolLatencies);
+    this.notifyStats();
   }
 
   public getStats(): LiveClientStats {
@@ -203,7 +252,9 @@ export class GeminiLiveClient {
 
     try {
       // 1. Fetch fresh single-use token from backend takumi-api
+      const tokenStart = Date.now();
       const tokenResp = await liveToken('coach');
+      this.stats.tokenFetchMs = Date.now() - tokenStart;
       const token = tokenResp.token;
 
       if (this.explicitlyClosed) return;
@@ -389,23 +440,39 @@ export class GeminiLiveClient {
 
         if (sc.interrupted) {
           this.stats.interruptedCount++;
+          this.simulatedAudioEndMs = 0;
           this.simulatedGatingUntil = 0;
+          this.turnEnded = true;
           this.gatingOverridden = false;
           this.config.callbacks.onInterrupted?.();
           this.notifyStats();
         }
 
+        if (sc.turnComplete) {
+          this.turnEnded = true;
+        }
+
         // Output audio from modelTurn
         if (sc.modelTurn?.parts) {
-          this.gatingOverridden = false;
+          if (this.turnEnded) {
+            this.turnEnded = false;
+            this.gatingOverridden = false;
+          }
           for (const part of sc.modelTurn.parts) {
             if (part.inlineData?.data) {
               this.stats.audioChunksReceived++;
-              const pcm16 = base64ToPCM16(part.inlineData.data);
-              const durationMs = (pcm16.length / 24000) * 1000;
-              const now = Date.now();
-              this.simulatedGatingUntil = Math.max(this.simulatedGatingUntil, now) + durationMs + 300;
-              this.config.callbacks.onAudioChunk?.(pcm16.buffer);
+              if (this.stats.timeToFirstAudioMs === null && this.connectStartTime > 0) {
+                this.stats.timeToFirstAudioMs = Date.now() - this.connectStartTime;
+              }
+              if (!this.gatingOverridden) {
+                const pcm16 = base64ToPCM16(part.inlineData.data);
+                const durationMs = (pcm16.length / 24000) * 1000;
+                const now = Date.now();
+                const currentScheduledEnd = Math.max(this.simulatedAudioEndMs, now);
+                this.simulatedAudioEndMs = currentScheduledEnd + durationMs;
+                this.simulatedGatingUntil = this.simulatedAudioEndMs + 300;
+                this.config.callbacks.onAudioChunk?.(pcm16.buffer);
+              }
             }
           }
           this.notifyStats();
@@ -458,6 +525,7 @@ export class GeminiLiveClient {
     const responses = [];
 
     for (const call of calls) {
+      const toolStart = Date.now();
       let result: Record<string, unknown>;
       try {
         result = await this.config.callbacks.onToolCall({
@@ -468,6 +536,14 @@ export class GeminiLiveClient {
       } catch (err) {
         console.error(`Tool call ${call.name} failed:`, err);
         result = { error: 'Tool execution failed' };
+      }
+      const toolElapsed = Date.now() - toolStart;
+      if (call.name === 'verify_step') {
+        this.recordVerifyLatency(toolElapsed);
+      } else if (call.name === 'point_at') {
+        this.recordPointLatency(toolElapsed);
+      } else {
+        this.recordToolLatency(toolElapsed);
       }
 
       responses.push({
