@@ -69,7 +69,7 @@ steps:
     args:
       - '-c'
       - |
-        npx --yes firebase-tools deploy --only firestore:rules,storage --project takumi-cup-2026 --non-interactive
+        npx --yes firebase-tools deploy --only firestore:rules,firestore:indexes,storage --project takumi-cup-2026 --non-interactive
 
   # 7. Write web config and build apps/web
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'

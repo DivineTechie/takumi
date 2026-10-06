@@ -102,6 +102,8 @@ export class GeminiLiveClient {
   private verifyLatencies: number[] = [];
   private pointLatencies: number[] = [];
   private toolLatencies: number[] = [];
+  private coachLineBuffer: string[] = [];
+  private traineeLineBuffer: string[] = [];
   private stats: LiveClientStats = {
     setupCompleteReceived: false,
     setupCompleteMs: null,
@@ -203,6 +205,26 @@ export class GeminiLiveClient {
 
   private notifyStats(): void {
     this.config.callbacks.onStatsUpdate?.(this.getStats());
+  }
+
+  private flushCoachLine(): void {
+    if (this.coachLineBuffer.length === 0) return;
+    const joined = this.coachLineBuffer.join(' ').trim();
+    this.coachLineBuffer = [];
+    const cleaned = cleanTranscript(joined).slice(0, 300).trim();
+    if (cleaned) {
+      this.config.callbacks.onCoachLine?.(cleaned);
+    }
+  }
+
+  private flushTraineeLine(): void {
+    if (this.traineeLineBuffer.length === 0) return;
+    const joined = this.traineeLineBuffer.join(' ').trim();
+    this.traineeLineBuffer = [];
+    const cleaned = cleanTranscript(joined).slice(0, 300).trim();
+    if (cleaned) {
+      this.config.callbacks.onTraineeLine?.(cleaned);
+    }
   }
 
   private clearSetupTimeout(): void {
@@ -456,12 +478,15 @@ export class GeminiLiveClient {
           this.simulatedGatingUntil = 0;
           this.turnEnded = true;
           this.gatingOverridden = false;
+          this.flushCoachLine();
           this.config.callbacks.onInterrupted?.();
           this.notifyStats();
         }
 
         if (sc.turnComplete) {
           this.turnEnded = true;
+          this.flushCoachLine();
+          this.flushTraineeLine();
         }
 
         // Output audio from modelTurn
@@ -469,6 +494,7 @@ export class GeminiLiveClient {
           if (this.turnEnded) {
             this.turnEnded = false;
             this.gatingOverridden = false;
+            this.flushTraineeLine();
           }
           for (const part of sc.modelTurn.parts) {
             if (part.inlineData?.data) {
@@ -493,6 +519,7 @@ export class GeminiLiveClient {
         // Output transcription (coach speech)
         if (sc.outputTranscription?.text) {
           this.stats.transcriptsReceived++;
+          this.coachLineBuffer.push(sc.outputTranscription.text);
           const cleaned = cleanTranscript(sc.outputTranscription.text);
           if (cleaned) {
             this.config.callbacks.onTranscript({
@@ -508,6 +535,7 @@ export class GeminiLiveClient {
         // Input transcription (trainee speech)
         if (sc.inputTranscription?.text) {
           this.stats.transcriptsReceived++;
+          this.traineeLineBuffer.push(sc.inputTranscription.text);
           const cleaned = cleanTranscript(sc.inputTranscription.text);
           if (cleaned) {
             this.config.callbacks.onTranscript({

@@ -53,6 +53,8 @@ export interface LiveClientCallbacks {
   onError: (err: Error) => void;
   onClose?: (code: number, reason: string) => void;
   onStatsUpdate?: (stats: LiveClientStats) => void;
+  onCoachLine?: (text: string) => void;
+  onTraineeLine?: (text: string) => void;
 }
 
 export interface SystemInstructionOptions {

@@ -112,6 +112,7 @@ export interface CreateSessionEventRequest {
   reason?: string;
   latency_ms?: number;
   frame_uri?: string;
+  image_b64?: string;
 }
 
 /**

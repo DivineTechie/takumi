@@ -95,4 +95,28 @@ describe('Storage Security Rules', () => {
     const skillRef = ref(traineeStorage, 'skills/skill_1/card.png');
     await assertSucceeds(getBytes(skillRef));
   });
+
+  it('any client read or write to sessions/** is denied (server serves via signed URLs)', async () => {
+    // Seed a frame file with security rules disabled
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const storage = context.storage();
+      const frameRef = ref(storage, 'sessions/ses_123/frames/evt_1.jpg');
+      await uploadBytes(frameRef, new Uint8Array([1, 2, 3]));
+    });
+
+    const unauthStorage = testEnv.unauthenticatedContext().storage();
+    const unauthRef = ref(unauthStorage, 'sessions/ses_123/frames/evt_1.jpg');
+    await assertFails(getBytes(unauthRef));
+    await assertFails(uploadBytes(unauthRef, new Uint8Array([1, 2, 3])));
+
+    const traineeStorage = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).storage();
+    const traineeRef = ref(traineeStorage, 'sessions/ses_123/frames/evt_1.jpg');
+    await assertFails(getBytes(traineeRef));
+    await assertFails(uploadBytes(traineeRef, new Uint8Array([1, 2, 3])));
+
+    const supervisorStorage = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).storage();
+    const supRef = ref(supervisorStorage, 'sessions/ses_123/frames/evt_1.jpg');
+    await assertFails(getBytes(supRef));
+    await assertFails(uploadBytes(supRef, new Uint8Array([1, 2, 3])));
+  });
 });

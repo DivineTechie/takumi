@@ -173,7 +173,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       type: 'step_done' | 'mistake',
       step: number,
       reason: string,
-      onPosted?: () => void
+      onPosted?: () => void,
+      image_b64?: string
     ) => {
       const decisionTime = performance.now();
       let resolved = false;
@@ -195,6 +196,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             source: 'watcher',
             reason,
             latency_ms: latencyMs,
+            ...(image_b64 ? { image_b64 } : {}),
           })
             .then(() => onPosted?.())
             .catch((err) => {
@@ -582,6 +584,26 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         onStatsUpdate: (s) => {
           setStats(s);
         },
+        onCoachLine: (text) => {
+          if (sessionIdRef.current) {
+            postSessionEvent(sessionIdRef.current, {
+              step: currentStepRef.current,
+              type: 'coach_line',
+              source: 'coach',
+              reason: text,
+            }).catch((err) => console.warn('Failed to log coach_line event:', err));
+          }
+        },
+        onTraineeLine: (text) => {
+          if (sessionIdRef.current) {
+            postSessionEvent(sessionIdRef.current, {
+              step: currentStepRef.current,
+              type: 'trainee_line',
+              source: 'trainee',
+              reason: text,
+            }).catch((err) => console.warn('Failed to log trainee_line event:', err));
+          }
+        },
       },
     });
     clientRef.current = client;
@@ -827,6 +849,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               source: 'watcher',
               reason: hazardRule || 'Unsafe condition',
               latency_ms: watchLatencyMs,
+              image_b64: frame,
             }).catch((err) => console.warn('Failed to log safety_stop event:', err));
           }
         } else if (effect.type === 'ADVANCE_STEP') {
@@ -865,7 +888,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           const msg = `Mistake on step ${stepN}: ${effect.reason}. Fix: ${effect.fix}. Tell the trainee now in one sentence and call point_at on the exact thing to fix.`;
           clientRef.current?.sendCameraEvent(msg);
           lastCameraEventRef.current = msg;
-          trackDecisionToAudioRef.current('mistake', stepN, effect.reason);
+          trackDecisionToAudioRef.current('mistake', stepN, effect.reason, undefined, frame);
         } else if (effect.type === 'NUDGE_NOT_VISIBLE') {
           // not_visible x4
           const msg =

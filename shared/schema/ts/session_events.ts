@@ -7,7 +7,17 @@
 export interface SessionEvent {
   t: string;
   step: number;
-  type: "step_done" | "mistake" | "blocked" | "safety_stop" | "ask_why" | "ask_master" | "point" | "verify";
+  type:
+    | "step_done"
+    | "mistake"
+    | "blocked"
+    | "safety_stop"
+    | "ask_why"
+    | "ask_master"
+    | "point"
+    | "verify"
+    | "coach_line"
+    | "trainee_line";
   source: "watcher" | "verify" | "coach" | "trainee";
   reason?: string;
   latency_ms?: number;

@@ -35,3 +35,11 @@ TIMEOUT_LIVE_TOKEN_S = 10.0
 
 # Request limits
 MAX_REQUEST_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
+
+# Cloud Storage Bucket
+STORAGE_BUCKET = os.environ.get("FIREBASE_STORAGE_BUCKET", "takumi-cup-2026.firebasestorage.app")
+
+# Supervisor insight exclusions
+EXCLUDED_UIDS = set(
+    filter(None, [u.strip() for u in os.environ.get("EXCLUDED_UIDS", "").split(",")])
+) | {"smoke-trainee"}

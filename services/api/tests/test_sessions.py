@@ -211,3 +211,133 @@ def test_patch_session_recomputes_steps_and_result():
             assert result["mistakes"] == 1
             assert result["safety_stops"] == 1
             assert result["duration_s"] > 0
+
+
+def test_create_session_initializes_current_step_to_1():
+    mock_db = MagicMock()
+    mock_skill_doc = MagicMock()
+    mock_skill_doc.exists = True
+    mock_skill_doc.to_dict.return_value = {
+        "status": "published",
+        "steps": [{"n": 1}, {"n": 2}],
+    }
+    mock_db.collection.return_value.document.return_value.get.return_value = mock_skill_doc
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_abc", "role": "trainee"}):
+        with patch("services.api.main.get_firestore_client", return_value=mock_db):
+            response = client.post(
+                "/api/sessions",
+                json={"skill_id": "skill_1", "language": "en"},
+                headers={"Authorization": "Bearer token"},
+            )
+            assert response.status_code == 201
+            data = response.json()
+            assert data["current_step"] == 1
+
+
+def test_post_event_12_minute_rule_rejects_abandoned_live_sessions():
+    mock_db = MagicMock()
+    mock_session_doc = MagicMock()
+    mock_session_doc.exists = True
+    mock_session_doc.to_dict.return_value = {
+        "trainee_uid": "trainee_abc",
+        "status": "live",
+        "started_at": "2026-10-06T00:00:00Z",
+    }
+    mock_db.collection.return_value.document.return_value.get.return_value = mock_session_doc
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_abc", "role": "trainee"}):
+        with patch("services.api.main.get_firestore_client", return_value=mock_db):
+            response = client.post(
+                "/api/sessions/ses_old/events",
+                json={"step": 1, "type": "coach_line", "source": "coach", "reason": "Hi"},
+                headers={"Authorization": "Bearer token"},
+            )
+            assert response.status_code == 409
+            assert "abandoned" in response.json()["detail"].lower()
+
+
+def test_post_event_reason_truncation():
+    mock_db = MagicMock()
+    mock_session_ref = MagicMock()
+    mock_session_doc = MagicMock()
+    mock_session_doc.exists = True
+    mock_session_doc.to_dict.return_value = {
+        "trainee_uid": "trainee_abc",
+        "status": "live",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "current_step": 1,
+    }
+    mock_session_ref.get.return_value = mock_session_doc
+    mock_db.collection.return_value.document.return_value = mock_session_ref
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_abc", "role": "trainee"}):
+        with patch("services.api.main.get_firestore_client", return_value=mock_db):
+            with patch("services.api.main.stream_session_event"):
+                long_line = "A" * 400
+                res = client.post(
+                    "/api/sessions/ses_123/events",
+                    json={"step": 1, "type": "coach_line", "source": "coach", "reason": long_line},
+                    headers={"Authorization": "Bearer token"},
+                )
+                assert res.status_code == 201
+                assert len(res.json()["reason"]) == 300
+
+                long_verify = "B" * 1200
+                res2 = client.post(
+                    "/api/sessions/ses_123/events",
+                    json={"step": 1, "type": "verify", "source": "verify", "reason": long_verify},
+                    headers={"Authorization": "Bearer token"},
+                )
+                assert res2.status_code == 201
+                assert len(res2.json()["reason"]) == 1000
+
+
+def test_post_event_image_b64_validation_and_storage_upload():
+    mock_db = MagicMock()
+    mock_session_ref = MagicMock()
+    mock_session_doc = MagicMock()
+    mock_session_doc.exists = True
+    mock_session_doc.to_dict.return_value = {
+        "trainee_uid": "trainee_abc",
+        "status": "live",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "current_step": 1,
+    }
+    mock_session_ref.get.return_value = mock_session_doc
+    mock_db.collection.return_value.document.return_value = mock_session_ref
+
+    sample_b64 = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_abc", "role": "trainee"}):
+        with patch("services.api.main.get_firestore_client", return_value=mock_db):
+            with patch("services.api.main.stream_session_event"):
+                with patch("services.api.main.upload_frame_jpeg", return_value="gs://takumi-cup-2026.firebasestorage.app/sessions/ses_123/frames/evt1.jpg"):
+                    # 1. Image on coach_line -> 422
+                    res_bad_type = client.post(
+                        "/api/sessions/ses_123/events",
+                        json={"step": 1, "type": "coach_line", "source": "coach", "image_b64": sample_b64},
+                        headers={"Authorization": "Bearer token"},
+                    )
+                    assert res_bad_type.status_code == 422
+
+                    # 2. Huge image (> 300KB) -> 413
+                    huge_b64 = "A" * (450 * 1024)
+                    res_too_large = client.post(
+                        "/api/sessions/ses_123/events",
+                        json={"step": 1, "type": "mistake", "source": "watcher", "image_b64": huge_b64},
+                        headers={"Authorization": "Bearer token"},
+                    )
+                    assert res_too_large.status_code == 413
+
+                    # 3. Valid mistake event with image -> 201
+                    res_ok = client.post(
+                        "/api/sessions/ses_123/events",
+                        json={"step": 1, "type": "mistake", "source": "watcher", "image_b64": sample_b64},
+                        headers={"Authorization": "Bearer token"},
+                    )
+                    assert res_ok.status_code == 201
+                    assert res_ok.json()["frame_uri"] == "gs://takumi-cup-2026.firebasestorage.app/sessions/ses_123/frames/evt1.jpg"
+

@@ -80,8 +80,8 @@ describe('GeminiLiveClient', () => {
       skill: typedSeedSkill,
       language: 'en',
       getCurrentStep: () => 1,
-      callbacks,
       ...configOverrides,
+      callbacks,
     });
     clients.push(client);
     return client;
@@ -799,6 +799,76 @@ describe('GeminiLiveClient', () => {
       consoleErrorSpy.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  it('buffers and emits coach_line on turnComplete and trainee_line on next turn/turnComplete', async () => {
+    const onCoachLine = vi.fn();
+    const onTraineeLine = vi.fn();
+
+    const client = createClient({
+      callbacks: {
+        onCoachLine,
+        onTraineeLine,
+      },
+    });
+
+    client.connect();
+    await new Promise((r) => setTimeout(r, 20));
+    const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+    ws.simulateServerMessage({ setupComplete: {} });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Trainee speaks in chunks
+    ws.simulateServerMessage({
+      serverContent: {
+        inputTranscription: { text: 'I am holding the' },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    ws.simulateServerMessage({
+      serverContent: {
+        inputTranscription: { text: 'blue wire now.' },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Trainee line should not have flushed yet
+    expect(onTraineeLine).not.toHaveBeenCalled();
+
+    // Model turn starts (first modelTurn chunk arrives) -> should flush trainee line!
+    ws.simulateServerMessage({
+      serverContent: {
+        modelTurn: {
+          parts: [{ text: 'Great, insert it into terminal 1.' }],
+        },
+        outputTranscription: { text: 'Great, insert it' },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(onTraineeLine).toHaveBeenCalledWith('I am holding the blue wire now.');
+
+    // Coach sends another chunk
+    ws.simulateServerMessage({
+      serverContent: {
+        outputTranscription: { text: 'into terminal 1.' },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Coach line not flushed yet
+    expect(onCoachLine).not.toHaveBeenCalled();
+
+    // turnComplete arrives -> should flush coach line!
+    ws.simulateServerMessage({
+      serverContent: {
+        turnComplete: true,
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(onCoachLine).toHaveBeenCalledWith('Great, insert it into terminal 1.');
   });
 });
 

@@ -42,5 +42,10 @@ service firebase.storage {
       allow read: if isSignedIn();
       allow write: if isSupervisor();
     }
+
+    // sessions/** has no client access; served only via server signed URLs
+    match /sessions/{allPaths=**} {
+      allow read, write: if false;
+    }
   }
 }

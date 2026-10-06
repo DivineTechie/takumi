@@ -1,15 +1,18 @@
 """TAKUMI API service implemented with FastAPI on Python 3.12."""
 
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import secrets
+import statistics
+import time
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from google.cloud import bigquery, firestore
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from firebase_admin import auth as fb_auth
@@ -18,13 +21,18 @@ from services.api.auth import (
     AuthUser,
     check_rate_limit,
     get_firestore_client,
+    init_firebase_admin,
     verify_auth_token,
 )
-from services.api.bigquery_client import stream_session_event
+from services.api.bigquery_client import get_bigquery_client, stream_session_event
 from services.api.config import (
+    EXCLUDED_UIDS,
+    GCP_PROJECT,
     LOCAL_DEV,
     MAX_REQUEST_SIZE_BYTES,
+    STORAGE_BUCKET,
 )
+from services.api.storage_client import get_signed_url_for_gs_uri, upload_frame_jpeg
 from services.api.gemini import (
     call_point,
     call_verify,
@@ -128,9 +136,10 @@ class SessionEventCreateRequest(BaseModel):
     reason: str | None = None
     latency_ms: int | None = None
     frame_uri: str | None = None
+    image_b64: str | None = None
 
 
-# --- Role-checking dependencies ---
+# --- Role-checking dependencies & Helpers ---
 
 
 def require_trainee_or_supervisor(user: AuthUser = Depends(verify_auth_token)) -> AuthUser:
@@ -149,6 +158,51 @@ def require_any_authenticated_user(user: AuthUser = Depends(verify_auth_token)) 
             detail=f"Forbidden: role '{user.role}' is not allowed",
         )
     return user
+
+
+def require_supervisor(user: AuthUser = Depends(verify_auth_token)) -> AuthUser:
+    if user.role != "supervisor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{user.role}' is not allowed for supervisor insights",
+        )
+    return user
+
+
+# In-memory cache for supervisor insight endpoints (TTL: 60s)
+_insights_cache: dict[str, tuple[float, Any]] = {}
+
+
+def get_from_cache(key: str) -> Any | None:
+    if key in _insights_cache:
+        cached_ts, val = _insights_cache[key]
+        if time.time() - cached_ts < 60.0:
+            return val
+    return None
+
+
+def set_in_cache(key: str, val: Any) -> None:
+    _insights_cache[key] = (time.time(), val)
+
+
+def clear_insights_cache() -> None:
+    _insights_cache.clear()
+
+
+def get_trainee_first_name(uid: str | None) -> str:
+    """Returns a trainee's first name only. Never exposes or logs email addresses."""
+    if not uid:
+        return "Trainee"
+    init_firebase_admin()
+    try:
+        user_record = fb_auth.get_user(uid)
+        dname = user_record.display_name
+        if dname and dname.strip():
+            return dname.strip().split()[0]
+    except Exception:
+        pass
+    last4 = uid[-4:] if len(uid) >= 4 else uid
+    return f"Trainee {last4}"
 
 
 # --- Routes ---
@@ -316,6 +370,7 @@ async def create_session(
         "trainee_uid": user.uid,
         "language": req.language,
         "status": "live",
+        "current_step": 1,
         "started_at": started_at.isoformat(),
         "ended_at": None,
         "steps": steps,
@@ -355,19 +410,100 @@ async def create_session_event(
             detail=f"Cannot post events to session with status '{session_data.get('status')}'",
         )
 
-    event_time = datetime.now(timezone.utc)
+    # Enforce 12-minute live limit
+    now = datetime.now(timezone.utc)
+    started_at_raw = session_data.get("started_at")
+    if isinstance(started_at_raw, str):
+        try:
+            started_at = datetime.fromisoformat(started_at_raw)
+        except Exception:
+            started_at = now
+    elif isinstance(started_at_raw, datetime):
+        started_at = started_at_raw
+    else:
+        started_at = now
+
+    if (now - started_at).total_seconds() >= 12 * 60:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session has exceeded maximum live duration and is abandoned",
+        )
+
+    # Truncate reason: 300 chars for coach_line/trainee_line, 1000 for others
+    if req.reason:
+        if req.type in ("coach_line", "trainee_line"):
+            clean_reason = req.reason[:300]
+        else:
+            clean_reason = req.reason[:1000]
+    else:
+        clean_reason = None
+
+    # Frame upload for mistake and safety_stop
+    event_id = secrets.token_hex(8)
+    frame_uri = req.frame_uri
+    if req.image_b64:
+        if req.type not in ("mistake", "safety_stop"):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="image_b64 is only allowed for mistake and safety_stop events",
+            )
+        raw_b64 = req.image_b64.split(",", 1)[1] if "," in req.image_b64 else req.image_b64
+        if len(raw_b64) * 3 / 4 > 300 * 1024:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail="Image frame exceeds 300KB limit",
+            )
+        img = decode_and_validate_image(req.image_b64)
+        jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=640)
+        frame_uri = upload_frame_jpeg(session_id, event_id, jpeg_bytes)
+
     event_dict = {
-        "t": event_time.isoformat(),
+        "t": now.isoformat(),
         "step": req.step,
         "type": req.type,
         "source": req.source,
-        "reason": req.reason,
+        "reason": clean_reason,
         "latency_ms": req.latency_ms,
-        "frame_uri": req.frame_uri,
+        "frame_uri": frame_uri,
     }
 
-    # Write to Firestore subcollection sessions/{id}/events
-    session_ref.collection("events").add(event_dict)
+    if req.type == "step_done":
+        @firestore.transactional
+        def txn_step_done(transaction):
+            s_snap = session_ref.get(transaction=transaction)
+            if not s_snap.exists:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+            s_dict = s_snap.to_dict() or {}
+            if s_dict.get("trainee_uid") != user.uid:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+            if s_dict.get("status") != "live":
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Session is not live")
+
+            curr_step = s_dict.get("current_step", 1)
+            steps = s_dict.get("steps", [])
+            total_steps = len(steps)
+
+            update_data = {}
+            if req.step == curr_step:
+                next_step = min(req.step + 1, total_steps) if total_steps > 0 else req.step + 1
+                update_data["current_step"] = next_step
+                for s in steps:
+                    if s.get("n") == req.step:
+                        s["state"] = "done"
+                    elif s.get("n") == next_step and s.get("state") == "pending":
+                        s["state"] = "active"
+                update_data["steps"] = steps
+
+            event_doc = session_ref.collection("events").document(event_id)
+            transaction.set(event_doc, event_dict)
+            if update_data:
+                transaction.update(session_ref, update_data)
+
+        txn = db.transaction()
+        txn_step_done(txn)
+    else:
+        # Plain write for non-step_done events
+        session_ref.collection("events").document(event_id).set(event_dict)
 
     # Stream to BigQuery takumi.session_events
     bq_row = {
@@ -378,9 +514,9 @@ async def create_session_event(
         "step": req.step,
         "type": req.type,
         "source": req.source,
-        "reason": req.reason,
+        "reason": clean_reason,
         "latency_ms": req.latency_ms,
-        "ts": event_time.isoformat(),
+        "ts": now.isoformat(),
     }
     stream_session_event(bq_row)
 
@@ -479,3 +615,361 @@ async def patch_session(
 
     session_data.update(updated_fields)
     return session_data
+
+
+# --- Supervisor Insight Endpoints (Role: supervisor only) ---
+
+
+@app.get("/api/insights/matrix")
+async def get_insights_matrix(
+    user: AuthUser = Depends(require_supervisor),
+) -> dict[str, Any]:
+    cached = get_from_cache("insights:matrix")
+    if cached is not None:
+        return cached
+
+    db = get_firestore_client()
+
+    # 1. Published skills
+    skills_query = db.collection("skills").where("status", "==", "published").stream()
+    published_skills = []
+    for doc in skills_query:
+        d = doc.to_dict() or {}
+        published_skills.append({"id": doc.id, "title": d.get("title", doc.id)})
+    published_skills.sort(key=lambda x: x["title"])
+
+    # 2. Passports (certified)
+    passports_query = db.collection("passports").stream()
+    certified_pairs = set()
+    for doc in passports_query:
+        pd = doc.to_dict() or {}
+        t_uid = pd.get("trainee_uid")
+        s_id = pd.get("skill_id")
+        if t_uid and s_id and t_uid not in EXCLUDED_UIDS:
+            certified_pairs.add((t_uid, s_id))
+
+    # 3. Sessions
+    now = datetime.now(timezone.utc)
+    cutoff_12m = (now - timedelta(minutes=12)).isoformat()
+    sessions_query = db.collection("sessions").stream()
+
+    trainee_sessions: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    all_trainee_uids: set[str] = set()
+
+    for doc in sessions_query:
+        sd = doc.to_dict() or {}
+        t_uid = sd.get("trainee_uid")
+        s_id = sd.get("skill_id")
+        s_status = sd.get("status")
+        started_at = sd.get("started_at") or ""
+
+        if not t_uid or t_uid in EXCLUDED_UIDS:
+            continue
+
+        # Treat older live sessions as abandoned
+        if s_status == "live" and started_at < cutoff_12m:
+            continue
+        if s_status == "abandoned":
+            continue
+
+        all_trainee_uids.add(t_uid)
+        if t_uid not in trainee_sessions:
+            trainee_sessions[t_uid] = {}
+        if s_id not in trainee_sessions[t_uid]:
+            trainee_sessions[t_uid][s_id] = []
+        trainee_sessions[t_uid][s_id].append(sd)
+
+    for t_uid, _ in certified_pairs:
+        all_trainee_uids.add(t_uid)
+
+    # 4. Resolve trainee first names
+    trainees_list = []
+    for t_uid in sorted(all_trainee_uids):
+        first_name = get_trainee_first_name(t_uid)
+        trainees_list.append({"uid": t_uid, "first_name": first_name})
+
+    # 5. Build matrix cells
+    cells = []
+    for t_uid in sorted(all_trainee_uids):
+        for sk in published_skills:
+            sk_id = sk["id"]
+            user_skill_sessions = trainee_sessions.get(t_uid, {}).get(sk_id, [])
+
+            is_certified = (t_uid, sk_id) in certified_pairs
+            has_sessions = len(user_skill_sessions) > 0
+
+            if is_certified:
+                cell_status = "certified"
+            elif has_sessions:
+                cell_status = "learning"
+            else:
+                cell_status = "not_started"
+
+            last_session_at = None
+            mistakes_trend = []
+            if has_sessions:
+                sorted_sessions = sorted(
+                    user_skill_sessions,
+                    key=lambda x: str(x.get("started_at") or ""),
+                )
+                last_session_at = sorted_sessions[-1].get("started_at")
+                recent_5 = sorted_sessions[-5:]
+                mistakes_trend = [
+                    int(s.get("result", {}).get("mistakes", 0))
+                    if isinstance(s.get("result"), dict)
+                    else 0
+                    for s in recent_5
+                ]
+
+            cells.append({
+                "uid": t_uid,
+                "skill_id": sk_id,
+                "status": cell_status,
+                "sessions": len(user_skill_sessions),
+                "last_session_at": last_session_at,
+                "mistakes_trend": mistakes_trend,
+            })
+
+    result = {
+        "trainees": trainees_list,
+        "skills": published_skills,
+        "cells": cells,
+    }
+    set_in_cache("insights:matrix", result)
+    return result
+
+
+@app.get("/api/insights/skill/{skill_id}")
+async def get_insights_skill(
+    skill_id: str,
+    user: AuthUser = Depends(require_supervisor),
+) -> dict[str, Any]:
+    cache_key = f"insights:skill:{skill_id}"
+    cached = get_from_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    db = get_firestore_client()
+    skill_doc = db.collection("skills").document(skill_id).get()
+    if not skill_doc.exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+
+    skill_data = skill_doc.to_dict() or {}
+    steps_def = skill_data.get("steps", [])
+    total_steps = len(steps_def)
+
+    bq = get_bigquery_client()
+    excluded_list = list(EXCLUDED_UIDS)
+
+    # Query 1: Step counts (sessions reached, mistakes, safety stops)
+    q1 = f"""
+        SELECT
+          step,
+          COUNT(DISTINCT session_id) AS sessions_reached,
+          COUNT(DISTINCT CASE WHEN type = 'mistake' THEN session_id END) AS sessions_with_mistake,
+          COUNTIF(type = 'safety_stop') AS safety_stops
+        FROM `{GCP_PROJECT}.takumi.session_events`
+        WHERE skill_id = @skill_id
+          AND trainee_uid NOT IN UNNEST(@excluded_uids)
+          AND step IS NOT NULL
+        GROUP BY step
+        ORDER BY step ASC
+    """
+
+    # Query 2: Step timing (LAG only over step_done events)
+    q2 = f"""
+        WITH session_starts AS (
+          SELECT
+            session_id,
+            MIN(ts) AS session_start_ts
+          FROM `{GCP_PROJECT}.takumi.session_events`
+          WHERE skill_id = @skill_id
+            AND trainee_uid NOT IN UNNEST(@excluded_uids)
+          GROUP BY session_id
+        ),
+        step_dones AS (
+          SELECT
+            session_id,
+            step,
+            MIN(ts) AS ts
+          FROM `{GCP_PROJECT}.takumi.session_events`
+          WHERE skill_id = @skill_id
+            AND type = 'step_done'
+            AND trainee_uid NOT IN UNNEST(@excluded_uids)
+          GROUP BY session_id, step
+        ),
+        step_times AS (
+          SELECT
+            session_id,
+            step,
+            ts,
+            LAG(ts) OVER (PARTITION BY session_id ORDER BY step ASC) AS prev_step_done_ts
+          FROM step_dones
+        )
+        SELECT
+          st.session_id,
+          st.step,
+          CASE
+            WHEN st.prev_step_done_ts IS NOT NULL THEN
+              TIMESTAMP_DIFF(st.ts, st.prev_step_done_ts, SECOND)
+            ELSE
+              TIMESTAMP_DIFF(st.ts, ss.session_start_ts, SECOND)
+          END AS step_secs
+        FROM step_times st
+        JOIN session_starts ss ON st.session_id = ss.session_id
+    """
+
+    # Query 3: Session totals (sessions, completed, duration)
+    q3 = f"""
+        WITH session_summary AS (
+          SELECT
+            session_id,
+            MIN(ts) AS first_ts,
+            MAX(ts) AS last_ts,
+            MAX(CASE WHEN type = 'step_done' THEN step ELSE 0 END) AS max_step_done
+          FROM `{GCP_PROJECT}.takumi.session_events`
+          WHERE skill_id = @skill_id
+            AND trainee_uid NOT IN UNNEST(@excluded_uids)
+          GROUP BY session_id
+        )
+        SELECT
+          session_id,
+          TIMESTAMP_DIFF(last_ts, first_ts, SECOND) AS duration_s,
+          max_step_done
+        FROM session_summary
+    """
+
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("skill_id", "STRING", skill_id),
+            bigquery.ArrayQueryParameter("excluded_uids", "STRING", excluded_list),
+        ]
+    )
+
+    try:
+        r1_rows = list(bq.query(q1, job_config=job_config).result())
+        r2_rows = list(bq.query(q2, job_config=job_config).result())
+        r3_rows = list(bq.query(q3, job_config=job_config).result())
+    except Exception as e:
+        logger.error(f"BigQuery insights query failed: {e}")
+        r1_rows, r2_rows, r3_rows = [], [], []
+
+    # Map step counts
+    counts_by_step = {
+        r.step: {
+            "sessions_reached": r.sessions_reached,
+            "sessions_with_mistake": r.sessions_with_mistake,
+            "safety_stops": r.safety_stops,
+        }
+        for r in r1_rows
+    }
+
+    # Map step durations
+    durations_by_step: dict[int, list[float]] = {}
+    for r in r2_rows:
+        if r.step not in durations_by_step:
+            durations_by_step[r.step] = []
+        if r.step_secs is not None:
+            durations_by_step[r.step].append(float(r.step_secs))
+
+    # Assemble per-step statistics
+    steps_result = []
+    for sdef in steps_def:
+        sn = sdef.get("n", 1)
+        s_counts = counts_by_step.get(sn, {})
+        s_reached = s_counts.get("sessions_reached", 0)
+        s_with_mistake = s_counts.get("sessions_with_mistake", 0)
+        s_safety_stops = s_counts.get("safety_stops", 0)
+
+        mistake_rate = (
+            round(float(s_with_mistake) / float(s_reached), 2)
+            if s_reached > 0
+            else 0.0
+        )
+        s_durations = durations_by_step.get(sn, [])
+        median_secs = (
+            round(float(statistics.median(s_durations)), 1)
+            if s_durations
+            else 0.0
+        )
+
+        steps_result.append({
+            "n": sn,
+            "instruction": sdef.get("instruction", f"Step {sn}"),
+            "sessions_reached": s_reached,
+            "mistake_rate": mistake_rate,
+            "median_secs": median_secs,
+            "safety_stops": s_safety_stops,
+        })
+
+    # Assemble totals
+    total_sessions = len(r3_rows)
+    completed_sessions = sum(1 for r in r3_rows if (r.max_step_done or 0) >= total_steps)
+    completed_durations = [
+        float(r.duration_s)
+        for r in r3_rows
+        if (r.max_step_done or 0) >= total_steps and r.duration_s is not None
+    ]
+    all_durations = [
+        float(r.duration_s)
+        for r in r3_rows
+        if r.duration_s is not None
+    ]
+    if completed_durations:
+        median_duration_s = round(float(statistics.median(completed_durations)), 1)
+    elif all_durations:
+        median_duration_s = round(float(statistics.median(all_durations)), 1)
+    else:
+        median_duration_s = 0.0
+
+    totals = {
+        "sessions": total_sessions,
+        "completed": completed_sessions,
+        "median_duration_s": median_duration_s,
+    }
+
+    response_payload = {
+        "steps": steps_result,
+        "totals": totals,
+    }
+    set_in_cache(cache_key, response_payload)
+    return response_payload
+
+
+@app.get("/api/sessions/{session_id}/replay")
+async def get_session_replay(
+    session_id: str,
+    user: AuthUser = Depends(require_supervisor),
+) -> dict[str, Any]:
+    cache_key = f"insights:replay:{session_id}"
+    cached = get_from_cache(cache_key)
+    if cached is not None:
+        return cached
+
+    db = get_firestore_client()
+    session_ref = db.collection("sessions").document(session_id)
+    session_doc = session_ref.get()
+    if not session_doc.exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    session_data = session_doc.to_dict() or {}
+    trainee_uid = session_data.pop("trainee_uid", None)
+    first_name = get_trainee_first_name(trainee_uid)
+    session_data["first_name"] = first_name
+
+    # Fetch events in chronological order
+    events_docs = session_ref.collection("events").order_by("t").stream()
+    events = []
+    for edoc in events_docs:
+        edata = edoc.to_dict() or {}
+        frame_uri = edata.get("frame_uri")
+        if frame_uri and frame_uri.startswith("gs://"):
+            edata["frame_uri"] = get_signed_url_for_gs_uri(frame_uri, expires_minutes=15)
+        events.append(edata)
+
+    replay_payload = {
+        "session": session_data,
+        "events": events,
+    }
+    set_in_cache(cache_key, replay_payload)
+    return replay_payload
