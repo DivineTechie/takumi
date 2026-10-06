@@ -70,23 +70,6 @@ export const CoachBeforeStartScreen: React.FC = () => {
         setLoading(true);
         setLoadError(null);
 
-        // Support mock skill injection for preview/test harness
-        const mockSkill = typeof window !== 'undefined' ? (window as unknown as { __TAKUMI_MOCK_SKILL__?: Skill }).__TAKUMI_MOCK_SKILL__ : null;
-        if (mockSkill && mockSkill.id === skillId) {
-          if (mockSkill.status !== 'published') {
-            if (isMounted) {
-              setLoadError('Lesson is not published yet');
-              setLoading(false);
-            }
-            return;
-          }
-          if (isMounted) {
-            setSkill(mockSkill);
-            setLoading(false);
-          }
-          return;
-        }
-
         const docRef = doc(db, 'skills', skillId!);
         const snapshot = await getDoc(docRef);
 

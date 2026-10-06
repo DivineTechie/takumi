@@ -86,24 +86,9 @@ export async function signOutAction(): Promise<void> {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window !== 'undefined' && (window as unknown as { __TAKUMI_MOCK_AUTH__?: { user: User; role: Role } }).__TAKUMI_MOCK_AUTH__) {
-      return (window as unknown as { __TAKUMI_MOCK_AUTH__: { user: User; role: Role } }).__TAKUMI_MOCK_AUTH__.user;
-    }
-    return null;
-  });
-  const [role, setRole] = useState<Role | null>(() => {
-    if (typeof window !== 'undefined' && (window as unknown as { __TAKUMI_MOCK_AUTH__?: { user: User; role: Role } }).__TAKUMI_MOCK_AUTH__) {
-      return (window as unknown as { __TAKUMI_MOCK_AUTH__: { user: User; role: Role } }).__TAKUMI_MOCK_AUTH__.role;
-    }
-    return null;
-  });
-  const [loading, setLoading] = useState<boolean>(() => {
-    if (typeof window !== 'undefined' && (window as unknown as { __TAKUMI_MOCK_AUTH__?: { user: User; role: Role } }).__TAKUMI_MOCK_AUTH__) {
-      return false;
-    }
-    return true;
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<Role | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const syncUserRole = async (currentUser: User) => {
     try {
@@ -129,14 +114,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   useEffect(() => {
-    const mockAuth = typeof window !== 'undefined' ? (window as unknown as { __TAKUMI_MOCK_AUTH__?: { user: User; role: Role } }).__TAKUMI_MOCK_AUTH__ : null;
-    if (mockAuth) {
-      setUser(mockAuth.user);
-      setRole(mockAuth.role);
-      setLoading(false);
-      return;
-    }
-
     const redirectPromise = getRedirectResult(auth);
     if (redirectPromise && typeof redirectPromise.then === 'function') {
       redirectPromise

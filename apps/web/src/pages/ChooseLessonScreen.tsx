@@ -13,13 +13,6 @@ export const ChooseLessonScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const mockSkills = typeof window !== 'undefined' ? (window as unknown as { __TAKUMI_MOCK_SKILLS__?: Skill[] }).__TAKUMI_MOCK_SKILLS__ : null;
-    if (mockSkills) {
-      setSkills(mockSkills);
-      setLoading(false);
-      return;
-    }
-
     // Live Firestore query on published skills
     const q = query(collection(db, 'skills'), where('status', '==', 'published'));
     const unsubscribe = onSnapshot(
