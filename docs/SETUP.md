@@ -142,6 +142,9 @@ TAKUMI includes a production kill switch to pause live coaching sessions during 
   gcloud run services update takumi-api --update-env-vars SESSIONS_ENABLED=true --region=asia-southeast1 --project=takumi-cup-2026
   ```
 
+> [!NOTE]
+> Every coach deploy runs `--set-env-vars`, which resets all `takumi-api` environment variables. Therefore, a manual kill switch (`SESSIONS_ENABLED=false`) or ad-hoc tuning change made via `gcloud` lasts only until the next push to `coach`. To persist a setting across deployments, update `infra/cloudbuild-coach.yaml`.
+
 ---
 
 ## 9. Cloud Monitoring Uptime Check & Alerting

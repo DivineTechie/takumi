@@ -1,0 +1,85 @@
+{
+  "verify_budget0": {
+    "config": "verify: budget 0 (1280px, thinking_budget=0)",
+    "p50_ms": 5039.8,
+    "p90_ms": 6033.1,
+    "mean_ms": 5002.3,
+    "sample_answer": {
+      "passed": false,
+      "visible": true,
+      "reason": "The wire with the ferrule is not inserted into the terminal block; it is lying disconnected beside the terminal."
+    },
+    "answers_sample": [
+      {
+        "passed": false,
+        "visible": true,
+        "reason": "The wire with the ferrule is not inserted into the terminal block; it is lying disconnected beside the terminal."
+      },
+      {
+        "passed": false,
+        "visible": true,
+        "reason": "No wire with a blue ferrule is inserted or seated into terminal 1; the terminal slot is empty and the ferruled wires remain outside."
+      },
+      {
+        "passed": false,
+        "visible": true,
+        "reason": "The wire with the ferrule is lying uninserted next to the terminal block, and no blue ferrule is seated in terminal 1."
+      }
+    ]
+  },
+  "point_budget0": {
+    "config": "point: budget 0 (1280px, thinking_budget=0)",
+    "p50_ms": 1723.5,
+    "p90_ms": 3049.8,
+    "mean_ms": 2146.5,
+    "sample_point": [
+      382,
+      588
+    ],
+    "points_sample": [
+      [
+        382,
+        588
+      ],
+      [
+        382,
+        588
+      ],
+      [
+        377,
+        588
+      ]
+    ]
+  },
+  "verify_positive_done": {
+    "config": "verify: LOW@1280 on positive image (step IS done)",
+    "total_runs": 10,
+    "passed_count": 10,
+    "passed_rate_pct": 100.0,
+    "p50_ms": 5450.2,
+    "p90_ms": 7732.5,
+    "mean_ms": 5207.1,
+    "sample_answer": {
+      "passed": true,
+      "visible": true,
+      "reason": "Terminal 1 on the terminal block is clearly visible, and the wire (black wire) is inserted and secured into terminal 1, with a red wire connected to terminal 2."
+    },
+    "answers_sample": [
+      {
+        "passed": true,
+        "visible": true,
+        "reason": "Terminal 1 on the terminal block is clearly visible, and the wire (black wire) is inserted and secured into terminal 1, with a red wire connected to terminal 2."
+      },
+      {
+        "passed": true,
+        "visible": true,
+        "reason": "The wire is inserted and connected to terminal 1 of the terminal block as required."
+      },
+      {
+        "passed": true,
+        "visible": true,
+        "reason": "The wire (black wire from the pair on the left) is correctly inserted and secured into terminal 1 of the terminal block."
+      }
+    ]
+  }
+}
