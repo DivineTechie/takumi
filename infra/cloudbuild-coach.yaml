@@ -37,7 +37,7 @@ steps:
         mkdir -p /opt/java
         curl -fsSL "https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse" -o /tmp/jre21.tar.gz
         tar -xzf /tmp/jre21.tar.gz -C /opt/java --strip-components=1
-        export PATH="/opt/java/bin:$PATH"
+        export PATH="/opt/java/bin:$$PATH"
         export JAVA_HOME="/opt/java"
         java -version
         echo "=== Installing rules-tests dependencies ==="
