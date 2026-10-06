@@ -62,7 +62,7 @@ describe('PassportScreen', () => {
     expect(screen.getByRole('link', { name: /Return to TAKUMI/i })).toHaveAttribute('href', '/');
   });
 
-  it('renders verified certificate details with CSS Hanko seal when badge_url is null', async () => {
+  it('renders verified certificate with accurate wording, native language, and NO SynthID label on CSS Hanko seal', async () => {
     const mockPassport: PublicPassport = {
       id: 'pp_mock_123',
       display_first_name: 'Tushar',
@@ -83,16 +83,32 @@ describe('PassportScreen', () => {
       expect(screen.getByRole('heading', { name: 'Tushar' })).toBeInTheDocument();
     });
 
+    // Accurate wording checks
+    expect(screen.getByText('Skill Passport')).toBeInTheDocument();
     expect(screen.getByText('TAKUMI SKILL PASSPORT')).toBeInTheDocument();
     expect(screen.getByText('Verified by TAKUMI')).toBeInTheDocument();
+    expect(screen.getByText('completed, under live AI coaching,')).toBeInTheDocument();
     expect(screen.getByText('Precision Wire Soldering')).toBeInTheDocument();
-    expect(screen.getByText('Master Kenji')).toBeInTheDocument();
-    expect(screen.getByText(/3 Clean Runs Verified/i)).toBeInTheDocument();
-    expect(screen.getByText(/Badge art generated with Gemini \(SynthID\)/i)).toBeInTheDocument();
+    expect(screen.getByText('taught by Master Kenji')).toBeInTheDocument();
+    expect(screen.getByText(/3 times with no safety stops/i)).toBeInTheDocument();
+
+    // Native language name
+    expect(screen.getByText(/Language:/i)).toBeInTheDocument();
+    expect(screen.getByText(/English/i)).toBeInTheDocument();
+
+    // Check footer instruction
+    expect(
+      screen.getByText(
+        /Scan the QR code or visit takumi-cup-2026\.web\.app\/passport\/pp_mock_123 to check this certificate\./i
+      )
+    ).toBeInTheDocument();
 
     // Verify Fallback CSS Hanko Seal
     expect(screen.getByLabelText('Traditional Hanko Seal')).toBeInTheDocument();
     expect(screen.getByText('匠')).toBeInTheDocument();
+
+    // SynthID label MUST NOT be shown for CSS fallback seal
+    expect(screen.queryByText(/Badge art generated with Gemini/i)).toBeNull();
 
     // Verify QR code rendered
     await waitFor(() => {
@@ -100,7 +116,7 @@ describe('PassportScreen', () => {
     });
   });
 
-  it('renders image badge when badge_url is present', async () => {
+  it('renders bilingual certificate and shows SynthID label ONLY when image badge is loaded', async () => {
     const mockPassport: PublicPassport = {
       id: 'pp_mock_456',
       display_first_name: 'तुषार',
@@ -108,7 +124,7 @@ describe('PassportScreen', () => {
       master_display_name: 'Master Sarah',
       language: 'hi',
       issued_at: '2026-10-06T14:30:00Z',
-      sessions_count: 4,
+      sessions_count: 3,
       verified: true,
       badge_url: 'https://storage.googleapis.com/test-bucket/badges/test.png',
     };
@@ -121,13 +137,37 @@ describe('PassportScreen', () => {
       expect(screen.getByRole('heading', { name: 'तुषार' })).toBeInTheDocument();
     });
 
+    // Native language name displayed
+    expect(screen.getAllByText(/हिन्दी/i).length).toBeGreaterThanOrEqual(1);
+
+    // Primary text in Hindi
+    expect(screen.getByText('ताकुमी कौशल पासपोर्ट')).toBeInTheDocument();
+    expect(screen.getByText('TAKUMI द्वारा सत्यापित')).toBeInTheDocument();
+    expect(screen.getByText('ने लाइव एआई कोचिंग के तहत पूरा किया,')).toBeInTheDocument();
+    expect(screen.getByText(/बिना किसी सुरक्षा रोक के 3 बार/i)).toBeInTheDocument();
+
+    // English subtitles present below Hindi
+    expect(screen.getByText('TAKUMI SKILL PASSPORT')).toBeInTheDocument();
+    expect(screen.getByText('Verified by TAKUMI')).toBeInTheDocument();
+    expect(screen.getByText('completed, under live AI coaching,')).toBeInTheDocument();
+    expect(screen.getByText(/3 times with no safety stops/i)).toBeInTheDocument();
+
     const badgeImg = screen.getByRole('img', { name: 'Skill Seal Badge' });
     expect(badgeImg).toBeInTheDocument();
     expect(badgeImg).toHaveAttribute('src', mockPassport.badge_url);
-    expect(screen.queryByLabelText('Traditional Hanko Seal')).not.toBeInTheDocument();
+
+    // Before load: SynthID label not yet visible
+    expect(screen.queryByText(/Gemini द्वारा निर्मित बैज कला/i)).toBeNull();
+
+    // Fire load event
+    fireEvent.load(badgeImg);
+
+    // After load: SynthID label is visible in Hindi + English subtitle
+    expect(screen.getByText(/Gemini द्वारा निर्मित बैज कला \(SynthID\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Badge art generated with Gemini \(SynthID\)/i)).toBeInTheDocument();
   });
 
-  it('calls window.print when Download PDF is clicked', async () => {
+  it('calls window.print when PDF button is clicked', async () => {
     const printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
     const mockPassport: PublicPassport = {
       id: 'pp_mock_print',
@@ -149,7 +189,7 @@ describe('PassportScreen', () => {
       expect(screen.getByRole('heading', { name: 'Nguyễn' })).toBeInTheDocument();
     });
 
-    const printBtn = screen.getByRole('button', { name: /Download PDF/i });
+    const printBtn = screen.getByRole('button', { name: /PDF/i });
     fireEvent.click(printBtn);
     expect(printSpy).toHaveBeenCalledTimes(1);
 

@@ -73,5 +73,21 @@
   "dashboard_tab_replay_short": "再生",
   "dashboard_abandoned": "中断",
   "dashboard_frame_preview": "安全／ミス検出画像",
-  "dashboard_close": "閉じる"
+  "dashboard_close": "閉じる",
+  "passport_cert_type": "スキルパスポート",
+  "passport_cert_title": "TAKUMI スキルパスポート",
+  "passport_verified_tag": "TAKUMI 認定",
+  "passport_this_certifies": "以下を認定します",
+  "passport_completed_under_coaching": "AIのリアルタイムコーチングのもと修了：",
+  "passport_taught_by": "指導：{master}",
+  "passport_clean_runs": "安全停止ゼロで {count} 回達成",
+  "passport_issued": "発行日",
+  "passport_language_label": "言語",
+  "passport_id_label": "ID",
+  "passport_badge_synthid": "Gemini 生成バッジアート (SynthID)",
+  "passport_scan_qr_desc": "スキャンして真偽を検証",
+  "passport_footer_check": "QRコードをスキャンするか takumi-cup-2026.web.app/passport/{id} にアクセスして本証明書を確認できます。",
+  "passport_share": "共有",
+  "passport_share_copied": "コピー完了",
+  "passport_pdf": "PDF"
 }

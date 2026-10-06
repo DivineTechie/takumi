@@ -73,5 +73,21 @@
   "dashboard_tab_replay_short": "Putar ulang",
   "dashboard_abandoned": "Ditinggalkan",
   "dashboard_frame_preview": "Foto Keamanan / Kesalahan",
-  "dashboard_close": "Tutup"
+  "dashboard_close": "Tutup",
+  "passport_cert_type": "Paspor Keterampilan",
+  "passport_cert_title": "PASPOR KETERAMPILAN TAKUMI",
+  "passport_verified_tag": "Diverifikasi oleh TAKUMI",
+  "passport_this_certifies": "Menyatakan bahwa",
+  "passport_completed_under_coaching": "telah menyelesaikan, di bawah bimbingan langsung AI,",
+  "passport_taught_by": "diajarkan oleh {master}",
+  "passport_clean_runs": "{count} kali tanpa penghentian keselamatan",
+  "passport_issued": "Diterbitkan",
+  "passport_language_label": "Bahasa",
+  "passport_id_label": "ID",
+  "passport_badge_synthid": "Seni lencana dibuat dengan Gemini (SynthID)",
+  "passport_scan_qr_desc": "Pindai untuk memverifikasi keaslian",
+  "passport_footer_check": "Pindai kode QR atau kunjungi takumi-cup-2026.web.app/passport/{id} untuk memeriksa sertifikat ini.",
+  "passport_share": "Bagikan",
+  "passport_share_copied": "Tersalin",
+  "passport_pdf": "PDF"
 }

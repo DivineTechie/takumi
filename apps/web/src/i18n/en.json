@@ -73,5 +73,21 @@
   "dashboard_tab_replay_short": "Replay",
   "dashboard_abandoned": "Abandoned",
   "dashboard_frame_preview": "Safety / Mistake Frame",
-  "dashboard_close": "Close"
+  "dashboard_close": "Close",
+  "passport_cert_type": "Skill Passport",
+  "passport_cert_title": "TAKUMI SKILL PASSPORT",
+  "passport_verified_tag": "Verified by TAKUMI",
+  "passport_this_certifies": "This certifies that",
+  "passport_completed_under_coaching": "completed, under live AI coaching,",
+  "passport_taught_by": "taught by {master}",
+  "passport_clean_runs": "{count} times with no safety stops",
+  "passport_issued": "Issued",
+  "passport_language_label": "Language",
+  "passport_id_label": "ID",
+  "passport_badge_synthid": "Badge art generated with Gemini (SynthID)",
+  "passport_scan_qr_desc": "Scan to verify authenticity",
+  "passport_footer_check": "Scan the QR code or visit takumi-cup-2026.web.app/passport/{id} to check this certificate.",
+  "passport_share": "Share",
+  "passport_share_copied": "Copied",
+  "passport_pdf": "PDF"
 }

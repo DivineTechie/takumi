@@ -73,5 +73,21 @@
   "dashboard_tab_replay_short": "Phát lại",
   "dashboard_abandoned": "Bị bỏ dở",
   "dashboard_frame_preview": "Hình ảnh An toàn / Lỗi",
-  "dashboard_close": "Đóng"
+  "dashboard_close": "Đóng",
+  "passport_cert_type": "Hộ chiếu Kỹ năng",
+  "passport_cert_title": "HỘ CHIẾU KỸ NĂNG TAKUMI",
+  "passport_verified_tag": "Được xác thực bởi TAKUMI",
+  "passport_this_certifies": "Chứng nhận rằng",
+  "passport_completed_under_coaching": "đã hoàn thành dưới sự hướng dẫn trực tiếp từ AI,",
+  "passport_taught_by": "giảng dạy bởi {master}",
+  "passport_clean_runs": "{count} lần không vi phạm an toàn",
+  "passport_issued": "Ngày cấp",
+  "passport_language_label": "Ngôn ngữ",
+  "passport_id_label": "ID",
+  "passport_badge_synthid": "Huy hiệu tạo bởi Gemini (SynthID)",
+  "passport_scan_qr_desc": "Quét để xác thực chứng chỉ",
+  "passport_footer_check": "Quét mã QR hoặc truy cập takumi-cup-2026.web.app/passport/{id} để kiểm tra chứng chỉ này.",
+  "passport_share": "Chia sẻ",
+  "passport_share_copied": "Đã sao chép",
+  "passport_pdf": "PDF"
 }

@@ -73,5 +73,21 @@
   "dashboard_tab_replay_short": "रीप्ले",
   "dashboard_abandoned": "छोड़ा गया",
   "dashboard_frame_preview": "सुरक्षा / गलती फ़्रेम",
-  "dashboard_close": "बंद करें"
+  "dashboard_close": "बंद करें",
+  "passport_cert_type": "कौशल पासपोर्ट",
+  "passport_cert_title": "ताकुमी कौशल पासपोर्ट",
+  "passport_verified_tag": "TAKUMI द्वारा सत्यापित",
+  "passport_this_certifies": "यह प्रमाणित किया जाता है कि",
+  "passport_completed_under_coaching": "ने लाइव एआई कोचिंग के तहत पूरा किया,",
+  "passport_taught_by": "{master} द्वारा निर्देशित",
+  "passport_clean_runs": "बिना किसी सुरक्षा रोक के {count} बार",
+  "passport_issued": "जारी होने की तिथि",
+  "passport_language_label": "भाषा",
+  "passport_id_label": "ID",
+  "passport_badge_synthid": "Gemini द्वारा निर्मित बैज कला (SynthID)",
+  "passport_scan_qr_desc": "प्रमाणिकता जांचने के लिए स्कैन करें",
+  "passport_footer_check": "इस प्रमाणपत्र की जांच के लिए QR कोड स्कैन करें या takumi-cup-2026.web.app/passport/{id} पर जाएं।",
+  "passport_share": "साझा करें",
+  "passport_share_copied": "कॉपी किया गया",
+  "passport_pdf": "PDF"
 }

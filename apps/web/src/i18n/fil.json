@@ -73,5 +73,21 @@
   "dashboard_tab_replay_short": "Replay",
   "dashboard_abandoned": "Inabandona",
   "dashboard_frame_preview": "Larawan ng Kaligtasan / Pagkakamali",
-  "dashboard_close": "Isara"
+  "dashboard_close": "Isara",
+  "passport_cert_type": "Pasaporte ng Kasanayan",
+  "passport_cert_title": "TAKUMI PASAPORTE NG KASANAYAN",
+  "passport_verified_tag": "Na-verify ng TAKUMI",
+  "passport_this_certifies": "Pinatutunayan nito na si",
+  "passport_completed_under_coaching": "ay nakakumpleto, sa ilalim ng live na AI coaching,",
+  "passport_taught_by": "itinuro ni {master}",
+  "passport_clean_runs": "{count} beses nang walang safety stop",
+  "passport_issued": "Ibinigay noong",
+  "passport_language_label": "Wika",
+  "passport_id_label": "ID",
+  "passport_badge_synthid": "Badge art na ginawa gamit ang Gemini (SynthID)",
+  "passport_scan_qr_desc": "I-scan para i-verify ang katunayan",
+  "passport_footer_check": "I-scan ang QR code o bisitahin ang takumi-cup-2026.web.app/passport/{id} para suriin ang sertipikong ito.",
+  "passport_share": "Ibahagi",
+  "passport_share_copied": "Nakopya",
+  "passport_pdf": "PDF"
 }
