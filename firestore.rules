@@ -89,11 +89,13 @@ service cloud.firestore {
       }
     }
 
-    // passports: public get, no list, no client writes.
+    // passports & passport_locks: NO client access. Served exclusively via takumi-api.
     match /passports/{passportId} {
-      allow get: if true;
-      allow list: if false;
-      allow write: if false;
+      allow read, write: if false;
+    }
+
+    match /passport_locks/{lockId} {
+      allow read, write: if false;
     }
   }
 }

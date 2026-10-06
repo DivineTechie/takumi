@@ -190,14 +190,14 @@ describe('Firestore Security Rules', () => {
     await assertSucceeds(getDoc(doc(supervisorDb, 'review_requests', 'rev_1')));
   });
 
-  it('unauthenticated user getting a passport is allowed', async () => {
+  it('client reading or listing passports directly is denied', async () => {
     const unauthDb = testEnv.unauthenticatedContext().firestore();
-    await assertSucceeds(getDoc(doc(unauthDb, 'passports', 'pass_1')));
-  });
-
-  it('unauthenticated user listing passports is denied', async () => {
-    const unauthDb = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(unauthDb, 'passports', 'pass_1')));
     await assertFails(getDocs(collection(unauthDb, 'passports')));
+
+    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    await assertFails(getDoc(doc(traineeDb, 'passports', 'pass_1')));
+    await assertFails(getDoc(doc(traineeDb, 'passport_locks', 'lock_1')));
   });
 
   it('signed-in user with no role can read published skills but not sessions', async () => {

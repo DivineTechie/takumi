@@ -227,8 +227,8 @@ export async function postSessionEvent(
 export async function endSession(
   sessionId: string,
   status: 'completed' | 'abandoned'
-): Promise<Session> {
-  return await apiFetch<Session>(`/api/sessions/${sessionId}`, {
+): Promise<Session & { passport_id?: string | null; clean_runs?: number }> {
+  return await apiFetch<Session & { passport_id?: string | null; clean_runs?: number }>(`/api/sessions/${sessionId}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });
@@ -371,3 +371,46 @@ export interface SessionReplayResponse {
 export async function fetchSessionReplay(sessionId: string): Promise<SessionReplayResponse> {
   return await apiFetch<SessionReplayResponse>(`/api/sessions/${sessionId}/replay`);
 }
+
+// --- Skill Passport Types & Functions ---
+
+export interface PublicPassport {
+  id: string;
+  display_first_name: string;
+  skill_title: string;
+  master_display_name: string;
+  language: string;
+  issued_at: string;
+  sessions_count: number;
+  verified: boolean;
+  badge_url: string | null;
+}
+
+export interface MyPassport {
+  id: string;
+  skill_id: string;
+  skill_title: string;
+  display_first_name: string;
+  master_display_name: string;
+  language: string;
+  issued_at: string;
+  sessions_count: number;
+  badge_url: string | null;
+  verify_url: string;
+}
+
+export async function fetchPublicPassport(passportId: string): Promise<PublicPassport> {
+  const res = await fetch(`/api/passports/${passportId}`);
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new ApiError('This certificate could not be found.', 404);
+    }
+    throw new ApiError(await res.text(), res.status);
+  }
+  return await res.json();
+}
+
+export async function fetchMyPassports(): Promise<{ passports: MyPassport[] }> {
+  return await apiFetch<{ passports: MyPassport[] }>('/api/me/passports');
+}
+

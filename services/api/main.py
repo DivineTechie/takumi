@@ -9,13 +9,20 @@ import statistics
 import time
 from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from google.cloud import bigquery, firestore
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from firebase_admin import auth as fb_auth
+
+from services.api.badges import get_badge_signed_url_if_exists
+from services.api.passports import (
+    check_public_rate_limit,
+    issue_passport_if_eligible,
+    validate_trainee_name,
+)
 
 from services.api.auth import (
     AuthUser,
@@ -198,7 +205,9 @@ def get_trainee_first_name(uid: str | None) -> str:
         user_record = fb_auth.get_user(uid)
         dname = user_record.display_name
         if dname and dname.strip():
-            return dname.strip().split()[0]
+            candidate = dname.strip().split()[0]
+            if validate_trainee_name(candidate):
+                return candidate
     except Exception:
         pass
     last4 = uid[-4:] if len(uid) >= 4 else uid
@@ -527,6 +536,7 @@ async def create_session_event(
 async def patch_session(
     session_id: str,
     req: SessionPatchRequest,
+    background_tasks: BackgroundTasks,
     user: AuthUser = Depends(require_trainee_or_supervisor),
 ) -> dict[str, Any]:
     db = get_firestore_client()
@@ -612,8 +622,24 @@ async def patch_session(
     }
 
     session_ref.update(updated_fields)
-
     session_data.update(updated_fields)
+
+    # Evaluate passport issuance on clean completion
+    passport_id = None
+    clean_runs = 0
+    if req.status == "completed":
+        skill_id = session_data.get("skill_id", "")
+        passport_id, clean_runs = issue_passport_if_eligible(
+            db=db,
+            trainee_uid=user.uid,
+            skill_id=skill_id,
+            current_session=session_data,
+            user_display_name=user.display_name,
+            background_tasks=background_tasks,
+        )
+
+    session_data["passport_id"] = passport_id
+    session_data["clean_runs"] = clean_runs
     return session_data
 
 
@@ -976,3 +1002,77 @@ async def get_session_replay(
     }
     set_in_cache(cache_key, replay_payload)
     return replay_payload
+
+
+# --- Skill Passport Endpoints ---
+
+
+@app.get("/api/passports/{passport_id}")
+async def get_public_passport(
+    passport_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    """Public certificate verification endpoint. Rate-limited per IP (60/min).
+
+    Returns allowlisted fields only. Explicitly omits uid, session_ids, and email.
+    """
+    check_public_rate_limit(request, limit=60, window_s=60)
+    db = get_firestore_client()
+    pdoc = db.collection("passports").document(passport_id).get()
+
+    if not pdoc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This certificate could not be found.",
+        )
+
+    pd = pdoc.to_dict() or {}
+    skill_id = pd.get("skill_id", "")
+    badge_url = get_badge_signed_url_if_exists(skill_id, expires_hours=1)
+
+    return {
+        "id": pd.get("id", passport_id),
+        "display_first_name": pd.get("display_first_name", "Trainee"),
+        "skill_title": pd.get("skill_title", ""),
+        "master_display_name": pd.get("master_display_name", "Master Craftsperson"),
+        "language": pd.get("language", "en"),
+        "issued_at": pd.get("issued_at", ""),
+        "sessions_count": len(pd.get("session_ids", [])),
+        "verified": True,
+        "badge_url": badge_url,
+    }
+
+
+@app.get("/api/me/passports")
+async def get_my_passports(
+    user: AuthUser = Depends(verify_auth_token),
+) -> dict[str, Any]:
+    """Returns caller's earned certificates for trainee profile / home screen."""
+    db = get_firestore_client()
+    passports_stream = (
+        db.collection("passports")
+        .where("trainee_uid", "==", user.uid)
+        .stream()
+    )
+
+    results = []
+    for pdoc in passports_stream:
+        pd = pdoc.to_dict() or {}
+        skill_id = pd.get("skill_id", "")
+        badge_url = get_badge_signed_url_if_exists(skill_id, expires_hours=1)
+        results.append({
+            "id": pd.get("id", pdoc.id),
+            "skill_id": skill_id,
+            "skill_title": pd.get("skill_title", ""),
+            "display_first_name": pd.get("display_first_name", "Trainee"),
+            "master_display_name": pd.get("master_display_name", "Master Craftsperson"),
+            "language": pd.get("language", "en"),
+            "issued_at": pd.get("issued_at", ""),
+            "sessions_count": len(pd.get("session_ids", [])),
+            "badge_url": badge_url,
+            "verify_url": pd.get("verify_url", f"https://takumi-cup-2026.web.app/passport/{pd.get('id', pdoc.id)}"),
+        })
+
+    # Sort descending by issued_at
+    results.sort(key=lambda x: x.get("issued_at", ""), reverse=True)
+    return {"passports": results}

@@ -28,6 +28,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      updateDisplayName: vi.fn(),
     });
 
     const routes = buildRouteObjects([testFeatureRoute]);
@@ -53,6 +54,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      updateDisplayName: vi.fn(),
     });
 
     const routes = buildRouteObjects([testFeatureRoute]);
@@ -79,6 +81,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      updateDisplayName: vi.fn(),
     });
 
     const routes = buildRouteObjects([testFeatureRoute]);

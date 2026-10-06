@@ -47,5 +47,10 @@ service firebase.storage {
     match /sessions/{allPaths=**} {
       allow read, write: if false;
     }
+
+    // passports/** has no client access; badges served only via server signed URLs
+    match /passports/{allPaths=**} {
+      allow read, write: if false;
+    }
   }
 }

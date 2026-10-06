@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
+import { fetchMyPassports, type MyPassport } from '../lib/api';
 import logoSvg from '../assets/logo.svg';
 
 export const HomeScreen: React.FC = () => {
@@ -12,6 +13,21 @@ export const HomeScreen: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [myPassports, setMyPassports] = useState<MyPassport[]>([]);
+
+  useEffect(() => {
+    if (user) {
+      fetchMyPassports()
+        .then((res) => {
+          if (res?.passports) {
+            setMyPassports(res.passports);
+          }
+        })
+        .catch((err) => {
+          console.warn('Failed to fetch user passports:', err);
+        });
+    }
+  }, [user]);
 
   const unauthorizedMessage = (location.state as { unauthorizedMessage?: string })?.unauthorizedMessage;
 
@@ -156,6 +172,55 @@ export const HomeScreen: React.FC = () => {
               </div>
             )}
           </section>
+
+          {/* My Certificates Section (Feature A11 Skill Passport) */}
+          {myPassports.length > 0 && (
+            <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary-container text-[24px]">verified</span>
+                  <h2 className="text-[20px] font-bold text-on-surface">My Certificates</h2>
+                </div>
+                <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary-container/20 text-primary-container">
+                  {myPassports.length}
+                </span>
+              </div>
+              <div className="space-y-3">
+                {myPassports.map((p) => (
+                  <div
+                    key={p.id}
+                    onClick={() => navigate(`/passport/${p.id}`)}
+                    className="p-3.5 bg-surface rounded-xl border border-outline-variant hover:border-primary-container/60 transition-all flex items-center justify-between cursor-pointer group shadow-xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      {p.badge_url ? (
+                        <img
+                          src={p.badge_url}
+                          alt=""
+                          className="w-10 h-10 rounded-full object-contain border border-red-700/40"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full border-2 border-red-700/60 bg-red-500/10 text-red-600 font-serif font-bold text-lg flex items-center justify-center">
+                          匠
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-bold text-on-surface text-[15px] group-hover:text-primary-container transition-colors">
+                          {p.skill_title}
+                        </p>
+                        <p className="text-xs text-on-surface-variant">
+                          Taught by {p.master_display_name} • {new Date(p.issued_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="material-symbols-outlined text-on-surface-variant group-hover:text-primary-container group-hover:translate-x-0.5 transition-all text-[20px]">
+                      chevron_right
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* CARD 2: Teach a skill */}
           <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-colors">

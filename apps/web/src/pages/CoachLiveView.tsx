@@ -56,6 +56,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const [remainingSeconds, setRemainingSeconds] = useState<number>(600);
   const [debugOpen, setDebugOpen] = useState<boolean>(true);
   const [isLessonComplete, setIsLessonComplete] = useState<boolean>(false);
+  const [earnedPassportId, setEarnedPassportId] = useState<string | null>(null);
+  const [cleanRunsProgress, setCleanRunsProgress] = useState<number>(0);
   const [activeReticles, setActiveReticles] = useState<ReticlePoint[]>([]);
 
   // Watcher & Safety Stop state (Features A3/A4)
@@ -241,6 +243,26 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       captionFadeTimeoutRef.current = null;
     }, 4000);
   }, []);
+
+  const handleCompleteSession = useCallback(async () => {
+    setIsLessonComplete(true);
+    if (sessionIdRef.current) {
+      try {
+        const res = await endSession(sessionIdRef.current, 'completed');
+        if (res?.passport_id) {
+          setEarnedPassportId(res.passport_id);
+        }
+        if (typeof res?.clean_runs === 'number') {
+          setCleanRunsProgress(res.clean_runs);
+        }
+      } catch (err) {
+        console.warn('Failed to complete session:', err);
+      }
+    }
+  }, []);
+
+  const handleCompleteSessionRef = useRef(handleCompleteSession);
+  handleCompleteSessionRef.current = handleCompleteSession;
 
   const handleTranscriptRef = useRef<(item: LiveTranscriptItem) => void>(handleTranscript);
   handleTranscriptRef.current = (item: LiveTranscriptItem) => {
@@ -457,22 +479,11 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                         console.warn('Failed or timed out posting final step_done:', err);
                       }
                       if (sessionIdRef.current) {
-                        try {
-                          await endSession(sessionIdRef.current, 'completed');
-                        } catch (err) {
-                          console.warn('Failed to complete session:', err);
-                        }
+                        await handleCompleteSessionRef.current();
                       }
                     }
                   } else if (advanced && stepN >= currentSkill.steps.length) {
-                    setIsLessonComplete(true);
-                    if (sessionIdRef.current) {
-                      try {
-                        await endSession(sessionIdRef.current, 'completed');
-                      } catch (err) {
-                        console.warn('Failed to complete session:', err);
-                      }
-                    }
+                    await handleCompleteSessionRef.current();
                   }
                 }
 
@@ -874,12 +885,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             // Post step_done when first coach audio arrives (or at 3s timeout)
             trackDecisionToAudioRef.current('step_done', stepN, effect.reason, () => {
               if (isLast) {
-                setIsLessonComplete(true);
-                if (sessionIdRef.current) {
-                  endSession(sessionIdRef.current, 'completed').catch((err) =>
-                    console.warn('Failed to complete session:', err)
-                  );
-                }
+                handleCompleteSessionRef.current();
               }
             });
           }
@@ -1093,6 +1099,46 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 {skill.steps.length} OF {skill.steps.length} STEPS VERIFIED
               </span>
             </div>
+
+            {/* Passport Earned or Clean Runs Progress */}
+            {earnedPassportId ? (
+              <div className="mt-5 w-full p-4 rounded-2xl bg-primary-container/15 border-2 border-primary-container/60 flex flex-col items-center gap-2.5 text-center shadow-md">
+                <div className="flex items-center gap-2 text-primary-container font-extrabold text-[17px]">
+                  <span className="material-symbols-outlined text-[24px]">verified</span>
+                  <span>You earned your Skill Passport!</span>
+                </div>
+                <p className="text-xs text-on-surface-variant max-w-[280px]">
+                  Congratulations! You demonstrated mastery with 3 clean runs.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/passport/${earnedPassportId}`)}
+                  className="w-full h-11 bg-primary-container text-on-primary-container font-bold text-sm rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-95 transition-all shadow cursor-pointer mt-1"
+                >
+                  <span>View Skill Passport</span>
+                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+                </button>
+              </div>
+            ) : (
+              <div className="mt-5 w-full p-3 rounded-xl bg-surface-container border border-outline-variant/60 flex items-center justify-between text-left">
+                <div className="flex items-center gap-2.5">
+                  <span className="material-symbols-outlined text-primary-container text-[22px]">
+                    workspace_premium
+                  </span>
+                  <div>
+                    <p className="text-xs uppercase tracking-wider font-extrabold text-primary-container">
+                      Skill Passport Progress
+                    </p>
+                    <p className="text-sm font-semibold text-on-surface">
+                      {cleanRunsProgress} of 3 clean runs toward your Skill Passport
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-mono font-bold px-2 py-1 bg-surface-container-high rounded border border-outline-variant/40">
+                  {cleanRunsProgress}/3
+                </span>
+              </div>
+            )}
           </section>
 
           <section className="bg-surface-container border border-outline-variant/50 rounded-xl p-4 my-4 space-y-3">
