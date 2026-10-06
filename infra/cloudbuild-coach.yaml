@@ -1,123 +1,123 @@
 steps:
   # 1. Run Python tests (healthz, model armor, hardening, schema validation) + non-blocking audit
   - name: 'python:3.12-slim'
-  id: 'test-python'
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      pip install --no-cache-dir -r requirements-dev.txt -r services/api/requirements.txt pip-audit
-      pytest
-      echo "=== Running Python pip-audit (non-blocking) ==="
-      pip-audit -r services/api/requirements.txt || true
+    id: 'test-python'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --no-cache-dir -r requirements-dev.txt -r services/api/requirements.txt pip-audit
+        pytest
+        echo "=== Running Python pip-audit (non-blocking) ==="
+        pip-audit -r services/api/requirements.txt || true
 
   # 2. Run Web lint, Vitest unit tests + non-blocking audit
   - name: 'node:24-slim'
-  id: 'test-web'
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      cd apps/web
-      npm ci
-      npm run lint
-      npm test
-      echo "=== Running Web npm audit (non-blocking) ==="
-      npm audit --omit=dev --audit-level=high || true
+    id: 'test-web'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cd apps/web
+        npm ci
+        npm run lint
+        npm test
+        echo "=== Running Web npm audit (non-blocking) ==="
+        npm audit --omit=dev --audit-level=high || true
 
   # 3. Verify Firebase Firestore & Storage security rules using emulators
   - name: 'node:24-slim'
-  id: 'test-rules'
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      echo "=== Installing JRE for Firebase Emulators ==="
-      apt-get update -qq && apt-get install -y -qq --no-install-recommends default-jre-headless
-      echo "=== Installing rules-tests dependencies ==="
-      cd infra/rules-tests
-      npm ci
-      cd ../..
-      echo "=== Running Security Rule Tests against Firestore & Storage Emulators ==="
-      npx --yes firebase-tools@15.32.1 emulators:exec --only firestore,storage "npm test --prefix infra/rules-tests"
+    id: 'test-rules'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "=== Installing JRE for Firebase Emulators ==="
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends default-jre-headless
+        echo "=== Installing rules-tests dependencies ==="
+        cd infra/rules-tests
+        npm ci
+        cd ../..
+        echo "=== Running Security Rule Tests against Firestore & Storage Emulators ==="
+        npx --yes firebase-tools@15.32.1 emulators:exec --only firestore,storage "npm test --prefix infra/rules-tests"
 
   # 4. Build API Docker image
   - name: 'gcr.io/cloud-builders/docker'
-  id: 'build-api'
-  args:
-    - 'build'
-    - '-f'
-    - 'services/api/Dockerfile'
-    - '.'
-    - '-t'
-    - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
-    - '-t'
-    - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:latest'
+    id: 'build-api'
+    args:
+      - 'build'
+      - '-f'
+      - 'services/api/Dockerfile'
+      - '.'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:latest'
 
   # 5. Push API Docker image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-  id: 'push-api'
-  args:
-    - 'push'
-    - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
+    id: 'push-api'
+    args:
+      - 'push'
+      - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
 
   # 6. Deploy Cloud Run takumi-api
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  id: 'deploy-api'
-  args:
-    - 'gcloud'
-    - 'run'
-    - 'deploy'
-    - 'takumi-api'
-    - '--image=asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
-    - '--region=asia-southeast1'
-    - '--service-account=takumi-api@takumi-cup-2026.iam.gserviceaccount.com'
-    - '--min-instances=0'
-    - '--max-instances=3'
-    - '--concurrency=20'
-    - '--timeout=300s'
-    - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
-    - '--set-env-vars=LIMIT_CHECKS_PER_DAY=15000,LIMIT_LIVE_TOKENS_PER_DAY=200,SESSIONS_ENABLED=true'
-    - '--allow-unauthenticated'
-    - '--project=takumi-cup-2026'
-    - '--quiet'
+    id: 'deploy-api'
+    args:
+      - 'gcloud'
+      - 'run'
+      - 'deploy'
+      - 'takumi-api'
+      - '--image=asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
+      - '--region=asia-southeast1'
+      - '--service-account=takumi-api@takumi-cup-2026.iam.gserviceaccount.com'
+      - '--min-instances=0'
+      - '--max-instances=3'
+      - '--concurrency=20'
+      - '--timeout=300s'
+      - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
+      - '--set-env-vars=LIMIT_CHECKS_PER_DAY=15000,LIMIT_LIVE_TOKENS_PER_DAY=200,SESSIONS_ENABLED=true'
+      - '--allow-unauthenticated'
+      - '--project=takumi-cup-2026'
+      - '--quiet'
 
   # 7. Deploy Firebase security rules
   - name: 'node:24-slim'
-  id: 'deploy-rules'
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      npx --yes firebase-tools@15.32.1 deploy --only firestore:rules,firestore:indexes,storage --project takumi-cup-2026 --non-interactive
+    id: 'deploy-rules'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        npx --yes firebase-tools@15.32.1 deploy --only firestore:rules,firestore:indexes,storage --project takumi-cup-2026 --non-interactive
 
   # 8. Write web config and build apps/web
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  id: 'fetch-web-config'
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      gcloud secrets versions access latest --secret=FIREBASE_WEB_CONFIG --project=takumi-cup-2026 > apps/web/.env.production
+    id: 'fetch-web-config'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud secrets versions access latest --secret=FIREBASE_WEB_CONFIG --project=takumi-cup-2026 > apps/web/.env.production
 
   - name: 'node:24-slim'
-  id: 'build-web'
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      cd apps/web
-      npm ci
-      npm run build
+    id: 'build-web'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cd apps/web
+        npm ci
+        npm run build
 
   # 9. Deploy to Firebase Hosting live channel
   - name: 'node:24-slim'
-  id: 'deploy-hosting'
-  entrypoint: 'bash'
-  args:
-    - '-c'
-    - |
-      npx --yes firebase-tools@15.32.1 deploy --only hosting --project takumi-cup-2026 --non-interactive
+    id: 'deploy-hosting'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        npx --yes firebase-tools@15.32.1 deploy --only hosting --project takumi-cup-2026 --non-interactive
 
 timeout: '1200s'
 options:
