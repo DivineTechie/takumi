@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { GeminiLiveClient, type LiveClientConfig } from './client';
+import type { LiveClientCallbacks } from './types';
 import type { OutputAudioQueue } from './audio';
 import type { Skill } from '../../../../../shared/schema/ts/skills';
 import * as apiModule from '../api';
@@ -67,7 +68,11 @@ describe('GeminiLiveClient', () => {
   let liveTokenSpy: MockInstance;
   let clients: GeminiLiveClient[] = [];
 
-  function createClient(configOverrides: Partial<LiveClientConfig> = {}): GeminiLiveClient {
+  function createClient(
+    configOverrides: Partial<Omit<LiveClientConfig, 'callbacks'>> & {
+      callbacks?: Partial<LiveClientCallbacks>;
+    } = {}
+  ): GeminiLiveClient {
     const callbacks = {
       onStateChange: vi.fn(),
       onTranscript: vi.fn(),
