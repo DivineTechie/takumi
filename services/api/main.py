@@ -43,6 +43,7 @@ from services.api.config import (
     MAX_REQUEST_SIZE_BYTES,
     SESSIONS_ENABLED,
     STORAGE_BUCKET,
+    VERIFY_MAX_PX,
 )
 from services.api.model_armor import screen_text
 from services.api.storage_client import get_signed_url_for_gs_uri, upload_frame_jpeg
@@ -346,9 +347,9 @@ async def verify_step(
     t_handler_start = time.perf_counter()
     check_rate_limit(user.uid, "checks")
 
-    # Validate image and resize to at most 1280 px
+    # Validate image and resize to at most VERIFY_MAX_PX (default 1280)
     img = decode_and_validate_image(req.image_b64)
-    jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=1280)
+    jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=VERIFY_MAX_PX)
 
     t_model_start = time.perf_counter()
     res = await call_verify(

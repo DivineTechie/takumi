@@ -17,10 +17,12 @@ from services.api.config import (
     MODEL_FLASH_LITE,
     MODEL_LIVE,
     MODEL_ROBOTICS_ER,
+    POINT_THINKING,
     TIMEOUT_LIVE_TOKEN_S,
     TIMEOUT_POINT_S,
     TIMEOUT_VERIFY_S,
     TIMEOUT_WATCH_S,
+    VERIFY_THINKING,
 )
 from services.api.images import clamp_point_coordinates
 from services.api.prompts import (
@@ -47,6 +49,22 @@ def get_genai_client() -> genai.Client:
             http_options={"api_version": "v1beta"},
         )
     return _genai_client
+
+
+def _parse_thinking_config(setting: str) -> types.ThinkingConfig | None:
+    """Interprets thinking setting ('default', 'low', 'lowest', 'none', '0', or int token budget)."""
+    if not setting or setting == "default":
+        return None
+    if setting in ("low", "lowest"):
+        return types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW)
+    if setting in ("none", "0"):
+        return types.ThinkingConfig(thinking_budget=0)
+    try:
+        val = int(setting)
+        return types.ThinkingConfig(thinking_budget=val)
+    except ValueError:
+        logger.warning("Unrecognized thinking setting '%s'; using default thinking", setting)
+        return None
 
 
 def _truncate_words(text: str, max_words: int) -> str:
@@ -265,6 +283,7 @@ async def call_verify(
     )
 
     client = get_genai_client()
+    thinking_cfg = _parse_thinking_config(VERIFY_THINKING)
 
     def _sync_generate():
         with trace_gemini_call("verify.generate_content", MODEL_FLASH):
@@ -277,6 +296,7 @@ async def call_verify(
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=VerifierResponse,
+                    thinking_config=thinking_cfg,
                 ),
             )
 
@@ -315,6 +335,7 @@ async def call_point(
 
     prompt_text = POINTER_PROMPT_TEMPLATE.format(target=target)
     client = get_genai_client()
+    thinking_cfg = _parse_thinking_config(POINT_THINKING)
 
     def _sync_generate():
         with trace_gemini_call("point.generate_content", MODEL_ROBOTICS_ER):
@@ -327,6 +348,7 @@ async def call_point(
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=PointerResponse,
+                    thinking_config=thinking_cfg,
                 ),
             )
 

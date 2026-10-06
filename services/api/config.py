@@ -45,3 +45,9 @@ SESSIONS_ENABLED = os.environ.get("SESSIONS_ENABLED", "true").lower() in ("true"
 EXCLUDED_UIDS = set(
     filter(None, [u.strip() for u in os.environ.get("EXCLUDED_UIDS", "").split(",")])
 ) | {"smoke-trainee"} | {f"loadtest-{i}" for i in range(1, 11)}
+
+# Latency tuning settings (defaults preserve existing production behavior)
+VERIFY_THINKING = os.environ.get("VERIFY_THINKING", "default").strip().lower()
+VERIFY_MAX_PX = int(os.environ.get("VERIFY_MAX_PX", "1280"))
+POINT_THINKING = os.environ.get("POINT_THINKING", "default").strip().lower()
+

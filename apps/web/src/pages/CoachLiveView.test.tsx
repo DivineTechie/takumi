@@ -152,7 +152,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
       destination: {},
       createOscillator: vi.fn().mockReturnValue({
         type: 'sine',
-        frequency: { setValueAtTime: vi.fn() },
+        frequency: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
         connect: vi.fn(),
         start: vi.fn(),
         stop: vi.fn(),
@@ -281,6 +281,66 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     // Step has advanced to step 2!
     await waitFor(() => {
       expect(screen.getByText('Step 2 of 4')).toBeDefined();
+    });
+  });
+
+  it('shows Checking… chip and plays soft tick during tool call, then clears chip on return', async () => {
+    let resolveVerify: (val: any) => void;
+    const verifyPromise = new Promise((resolve) => {
+      resolveVerify = resolve;
+    });
+    vi.mocked(apiModule.verify).mockImplementation(() => verifyPromise as any);
+
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    // Before tool call: no Checking chip
+    expect(screen.queryByTestId('tool-checking-chip')).toBeNull();
+
+    // Start verify_step tool call (in-flight)
+    const toolPromise = capturedCallbacks.onToolCall!({
+      id: 'call-v-checking',
+      name: 'verify_step',
+      args: { step: 1 },
+    });
+
+    // While in-flight: Checking chip must be visible
+    await waitFor(() => {
+      expect(screen.getByTestId('tool-checking-chip')).toBeDefined();
+      expect(screen.getByText('Checking…')).toBeDefined();
+    });
+
+    // Soft tick played on outputAudioContext
+    expect(mockAudioContext.createOscillator).toHaveBeenCalled();
+    expect(mockAudioContext.createGain).toHaveBeenCalled();
+
+    // Now resolve the tool call
+    resolveVerify!({
+      passed: true,
+      visible: true,
+      reason: 'Good job',
+      fix: '',
+      secs: 1.0,
+    });
+    await toolPromise;
+
+    // After tool completes: Checking chip is cleared
+    await waitFor(() => {
+      expect(screen.queryByTestId('tool-checking-chip')).toBeNull();
     });
   });
 

@@ -63,6 +63,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   // Watcher & Safety Stop state (Features A3/A4)
   const [isSafetyStopOpen, setIsSafetyStopOpen] = useState<boolean>(false);
   const [activeHazardRule, setActiveHazardRule] = useState<string | null>(null);
+  const [isCheckingTool, setIsCheckingTool] = useState<boolean>(false);
   const [watcherChipState, setWatcherChipState] = useState<'in_progress' | 'checking' | 'cant_see'>('in_progress');
   const [watcherStreakDisplay, setWatcherStreakDisplay] = useState<string>('none x 0');
   const [watchReadsCount, setWatchReadsCount] = useState<number>(0);
@@ -221,6 +222,50 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
   const trackDecisionToAudioRef = useRef(trackDecisionToAudio);
   trackDecisionToAudioRef.current = trackDecisionToAudio;
+
+  const isSafetyStopOpenRef = useRef<boolean>(false);
+  isSafetyStopOpenRef.current = isSafetyStopOpen;
+
+  // Soft audio tick on outputAudioContext when verify_step or point_at is triggered (suppressed during SAFETY STOP)
+  const playCheckingTick = useCallback(() => {
+    if (isSafetyStopOpenRef.current || !outputAudioContext) {
+      return;
+    }
+    try {
+      if (outputAudioContext.state === 'suspended') {
+        outputAudioContext.resume().catch(() => {});
+      }
+      const t0 = outputAudioContext.currentTime;
+      const osc = outputAudioContext.createOscillator();
+      const gain = outputAudioContext.createGain();
+
+      osc.type = 'sine';
+      if (typeof osc.frequency?.setValueAtTime === 'function') {
+        osc.frequency.setValueAtTime(800, t0);
+      }
+      if (typeof osc.frequency?.exponentialRampToValueAtTime === 'function') {
+        osc.frequency.exponentialRampToValueAtTime(400, t0 + 0.04);
+      }
+
+      if (typeof gain.gain?.setValueAtTime === 'function') {
+        gain.gain.setValueAtTime(0.04, t0);
+      }
+      if (typeof gain.gain?.exponentialRampToValueAtTime === 'function') {
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.04);
+      }
+
+      osc.connect(gain);
+      gain.connect(outputAudioContext.destination);
+
+      osc.start(t0);
+      osc.stop(t0 + 0.04);
+    } catch (err) {
+      console.warn('Checking tick playback error:', err);
+    }
+  }, [outputAudioContext]);
+
+  const playCheckingTickRef = useRef(playCheckingTick);
+  playCheckingTickRef.current = playCheckingTick;
 
   // Handle caption updates with 4s auto-fade
   const handleTranscript = useCallback((item: LiveTranscriptItem) => {
@@ -398,6 +443,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           // --- Tool 1: verify_step ---
           if (call.name === 'verify_step') {
             isToolInFlightRef.current = true;
+            setIsCheckingTool(true);
+            playCheckingTickRef.current();
             try {
               const stepN = currentStepRef.current;
               const modelStep =
@@ -511,6 +558,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 return errResult;
               }
             } finally {
+              setIsCheckingTool(false);
               isToolInFlightRef.current = false;
             }
           }
@@ -518,6 +566,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           // --- Tool 2: point_at ---
           if (call.name === 'point_at') {
             isToolInFlightRef.current = true;
+            setIsCheckingTool(true);
+            playCheckingTickRef.current();
             try {
               const target = String(call.args?.target || 'target component');
               const frame = videoRef.current
@@ -567,6 +617,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 return { result: { status: 'no visible target' } };
               }
             } finally {
+              setIsCheckingTool(false);
               isToolInFlightRef.current = false;
             }
           }
@@ -1588,6 +1639,17 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                       Listening
                     </span>
                   </>
+                )}
+
+                {/* Live Tool Checking Chip (verify_step / point_at in flight) */}
+                {isCheckingTool && (
+                  <span
+                    data-testid="tool-checking-chip"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-primary-container/20 text-primary-fixed-dim border border-primary-container/40 animate-pulse"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary-container animate-ping" />
+                    Checking…
+                  </span>
                 )}
 
                 {/* Watcher Status Chip (A3 Step Watcher) */}
