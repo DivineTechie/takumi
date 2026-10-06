@@ -660,16 +660,8 @@ async def get_insights_matrix(
         sd = doc.to_dict() or {}
         t_uid = sd.get("trainee_uid")
         s_id = sd.get("skill_id")
-        s_status = sd.get("status")
-        started_at = sd.get("started_at") or ""
 
         if not t_uid or t_uid in EXCLUDED_UIDS:
-            continue
-
-        # Treat older live sessions as abandoned
-        if s_status == "live" and started_at < cutoff_12m:
-            continue
-        if s_status == "abandoned":
             continue
 
         all_trainee_uids.add(t_uid)
@@ -881,17 +873,19 @@ async def get_insights_skill(
         s_with_mistake = s_counts.get("sessions_with_mistake", 0)
         s_safety_stops = s_counts.get("safety_stops", 0)
 
-        mistake_rate = (
-            round(float(s_with_mistake) / float(s_reached), 2)
-            if s_reached > 0
-            else 0.0
-        )
-        s_durations = durations_by_step.get(sn, [])
-        median_secs = (
-            round(float(statistics.median(s_durations)), 1)
-            if s_durations
-            else 0.0
-        )
+        if s_reached > 0:
+            mistake_rate = round(float(s_with_mistake) / float(s_reached), 2)
+            s_durations = durations_by_step.get(sn, [])
+            median_secs = (
+                round(float(statistics.median(s_durations)), 1)
+                if s_durations
+                else 0.0
+            )
+            safety_stops = s_safety_stops
+        else:
+            mistake_rate = None
+            median_secs = None
+            safety_stops = None
 
         steps_result.append({
             "n": sn,
@@ -899,7 +893,7 @@ async def get_insights_skill(
             "sessions_reached": s_reached,
             "mistake_rate": mistake_rate,
             "median_secs": median_secs,
-            "safety_stops": s_safety_stops,
+            "safety_stops": safety_stops,
         })
 
     # Assemble totals
@@ -910,17 +904,10 @@ async def get_insights_skill(
         for r in r3_rows
         if (r.max_step_done or 0) >= total_steps and r.duration_s is not None
     ]
-    all_durations = [
-        float(r.duration_s)
-        for r in r3_rows
-        if r.duration_s is not None
-    ]
     if completed_durations:
         median_duration_s = round(float(statistics.median(completed_durations)), 1)
-    elif all_durations:
-        median_duration_s = round(float(statistics.median(all_durations)), 1)
     else:
-        median_duration_s = 0.0
+        median_duration_s = None
 
     totals = {
         "sessions": total_sessions,

@@ -319,3 +319,121 @@ def test_session_replay_replaces_trainee_uid_with_first_name_and_signs_urls():
                     events = data["events"]
                     assert len(events) == 2
                     assert events[1]["frame_uri"] == "https://storage.googleapis.com/signed/evt_abc.jpg?token=mock_15m"
+
+
+def test_insights_matrix_stale_live_session_counts_as_learning():
+    mock_db = MagicMock()
+
+    # Published skills
+    skill_doc = MagicMock()
+    skill_doc.id = "skill_terminal_wiring_v1"
+    skill_doc.to_dict.return_value = {"title": "Wire a DIN-rail terminal block", "status": "published"}
+
+    # Passports (none)
+    mock_db.collection("skills").where.return_value.stream.return_value = [skill_doc]
+    mock_db.collection("passports").stream.return_value = []
+
+    # Stale live session (> 12 minutes old)
+    ses_stale = MagicMock()
+    ses_stale.to_dict.return_value = {
+        "trainee_uid": "trainee_stale_1",
+        "skill_id": "skill_terminal_wiring_v1",
+        "status": "live",
+        "started_at": "2026-10-06T00:00:00Z",  # hours ago
+    }
+
+    mock_db.collection("sessions").stream.return_value = [ses_stale]
+
+    def mock_collection(col_name):
+        col_mock = MagicMock()
+        if col_name == "skills":
+            col_mock.where.return_value.stream.return_value = [skill_doc]
+        elif col_name == "passports":
+            col_mock.stream.return_value = []
+        elif col_name == "sessions":
+            col_mock.stream.return_value = [ses_stale]
+        return col_mock
+
+    mock_db.collection.side_effect = mock_collection
+
+    mock_user = MagicMock()
+    mock_user.display_name = "Charlie Chaplin"
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}):
+        with patch("services.api.main.get_firestore_client", return_value=mock_db):
+            with patch("services.api.main.fb_auth.get_user", return_value=mock_user):
+                res = client.get("/api/insights/matrix", headers={"Authorization": "Bearer token"})
+                assert res.status_code == 200
+                data = res.json()
+                charlie_cell = next(
+                    c for c in data["cells"]
+                    if c["uid"] == "trainee_stale_1" and c["skill_id"] == "skill_terminal_wiring_v1"
+                )
+                assert charlie_cell["status"] == "learning"
+                assert charlie_cell["sessions"] == 1
+
+
+def test_insights_skill_unreached_steps_and_incomplete_sessions_return_null():
+    mock_db = MagicMock()
+    skill_doc = MagicMock()
+    skill_doc.exists = True
+    skill_doc.to_dict.return_value = {
+        "title": "Wire a DIN-rail terminal block",
+        "steps": [
+            {"n": 1, "instruction": "Step 1"},
+            {"n": 2, "instruction": "Step 2"},
+        ],
+    }
+    mock_db.collection("skills").document.return_value.get.return_value = skill_doc
+
+    mock_bq = MagicMock()
+
+    # R1: only step 1 reached
+    row_counts_1 = MagicMock()
+    row_counts_1.step = 1
+    row_counts_1.sessions_reached = 2
+    row_counts_1.sessions_with_mistake = 0
+    row_counts_1.safety_stops = 0
+
+    mock_job_1 = MagicMock()
+    mock_job_1.result.return_value = [row_counts_1]
+
+    # R2: no step completed timing
+    mock_job_2 = MagicMock()
+    mock_job_2.result.return_value = []
+
+    # R3: sessions incomplete (max_step_done = 0)
+    row_tot = MagicMock()
+    row_tot.session_id = "s1"
+    row_tot.duration_s = 25.0
+    row_tot.max_step_done = 0
+
+    mock_job_3 = MagicMock()
+    mock_job_3.result.return_value = [row_tot]
+
+    mock_bq.query.side_effect = [mock_job_1, mock_job_2, mock_job_3]
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}):
+        with patch("services.api.main.get_firestore_client", return_value=mock_db):
+            with patch("services.api.main.get_bigquery_client", return_value=mock_bq):
+                res = client.get("/api/insights/skill/skill_terminal_wiring_v1", headers={"Authorization": "Bearer token"})
+                assert res.status_code == 200
+                data = res.json()
+
+                # Step 1 reached
+                s1 = data["steps"][0]
+                assert s1["sessions_reached"] == 2
+                assert s1["mistake_rate"] == 0.0
+                assert s1["median_secs"] == 0.0
+                assert s1["safety_stops"] == 0
+
+                # Step 2 never reached -> must be null
+                s2 = data["steps"][1]
+                assert s2["sessions_reached"] == 0
+                assert s2["mistake_rate"] is None
+                assert s2["median_secs"] is None
+                assert s2["safety_stops"] is None
+
+                # Totals: 0 completed -> median_duration_s must be null
+                assert data["totals"]["completed"] == 0
+                assert data["totals"]["median_duration_s"] is None

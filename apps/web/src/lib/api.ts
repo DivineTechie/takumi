@@ -263,3 +263,111 @@ export async function regenerateStepPart(
     body: JSON.stringify({ skill_id: skillId, n, part }),
   });
 }
+
+// --- Supervisor Insight Endpoints (Role: supervisor only) ---
+
+export interface MatrixTrainee {
+  uid: string;
+  first_name: string;
+}
+
+export interface MatrixSkill {
+  id: string;
+  title: string;
+}
+
+export interface MatrixCell {
+  uid: string;
+  skill_id: string;
+  status: 'certified' | 'learning' | 'not_started';
+  sessions: number;
+  last_session_at: string | null;
+  mistakes_trend: number[];
+}
+
+export interface InsightsMatrixResponse {
+  trainees: MatrixTrainee[];
+  skills: MatrixSkill[];
+  cells: MatrixCell[];
+}
+
+export async function fetchInsightsMatrix(): Promise<InsightsMatrixResponse> {
+  return await apiFetch<InsightsMatrixResponse>('/api/insights/matrix');
+}
+
+export interface SkillStepInsight {
+  n: number;
+  instruction: string;
+  sessions_reached: number;
+  mistake_rate: number | null;
+  median_secs: number | null;
+  safety_stops: number | null;
+}
+
+export interface SkillInsightsTotals {
+  sessions: number;
+  completed: number;
+  median_duration_s: number | null;
+}
+
+export interface SkillInsightsResponse {
+  steps: SkillStepInsight[];
+  totals: SkillInsightsTotals;
+}
+
+export async function fetchSkillInsights(skillId: string): Promise<SkillInsightsResponse> {
+  return await apiFetch<SkillInsightsResponse>(`/api/insights/skill/${skillId}`);
+}
+
+export interface SessionReplaySession {
+  id: string;
+  skill_id: string;
+  first_name: string;
+  status: 'live' | 'completed' | 'abandoned';
+  started_at: string;
+  ended_at?: string | null;
+  language: string;
+  current_step?: number;
+  steps?: Array<{
+    n: number;
+    state: 'pending' | 'active' | 'done';
+    mistakes: number;
+    attempts: number;
+    secs: number;
+  }>;
+  result?: {
+    passed: boolean;
+    duration_s: number;
+    mistakes: number;
+    safety_stops: number;
+  } | null;
+}
+
+export interface SessionReplayEvent {
+  t: string;
+  step?: number;
+  type:
+    | 'step_done'
+    | 'mistake'
+    | 'blocked'
+    | 'safety_stop'
+    | 'ask_why'
+    | 'ask_master'
+    | 'point'
+    | 'verify'
+    | 'coach_line'
+    | 'trainee_line';
+  source: 'watcher' | 'verify' | 'coach' | 'trainee';
+  reason?: string | null;
+  latency_ms?: number;
+  frame_uri?: string | null;
+}
+
+export interface SessionReplayResponse {
+  session: SessionReplaySession;
+  events: SessionReplayEvent[];
+}
+
+export async function fetchSessionReplay(sessionId: string): Promise<SessionReplayResponse> {
+  return await apiFetch<SessionReplayResponse>(`/api/sessions/${sessionId}/replay`);
+}
