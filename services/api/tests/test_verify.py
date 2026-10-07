@@ -101,3 +101,28 @@ def test_verify_retry_on_failure():
                     data = response.json()
                     assert data["passed"] is False
                     assert mock_genai_client.models.generate_content.call_count == 2
+
+
+def test_verify_timeout_handling():
+    sample_b64 = _create_sample_jpeg_b64(100, 100)
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}):
+        with patch("services.api.main.check_rate_limit"):
+            with patch("services.api.gemini.asyncio.wait_for", side_effect=TimeoutError()):
+                response = client.post(
+                    "/api/verify",
+                    json={
+                        "step": 1,
+                        "instruction": "Insert black wire",
+                        "success_criteria": "Black ferrule in terminal 1",
+                        "image_b64": sample_b64,
+                    },
+                    headers={"Authorization": "Bearer token"},
+                )
+
+                assert response.status_code == 200
+                data = response.json()
+                assert data["passed"] is False
+                assert data["visible"] is True
+                assert "hold steady" in data["reason"].lower()
+                assert "hold steady" in data["fix"].lower()

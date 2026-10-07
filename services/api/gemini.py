@@ -318,6 +318,20 @@ async def call_verify(
                 "fix": str(parsed.get("fix", "")),
                 "secs": secs,
             }
+        except (TimeoutError, asyncio.TimeoutError):
+            secs = round(time.perf_counter() - t_start, 2)
+            logger.warning(
+                "Verify call timed out after %ss; asking trainee to hold steady and try again",
+                TIMEOUT_VERIFY_S,
+                extra={"props": {"endpoint": "verify", "latency_s": secs, "timeout_s": TIMEOUT_VERIFY_S}},
+            )
+            return {
+                "passed": False,
+                "visible": True,
+                "reason": "Verification timed out. Please hold steady and try again.",
+                "fix": "Hold steady and try verifying again.",
+                "secs": secs,
+            }
         except Exception as e:
             last_err = e
             if attempts == 1:

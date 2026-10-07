@@ -107,6 +107,7 @@ SAFETY RULES:
 INSPECTION INSTRUCTIONS:
 - Carefully inspect the image to verify whether the success criteria are completely and strictly satisfied.
 - Check every attribute named in the success criteria (wire colour, terminal number, position). If any one does not match what you see, passed must be false.
+- If a success criterion names a part (for example a ferrule), confirm you can actually see that part. If you cannot see it, passed must be false. Visible bare copper strands mean there is no ferrule.
 - Check that no safety rule is visibly violated in this image. Judge only what is visible; a rule whose state cannot be seen (for example, whether power is off) never makes the check fail.
 - visible: Set to true if the relevant parts and terminal area are clearly in view, false if occluded, blurry, or missing.
 - passed: true ONLY if visible is true, the success criteria are completely met, and no safety rule is visibly violated.

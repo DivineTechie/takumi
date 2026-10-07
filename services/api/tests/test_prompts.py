@@ -38,6 +38,10 @@ def test_verifier_and_pointer_templates():
         "Check every attribute named in the success criteria (wire colour, terminal number, position). "
         "If any one does not match what you see, passed must be false."
     )
+    verifier_part_rule = (
+        "If a success criterion names a part (for example a ferrule), confirm you can actually see that part. "
+        "If you cannot see it, passed must be false. Visible bare copper strands mean there is no ferrule."
+    )
     verifier_passed_rule = (
         "passed: true ONLY if visible is true, the success criteria are "
         "completely met, and no safety rule is visibly violated."
@@ -45,6 +49,7 @@ def test_verifier_and_pointer_templates():
 
     assert verifier_safety_rule in VERIFIER_PROMPT_TEMPLATE
     assert verifier_attr_rule in VERIFIER_PROMPT_TEMPLATE
+    assert verifier_part_rule in VERIFIER_PROMPT_TEMPLATE
     assert verifier_passed_rule in VERIFIER_PROMPT_TEMPLATE
 
     from services.api.prompts import WatcherResponse

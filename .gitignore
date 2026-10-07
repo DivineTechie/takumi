@@ -65,6 +65,7 @@ recordings/
 /output/
 /outputs/
 *.tmp
+evals/**/eval_set/
 
 # Operating System & IDE
 .DS_Store
