@@ -3,15 +3,30 @@
 
 from __future__ import annotations
 
-from pydantic import AnyUrl, AwareDatetime, BaseModel, ConfigDict
+from pydantic import AnyUrl, AwareDatetime, BaseModel, ConfigDict, Field
 
 
 class Passport(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    id: str = Field(..., description='Unguessable passport ID, pp_ + 16 url-safe chars')
     trainee_uid: str
     skill_id: str
     issued_at: AwareDatetime
     session_ids: list[str]
     verify_url: AnyUrl
+    display_first_name: str = Field(
+        ..., description='[ADDED] First name of trainee on certificate'
+    )
+    skill_title: str = Field(..., description='[ADDED] Title of the verified skill')
+    master_display_name: str = Field(
+        ..., description='[ADDED] Display name of the master instructor'
+    )
+    language: str = Field(..., description='[ADDED] Language of the verified sessions')
+    mistakes_last_run: int = Field(
+        ..., description='[ADDED] Mistakes count on final qualifying run'
+    )
+    badge_path: str | None = Field(
+        None, description='[ADDED] Cloud Storage path to badge seal image'
+    )

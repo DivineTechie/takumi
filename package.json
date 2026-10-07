@@ -4,7 +4,7 @@
   "scripts": {
     "schema": "node scripts/generate_schemas.mjs",
     "typecheck:schema": "tsc --noEmit -p shared/schema/tsconfig.json",
-    "test": "npm --prefix apps/web test && .\\.venv\\Scripts\\pytest",
+    "test": "node scripts/run_tests.mjs",
     "lint": "npm --prefix apps/web run lint"
   },
   "devDependencies": {

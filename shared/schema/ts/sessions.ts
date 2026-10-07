@@ -13,6 +13,7 @@ export interface Session {
   trainee_uid: string;
   language: "en" | "ja" | "vi" | "hi" | "id" | "fil";
   status: "live" | "completed" | "abandoned";
+  current_step?: number;
   started_at: string;
   ended_at: string | null;
   steps: {

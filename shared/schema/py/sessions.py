@@ -59,6 +59,7 @@ class Session(BaseModel):
     trainee_uid: str
     language: Language
     status: Status
+    current_step: conint(ge=1) | None = None
     started_at: AwareDatetime
     ended_at: AwareDatetime | None
     steps: list[Step]

@@ -17,6 +17,8 @@ class Type(Enum):
     ask_master = 'ask_master'
     point = 'point'
     verify = 'verify'
+    coach_line = 'coach_line'
+    trainee_line = 'trainee_line'
 
 
 class Source(Enum):

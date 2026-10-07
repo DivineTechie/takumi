@@ -14,6 +14,10 @@ This directory contains the canonical JSON Schemas (draft 2020-12), generated Ty
 - **`passports.json`** (`passports/{passportId}`): Verifiable skill passport credentials issued to trainees.
 - **`bigquery/session_events.json`**: BigQuery schema for streaming session event analytics into `takumi.session_events`.
 
+## Timestamp Representation
+
+All timestamps are stored as ISO-8601 UTC strings (e.g. `2026-10-05T09:30:00Z`), in Firestore and in JSON.
+
 ## Shared HTTP APIs
 
 These endpoints define the inter-service HTTP contract between Member A (API & Coach) and Member B (Forge pipeline).

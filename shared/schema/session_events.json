@@ -22,7 +22,9 @@
         "ask_why",
         "ask_master",
         "point",
-        "verify"
+        "verify",
+        "coach_line",
+        "trainee_line"
       ]
     },
     "source": {

@@ -1,0 +1,77 @@
+{
+  "id": "cap_eval_pcb_surface_mount",
+  "title": "Solder SMD QFP-32 IC and Clean Flux",
+  "source_language": "en",
+  "target_languages": ["ja", "hi", "vi"],
+  "transcript": [
+    {"role": "master", "text": "We are replacing a QFP-32 microcontroller on board revision 4. First inspect pads under stereo microscope.", "t_start": 0.0, "t_end": 5.0},
+    {"role": "master", "text": "Apply a thin line of no-clean tacky flux across all 32 perimeter pads using the syringe dispenser.", "t_start": 5.5, "t_end": 12.0},
+    {"role": "master", "text": "Place the IC with anti-static tweezers, aligning pin 1 dot with the silkscreen triangle indicator.", "t_start": 12.5, "t_end": 22.0},
+    {"role": "apprentice", "text": "Why tack two corner pins diagonally instead of soldering row by row immediately?", "t_start": 22.5, "t_end": 26.5},
+    {"role": "master", "text": "Tacking opposite corners freezes rotational alignment so surface tension doesn't pull the chip askew during drag soldering. Tack pin 1 and diagonally opposite pin 17 with 350C chisel tip.", "t_start": 27.0, "t_end": 39.0},
+    {"role": "master", "text": "Perform drag soldering along each row with 0.5 mm lead-free solder wire.", "t_start": 39.5, "t_end": 51.0},
+    {"role": "master", "text": "Finally scrub the PCB with 99% isopropyl alcohol and an anti-static brush to remove ionic flux residues.", "t_start": 51.5, "t_end": 62.0}
+  ],
+  "ground_truth_steps": [
+    {
+      "n": 1,
+      "title": "Dispense tacky flux on perimeter pads",
+      "instruction": "Dispense a uniform ribbon of no-clean tacky flux across all 32 PCB pads.",
+      "t_start": 5.5,
+      "t_end": 12.0,
+      "success_criteria": "Continuous thin flux film covers copper pads without excessive pooling.",
+      "why": "Flux strips copper oxide and facilitates heat transfer to prevent cold joints.",
+      "tools": ["Syringe flux dispenser", "Stereo microscope"],
+      "keyframe_points": [{"y": 450, "x": 450}],
+      "has_why": false
+    },
+    {
+      "n": 2,
+      "title": "Align QFP-32 package to pin 1 index",
+      "instruction": "Position the chip using ESD tweezers, matching pin 1 orientation dot to board silkscreen.",
+      "t_start": 12.5,
+      "t_end": 22.0,
+      "success_criteria": "All 32 IC leads sit squarely centered on copper pads with zero overhang.",
+      "why": "Misalignment causes adjacent pin shorts or open circuits under BGA/gull-wing thermal stress.",
+      "tools": ["Curved ESD tweezers", "Microscope"],
+      "keyframe_points": [{"y": 440, "x": 460}],
+      "has_why": true
+    },
+    {
+      "n": 3,
+      "title": "Tack diagonal corner pins 1 and 17",
+      "instruction": "Tack pin 1 then opposite pin 17 with 350C soldering iron tip to lock positioning.",
+      "t_start": 27.0,
+      "t_end": 39.0,
+      "success_criteria": "Pins 1 and 17 have shiny concave fillets; remaining pins retain alignment.",
+      "why": "Tacking opposite corners locks rotational freedom against molten solder surface tension.",
+      "tools": ["350C temperature-controlled soldering iron", "0.5 mm solder wire"],
+      "keyframe_points": [{"y": 430, "x": 430}],
+      "has_why": true
+    },
+    {
+      "n": 4,
+      "title": "Drag solder remaining lead rows",
+      "instruction": "Glide chisel tip along each pin row with slight solder feed.",
+      "t_start": 39.5,
+      "t_end": 51.0,
+      "success_criteria": "Every lead features a smooth meniscus solder fillet with zero solder bridges.",
+      "why": "Drag soldering delivers rapid heat transfer minimizing silicon thermal dwell time.",
+      "tools": ["Soldering iron with knife/chisel tip", "0.5 mm solder wire"],
+      "keyframe_points": [{"y": 450, "x": 500}],
+      "has_why": true
+    },
+    {
+      "n": 5,
+      "title": "Clean flux residues with IPA",
+      "instruction": "Clean board area using 99% isopropyl alcohol and ESD nylon brush, then blot dry.",
+      "t_start": 51.5,
+      "t_end": 62.0,
+      "success_criteria": "Board surface between leads is crystal clean with zero sticky yellow flux residue.",
+      "why": "Uncleaned flux attracts moisture and causes electrochemical dendritic migration over time.",
+      "tools": ["99% Isopropyl alcohol", "ESD cleaning brush", "Lint-free wipe"],
+      "keyframe_points": [{"y": 460, "x": 460}],
+      "has_why": true
+    }
+  ]
+}

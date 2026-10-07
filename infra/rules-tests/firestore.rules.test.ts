@@ -1,0 +1,217 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  initializeTestEnvironment,
+  assertFails,
+  assertSucceeds,
+  RulesTestEnvironment,
+} from '@firebase/rules-unit-testing';
+import { describe, beforeAll, afterAll, beforeEach, it } from 'vitest';
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
+
+describe('Firestore Security Rules', () => {
+  let testEnv: RulesTestEnvironment;
+
+  beforeAll(async () => {
+    testEnv = await initializeTestEnvironment({
+      projectId: 'takumi-rules-test',
+      firestore: {
+        rules: readFileSync(resolve(import.meta.dirname, '../../firestore.rules'), 'utf-8'),
+        host: '127.0.0.1',
+        port: 8085,
+      },
+    });
+  });
+
+  afterAll(async () => {
+    if (testEnv) {
+      await testEnv.cleanup();
+    }
+  });
+
+  beforeEach(async () => {
+    await testEnv.clearFirestore();
+
+    // Setup base seed documents with security rules disabled (admin context)
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const db = context.firestore();
+
+      // Seed capture 1 owned by master-1
+      await setDoc(doc(db, 'captures', 'cap_1'), {
+        id: 'cap_1',
+        master_uid: 'master-1',
+        skill_title: 'Terminal block wiring',
+        status: 'forging',
+      });
+
+      // Seed capture 2 owned by master-2
+      await setDoc(doc(db, 'captures', 'cap_2'), {
+        id: 'cap_2',
+        master_uid: 'master-2',
+        skill_title: 'Relay wiring',
+        status: 'uploaded',
+      });
+
+      // Seed published skill linked to cap_1
+      await setDoc(doc(db, 'skills', 'skill_published'), {
+        id: 'skill_published',
+        capture_id: 'cap_1',
+        status: 'published',
+        title: 'Published Skill',
+      });
+
+      // Seed draft skill
+      await setDoc(doc(db, 'skills', 'skill_draft'), {
+        id: 'skill_draft',
+        capture_id: 'cap_1',
+        status: 'draft',
+        title: 'Draft Skill',
+      });
+
+      // Seed session for trainee-1
+      await setDoc(doc(db, 'sessions', 'ses_1'), {
+        id: 'ses_1',
+        skill_id: 'skill_published',
+        trainee_uid: 'trainee-1',
+        status: 'live',
+      });
+
+      // Seed session event for ses_1
+      await setDoc(doc(db, 'sessions', 'ses_1', 'events', 'evt_1'), {
+        step: 1,
+        type: 'step_done',
+      });
+
+      // Seed review_request
+      await setDoc(doc(db, 'review_requests', 'rev_1'), {
+        skill_id: 'skill_published',
+        step: 2,
+        reason: 'High mistake rate',
+        status: 'open',
+      });
+
+      // Seed passport
+      await setDoc(doc(db, 'passports', 'pass_1'), {
+        trainee_uid: 'trainee-1',
+        skill_id: 'skill_published',
+        verify_url: 'https://takumi.dev/passports/pass_1',
+      });
+    });
+  });
+
+  it('trainee writing a session is denied (server only)', async () => {
+    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    await assertFails(
+      setDoc(doc(traineeDb, 'sessions', 'ses_new'), {
+        id: 'ses_new',
+        skill_id: 'skill_published',
+        trainee_uid: 'trainee-1',
+        status: 'live',
+      })
+    );
+  });
+
+  it('trainee reading another trainee session is denied', async () => {
+    const trainee2Db = testEnv.authenticatedContext('trainee-2', { role: 'trainee' }).firestore();
+    await assertFails(getDoc(doc(trainee2Db, 'sessions', 'ses_1')));
+    await assertFails(getDoc(doc(trainee2Db, 'sessions', 'ses_1', 'events', 'evt_1')));
+  });
+
+  it('trainee reading own session and events is allowed', async () => {
+    const trainee1Db = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    await assertSucceeds(getDoc(doc(trainee1Db, 'sessions', 'ses_1')));
+    await assertSucceeds(getDoc(doc(trainee1Db, 'sessions', 'ses_1', 'events', 'evt_1')));
+  });
+
+  it('trainee reading published skills is allowed', async () => {
+    const trainee1Db = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    await assertSucceeds(getDoc(doc(trainee1Db, 'skills', 'skill_published')));
+  });
+
+  it('trainee reading draft skills is denied', async () => {
+    const trainee1Db = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    await assertFails(getDoc(doc(trainee1Db, 'skills', 'skill_draft')));
+  });
+
+  it('master creating own capture is allowed', async () => {
+    const masterDb = testEnv.authenticatedContext('master-1', { role: 'master' }).firestore();
+    await assertSucceeds(
+      setDoc(doc(masterDb, 'captures', 'cap_new'), {
+        id: 'cap_new',
+        master_uid: 'master-1',
+        skill_title: 'New skill capture',
+        status: 'recording',
+      })
+    );
+  });
+
+  it('master updating another master capture is denied', async () => {
+    const master1Db = testEnv.authenticatedContext('master-1', { role: 'master' }).firestore();
+    await assertFails(
+      updateDoc(doc(master1Db, 'captures', 'cap_2'), {
+        skill_title: 'Hacked title',
+      })
+    );
+  });
+
+  it('master updating a skill they own capture for is allowed', async () => {
+    const master1Db = testEnv.authenticatedContext('master-1', { role: 'master' }).firestore();
+    await assertSucceeds(
+      updateDoc(doc(master1Db, 'skills', 'skill_published'), {
+        title: 'Master updated title',
+      })
+    );
+  });
+
+  it('master updating a skill they do not own is denied', async () => {
+    const master2Db = testEnv.authenticatedContext('master-2', { role: 'master' }).firestore();
+    await assertFails(
+      updateDoc(doc(master2Db, 'skills', 'skill_published'), {
+        title: 'Master-2 unauthorized title update',
+      })
+    );
+  });
+
+  it('master changing a review_request field other than status is denied', async () => {
+    const master1Db = testEnv.authenticatedContext('master-1', { role: 'master' }).firestore();
+    await assertFails(
+      updateDoc(doc(master1Db, 'review_requests', 'rev_1'), {
+        reason: 'Changed reason maliciously',
+      })
+    );
+  });
+
+  it('master changing review_request status to applied is allowed', async () => {
+    const master1Db = testEnv.authenticatedContext('master-1', { role: 'master' }).firestore();
+    await assertSucceeds(
+      updateDoc(doc(master1Db, 'review_requests', 'rev_1'), {
+        status: 'applied',
+      })
+    );
+  });
+
+  it('supervisor reading all collections is allowed', async () => {
+    const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
+    await assertSucceeds(getDoc(doc(supervisorDb, 'captures', 'cap_1')));
+    await assertSucceeds(getDoc(doc(supervisorDb, 'captures', 'cap_2')));
+    await assertSucceeds(getDoc(doc(supervisorDb, 'skills', 'skill_draft')));
+    await assertSucceeds(getDoc(doc(supervisorDb, 'sessions', 'ses_1')));
+    await assertSucceeds(getDoc(doc(supervisorDb, 'review_requests', 'rev_1')));
+  });
+
+  it('client reading or listing passports directly is denied', async () => {
+    const unauthDb = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(unauthDb, 'passports', 'pass_1')));
+    await assertFails(getDocs(collection(unauthDb, 'passports')));
+
+    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    await assertFails(getDoc(doc(traineeDb, 'passports', 'pass_1')));
+    await assertFails(getDoc(doc(traineeDb, 'passport_locks', 'lock_1')));
+  });
+
+  it('signed-in user with no role can read published skills but not sessions', async () => {
+    const noRoleDb = testEnv.authenticatedContext('user-plain').firestore();
+    await assertSucceeds(getDoc(doc(noRoleDb, 'skills', 'skill_published')));
+    await assertFails(getDoc(doc(noRoleDb, 'sessions', 'ses_1')));
+  });
+});

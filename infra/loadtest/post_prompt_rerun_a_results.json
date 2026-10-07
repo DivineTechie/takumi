@@ -1,0 +1,164 @@
+{
+  "post_prompt_crit_a_low": {
+    "label": "(a) Post-prompt update - LOW thinking [Expected: passed=False]",
+    "thinking_level": "low",
+    "instruction": "Insert the blue wire into terminal 1 and tighten its screw.",
+    "success_criteria": "A blue wire's ferrule enters terminal 1, the leftmost terminal.",
+    "total_runs": 10,
+    "passed_count": 0,
+    "failed_count": 10,
+    "results": [
+      {
+        "run": 1,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) contains a black wire instead of a blue wire.",
+        "latency_ms": 5555.8
+      },
+      {
+        "run": 2,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) has a black wire inserted into it instead of a blue wire.",
+        "latency_ms": 6781.2
+      },
+      {
+        "run": 3,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) contains a black wire instead of a blue wire.",
+        "latency_ms": 3757.4
+      },
+      {
+        "run": 4,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) contains a black wire instead of a blue wire.",
+        "latency_ms": 3627.0
+      },
+      {
+        "run": 5,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) has a black wire inserted into it instead of a blue wire.",
+        "latency_ms": 5943.3
+      },
+      {
+        "run": 6,
+        "passed": false,
+        "visible": true,
+        "reason": "A black wire is inserted into terminal 1 instead of a blue wire.",
+        "latency_ms": 4051.3
+      },
+      {
+        "run": 7,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) has a black wire inserted instead of a blue wire. No blue wire is present in terminal 1.",
+        "latency_ms": 3939.4
+      },
+      {
+        "run": 8,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 contains a black wire instead of the required blue wire. No blue wire is visible entering terminal 1.",
+        "latency_ms": 3209.3
+      },
+      {
+        "run": 9,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) contains a black wire instead of a blue wire, and no ferrule from a blue wire is present.",
+        "latency_ms": 4618.8
+      },
+      {
+        "run": 10,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) contains a black wire instead of a blue wire.",
+        "latency_ms": 3282.3
+      }
+    ]
+  },
+  "post_prompt_crit_a_default": {
+    "label": "(a) Post-prompt update - DEFAULT thinking [Expected: passed=False]",
+    "thinking_level": "default",
+    "instruction": "Insert the blue wire into terminal 1 and tighten its screw.",
+    "success_criteria": "A blue wire's ferrule enters terminal 1, the leftmost terminal.",
+    "total_runs": 10,
+    "passed_count": 0,
+    "failed_count": 10,
+    "results": [
+      {
+        "run": 1,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) has a black wire inserted into it rather than a blue wire.",
+        "latency_ms": 4923.8
+      },
+      {
+        "run": 2,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) has a black wire connected to it instead of a blue wire.",
+        "latency_ms": 4585.1
+      },
+      {
+        "run": 3,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) contains a black wire instead of the required blue wire.",
+        "latency_ms": 4460.0
+      },
+      {
+        "run": 4,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) has a black wire inserted instead of a blue wire.",
+        "latency_ms": 5135.7
+      },
+      {
+        "run": 5,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) does not contain a blue wire; a black wire is currently inserted into terminal 1 instead.",
+        "latency_ms": 5743.8
+      },
+      {
+        "run": 6,
+        "passed": false,
+        "visible": true,
+        "reason": "A black wire is inserted into terminal 1 instead of the specified blue wire.",
+        "latency_ms": 6097.6
+      },
+      {
+        "run": 7,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) does not contain a blue wire; a black wire is currently inserted into terminal 1.",
+        "latency_ms": 3932.3
+      },
+      {
+        "run": 8,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) currently has a black wire inserted into it instead of a blue wire.",
+        "latency_ms": 5072.3
+      },
+      {
+        "run": 9,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) has a black wire inserted instead of a blue wire.",
+        "latency_ms": 5895.2
+      },
+      {
+        "run": 10,
+        "passed": false,
+        "visible": true,
+        "reason": "Terminal 1 (the leftmost terminal) has a black wire inserted instead of a blue wire.",
+        "latency_ms": 5633.9
+      }
+    ]
+  }
+}

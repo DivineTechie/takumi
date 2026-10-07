@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>TAKUMI - Choose a lesson</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "outline-variant": "#534434",
+            "on-primary": "#472a00",
+            "on-tertiary-container": "#8d0012",
+            "tertiary-fixed": "#ffdad7",
+            "error-container": "#93000a",
+            "surface-variant": "#30353d",
+            "background": "#0f141b",
+            "primary-fixed-dim": "#ffb95f",
+            "secondary-container": "#00b954",
+            "on-background": "#dee2ec",
+            "surface-container-low": "#171c23",
+            "primary": "#ffc174",
+            "inverse-on-surface": "#2c3138",
+            "on-error-container": "#ffdad6",
+            "on-primary-fixed-variant": "#653e00",
+            "surface-bright": "#343941",
+            "on-primary-container": "#613b00",
+            "surface-tint": "#ffb95f",
+            "surface-container-high": "#252a32",
+            "surface-container": "#1b2027",
+            "error": "#ffb4ab",
+            "tertiary": "#ffbcb7",
+            "surface": "#0f141b",
+            "tertiary-container": "#ff938c",
+            "surface-container-lowest": "#090f15",
+            "primary-container": "#f59e0b",
+            "surface-container-highest": "#30353d",
+            "surface-dim": "#0f141b",
+            "on-primary-fixed": "#2a1700",
+            "inverse-primary": "#855300",
+            "on-tertiary": "#68000a",
+            "on-surface": "#dee2ec",
+            "on-surface-variant": "#d8c3ad",
+            "on-secondary-fixed": "#002109",
+            "on-secondary": "#003915",
+            "tertiary-fixed-dim": "#ffb3ad",
+            "on-secondary-fixed-variant": "#005321",
+            "on-tertiary-fixed-variant": "#930013",
+            "on-tertiary-fixed": "#410004",
+            "primary-fixed": "#ffddb8",
+            "inverse-surface": "#dee2ec",
+            "outline": "#a08e7a",
+            "secondary": "#4ae176",
+            "secondary-fixed": "#6bff8f",
+            "on-error": "#690005",
+            "on-secondary-container": "#004119",
+            "secondary-fixed-dim": "#4ae176"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "2xl": "1rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-xs": "0.5rem",
+            "space-lg": "2rem",
+            "gutter-mobile": "1rem",
+            "space-xl": "3rem",
+            "space-md": "1.25rem",
+            "margin-mobile": "1rem",
+            "gutter": "1.5rem",
+            "space-sm": "0.75rem",
+            "margin": "2rem"
+          },
+          "fontFamily": {
+            "label-md": ["Noto Sans"],
+            "headline-lg-mobile": ["Noto Sans"],
+            "headline-xl": ["Noto Sans"],
+            "headline-lg": ["Noto Sans"],
+            "code-num": ["Noto Sans"],
+            "body-lg": ["Noto Sans"],
+            "headline-xl-mobile": ["Noto Sans"],
+            "label-lg": ["Noto Sans"],
+            "headline-md": ["Noto Sans"],
+            "headline-sm": ["Noto Sans"],
+            "body-md": ["Noto Sans"]
+          },
+          "fontSize": {
+            "label-md": ["16px", { "lineHeight": "22px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "700" }],
+            "headline-xl": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+            "headline-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "code-num": ["22px", { "lineHeight": "28px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+            "body-lg": ["20px", { "lineHeight": "30px", "fontWeight": "400" }],
+            "headline-xl-mobile": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "800" }],
+            "label-lg": ["18px", { "lineHeight": "24px", "letterSpacing": "0.04em", "fontWeight": "700" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "body-md": ["18px", { "lineHeight": "28px", "fontWeight": "400" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 24px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-smoothing: antialiased;
+    }
+  </style>
+</head>
+<body class="bg-background text-[#f8fafc] font-body-md text-body-md min-h-screen flex flex-col selection:bg-primary-container selection:text-on-primary antialiased">
+<!-- Header -->
+<header class="w-full bg-surface-container-low px-4 min-h-[64px] flex items-center justify-between border-b border-surface-variant/40 sticky top-0 z-30">
+<div class="flex items-center gap-2">
+<!-- Back Arrow Button (Min 48px touch target) -->
+<button aria-label="Go back" class="min-w-[48px] min-h-[48px] flex items-center justify-center rounded-lg text-[#f8fafc] hover:bg-surface-container-high active:scale-95 transition-all" type="button">
+<span class="material-symbols-outlined" data-icon="arrow_back">arrow_back</span>
+</button>
+<!-- Brand Logo + Label -->
+<div class="flex items-center gap-2.5 pl-1">
+<img alt="TAKUMI logo" class="w-8 h-8 rounded-md object-contain bg-surface-container p-0.5 border border-surface-variant/50" src="https://lh3.googleusercontent.com/aida/AEtjO1Vwio5CMR2SemmUs4DeV4hFskWFq2jT_Hlpyxqz8oV5zpjuSx5o1IVGdopZ-HrFzyEJRVifDt1Bsh3RdIC1z2aCIh6vylVESuXsZhGW2gxy5UHXDeMnnB1K-0NYkL52Nnl7To2OPBa_Pncs4_p6Kqn78hARPIbcyYib9pk7SnHjJeaj98J2WMSTGjU-lExGL25nxsm9YKbnQF_cjg0gPQS58M6SRqpv3kNO-FLFtQyYeGn0oBX-RuCKrjs"/>
+<span class="font-headline-md text-headline-md font-bold tracking-tight text-[#f8fafc]">TAKUMI</span>
+</div>
+</div>
+<!-- Calm Language Dropdown -->
+<div class="relative">
+<div class="flex items-center bg-surface-container border border-surface-variant/70 rounded-lg px-2.5 py-1.5 focus-within:border-primary-container transition-colors">
+<span class="material-symbols-outlined text-slate-400 text-[20px] mr-1 pointer-events-none" data-icon="translate">translate</span>
+<select aria-label="Select language" class="bg-transparent text-slate-200 font-label-md text-[15px] font-medium pr-6 pl-1 py-1 focus:outline-none focus:ring-0 border-0 cursor-pointer appearance-none">
+<option class="bg-[#171c23] text-slate-200" selected="" value="en">English</option>
+<option class="bg-[#171c23] text-slate-200" value="ja">日本語</option>
+<option class="bg-[#171c23] text-slate-200" value="vi">Tiếng Việt</option>
+<option class="bg-[#171c23] text-slate-200" value="hi">हिन्दी</option>
+<option class="bg-[#171c23] text-slate-200" value="id">Bahasa Indonesia</option>
+<option class="bg-[#171c23] text-slate-200" value="fil">Filipino</option>
+</select>
+<span class="material-symbols-outlined text-slate-400 text-[18px] absolute right-2.5 pointer-events-none" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 w-full max-w-lg mx-auto px-4 pt-6 pb-8 flex flex-col justify-start">
+<!-- Screen Title -->
+<div class="mb-6">
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile font-bold text-[#f8fafc]">Choose a lesson</h1>
+</div>
+<!-- Empty State Container -->
+<div class="bg-surface-container-low rounded-2xl border border-surface-variant/60 p-8 text-center flex flex-col items-center justify-center min-h-[300px] w-full my-auto transition-all">
+<!-- Icon Container -->
+<div class="w-20 h-20 rounded-full bg-surface-container flex items-center justify-center border border-surface-variant/40 mb-6">
+<span class="material-symbols-outlined text-[#94a3b8] text-[48px]" data-icon="menu_book">menu_book</span>
+</div>
+<!-- State Title -->
+<h2 class="font-headline-md text-headline-md font-bold text-[#f8fafc] mb-2 tracking-normal">
+        No lessons yet
+      </h2>
+<!-- State Description -->
+<p class="font-body-md text-body-md text-[#cbd5e1] max-w-[280px] leading-relaxed">
+        Ask your supervisor to publish one
+      </p>
+</div>
+</main>
+</body></html>

@@ -5,9 +5,37 @@
  */
 
 export interface Passport {
+  /**
+   * Unguessable passport ID, pp_ + 16 url-safe chars
+   */
+  id: string;
   trainee_uid: string;
   skill_id: string;
   issued_at: string;
   session_ids: string[];
   verify_url: string;
+  /**
+   * [ADDED] First name of trainee on certificate
+   */
+  display_first_name: string;
+  /**
+   * [ADDED] Title of the verified skill
+   */
+  skill_title: string;
+  /**
+   * [ADDED] Display name of the master instructor
+   */
+  master_display_name: string;
+  /**
+   * [ADDED] Language of the verified sessions
+   */
+  language: string;
+  /**
+   * [ADDED] Mistakes count on final qualifying run
+   */
+  mistakes_last_run: number;
+  /**
+   * [ADDED] Cloud Storage path to badge seal image
+   */
+  badge_path?: string | null;
 }

@@ -1,0 +1,101 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+    
+    function isMaster() {
+      return hasRole('master');
+    }
+    
+    function isTrainee() {
+      return hasRole('trainee');
+    }
+    
+    function isSupervisor() {
+      return hasRole('supervisor');
+    }
+
+    function isCaptureMaster(captureId) {
+      return captureId != null 
+        && exists(/databases/$(database)/documents/captures/$(captureId))
+        && get(/databases/$(database)/documents/captures/$(captureId)).data.master_uid == request.auth.uid;
+    }
+
+    function isSessionTrainee(sessionId) {
+      return exists(/databases/$(database)/documents/sessions/$(sessionId))
+        && get(/databases/$(database)/documents/sessions/$(sessionId)).data.trainee_uid == request.auth.uid;
+    }
+
+    // captures: role master creates with request.resource.data.master_uid == request.auth.uid,
+    // reads and updates only their own, and cannot change master_uid. Supervisors read all.
+    match /captures/{captureId} {
+      allow read: if isSupervisor() || (isMaster() && resource.data.master_uid == request.auth.uid);
+      allow create: if isMaster() && request.resource.data.master_uid == request.auth.uid;
+      allow update: if isMaster() 
+        && resource.data.master_uid == request.auth.uid 
+        && request.resource.data.master_uid == resource.data.master_uid;
+      allow delete: if false;
+    }
+
+    // skills: any signed-in user can read docs with status == "published".
+    // Role master or supervisor can read all skills.
+    // Role master may update a skill only if get(/databases/$(database)/documents/captures/$(resource.data.capture_id)).data.master_uid == request.auth.uid.
+    // No client creates; Forge creates skills server-side.
+    match /skills/{skillId} {
+      allow read: if isSupervisor() || isMaster() || (isSignedIn() && resource.data.status == "published");
+      allow create, delete: if false;
+      allow update: if isMaster() && isCaptureMaster(resource.data.capture_id);
+    }
+
+    // forge_jobs and forge_jobs/*/events: readable by role master or supervisor. No client writes.
+    match /forge_jobs/{jobId} {
+      allow read: if isMaster() || isSupervisor();
+      allow write: if false;
+
+      match /events/{eventId} {
+        allow read: if isMaster() || isSupervisor();
+        allow write: if false;
+      }
+    }
+
+    // review_requests: created only by the server. 
+    // Role master may update only the status field, to applied or dismissed. 
+    // Supervisors read all.
+    match /review_requests/{requestId} {
+      allow read: if isSupervisor() || isMaster();
+      allow create, delete: if false;
+      allow update: if isMaster()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && (request.resource.data.status == 'applied' || request.resource.data.status == 'dismissed');
+    }
+
+    // sessions, sessions/*/events: written ONLY by takumi-api.
+    // Trainees read only their own sessions and events; supervisors read all.
+    match /sessions/{sessionId} {
+      allow read: if isSupervisor() || (isTrainee() && resource.data.trainee_uid == request.auth.uid);
+      allow write: if false;
+
+      match /events/{eventId} {
+        allow read: if isSupervisor() || (isTrainee() && isSessionTrainee(sessionId));
+        allow write: if false;
+      }
+    }
+
+    // passports & passport_locks: NO client access. Served exclusively via takumi-api.
+    match /passports/{passportId} {
+      allow read, write: if false;
+    }
+
+    match /passport_locks/{lockId} {
+      allow read, write: if false;
+    }
+  }
+}

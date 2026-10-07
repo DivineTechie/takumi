@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>TAKUMI - Live Coach (Before Start)</title>
+<!-- Google Fonts: Noto Sans -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS with Forms and Container Queries -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-fixed": "#ffdad7",
+            "secondary-fixed-dim": "#4ae176",
+            "on-primary": "#472a00",
+            "inverse-primary": "#855300",
+            "primary-fixed-dim": "#ffb95f",
+            "primary-container": "#f59e0b",
+            "on-primary-fixed": "#2a1700",
+            "on-primary-fixed-variant": "#653e00",
+            "surface-bright": "#343941",
+            "surface-dim": "#0f141b",
+            "outline": "#a08e7a",
+            "surface-tint": "#ffb95f",
+            "primary-fixed": "#ffddb8",
+            "surface": "#0f141b",
+            "on-secondary-fixed-variant": "#005321",
+            "surface-container-highest": "#30353d",
+            "on-error-container": "#ffdad6",
+            "surface-container-lowest": "#090f15",
+            "surface-variant": "#30353d",
+            "on-tertiary-fixed": "#410004",
+            "tertiary-container": "#ff938c",
+            "secondary-container": "#00b954",
+            "surface-container-low": "#171c23",
+            "secondary-fixed": "#6bff8f",
+            "surface-container-high": "#252a32",
+            "tertiary-fixed-dim": "#ffb3ad",
+            "on-surface-variant": "#d8c3ad",
+            "error": "#ffb4ab",
+            "on-secondary": "#003915",
+            "on-tertiary": "#68000a",
+            "error-container": "#93000a",
+            "on-error": "#690005",
+            "secondary": "#4ae176",
+            "inverse-surface": "#dee2ec",
+            "on-secondary-container": "#004119",
+            "outline-variant": "#534434",
+            "surface-container": "#1b2027",
+            "on-background": "#dee2ec",
+            "on-surface": "#dee2ec",
+            "on-tertiary-container": "#8d0012",
+            "on-primary-container": "#613b00",
+            "inverse-on-surface": "#2c3138",
+            "on-secondary-fixed": "#002109",
+            "on-tertiary-fixed-variant": "#930013",
+            "primary": "#ffc174",
+            "background": "#0f141b",
+            "tertiary": "#ffbcb7"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "space-lg": "2rem",
+            "margin-mobile": "1rem",
+            "margin": "2rem",
+            "space-md": "1.25rem",
+            "space-xl": "3rem",
+            "space-sm": "0.75rem",
+            "gutter": "1.5rem",
+            "gutter-mobile": "1rem",
+            "space-xs": "0.5rem"
+          },
+          "fontFamily": {
+            "body-md": ["Noto Sans"],
+            "headline-sm": ["Noto Sans"],
+            "headline-xl-mobile": ["Noto Sans"],
+            "headline-md": ["Noto Sans"],
+            "label-lg": ["Noto Sans"],
+            "code-num": ["Noto Sans"],
+            "headline-lg-mobile": ["Noto Sans"],
+            "body-lg": ["Noto Sans"],
+            "label-md": ["Noto Sans"],
+            "headline-xl": ["Noto Sans"],
+            "headline-lg": ["Noto Sans"]
+          },
+          "fontSize": {
+            "body-md": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "headline-xl-mobile": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "800" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+            "label-lg": ["18px", { "lineHeight": "24px", "letterSpacing": "0.04em", "fontWeight": "700" }],
+            "code-num": ["22px", { "lineHeight": "28px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "700" }],
+            "body-lg": ["20px", { "lineHeight": "30px", "fontWeight": "400" }],
+            "label-md": ["16px", { "lineHeight": "22px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "headline-xl": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+            "headline-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.01em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    body {
+      font-family: 'Noto Sans', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background-color: #0f141b;
+    }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface antialiased flex justify-center items-start min-h-screen selection:bg-primary-container selection:text-on-primary-container">
+<!-- Mobile Frame Container (Strict 390x844 Form Factor Ergonomics) -->
+<main class="w-full max-w-[390px] min-h-[844px] flex flex-col bg-surface relative overflow-x-hidden border-x border-surface-container-high shadow-2xl">
+<!-- Top Bar: Minimal Dark Header -->
+<header class="w-full h-[56px] px-margin-mobile flex items-center justify-between bg-surface-container-low shrink-0 z-20">
+<!-- Left: Back Navigation Button (Touch-optimized 56px hit zone) -->
+<button aria-label="Go back" class="flex items-center justify-center w-12 h-12 -ml-2 rounded text-on-surface hover:bg-surface-container-high active:scale-95 transition-transform duration-100" type="button">
+<span class="material-symbols-outlined text-2xl" data-icon="arrow_back">arrow_back</span>
+</button>
+<!-- Center: Logo & Brand Name -->
+<div class="flex items-center gap-2">
+<img alt="TAKUMI Logo" class="w-7 h-7 object-contain rounded-md" src="https://lh3.googleusercontent.com/aida/AEtjO1Vwio5CMR2SemmUs4DeV4hFskWFq2jT_Hlpyxqz8oV5zpjuSx5o1IVGdopZ-HrFzyEJRVifDt1Bsh3RdIC1z2aCIh6vylVESuXsZhGW2gxy5UHXDeMnnB1K-0NYkL52Nnl7To2OPBa_Pncs4_p6Kqn78hARPIbcyYib9pk7SnHjJeaj98J2WMSTGjU-lExGL25nxsm9YKbnQF_cjg0gPQS58M6SRqpv3kNO-FLFtQyYeGn0oBX-RuCKrjs"/>
+<span class="font-headline-md text-headline-md font-bold tracking-wider text-on-surface">TAKUMI</span>
+</div>
+<!-- Right: Compact Language Quick Picker -->
+<button class="flex items-center gap-1 py-1.5 px-2.5 rounded bg-surface-container border border-outline-variant hover:bg-surface-container-high transition-colors active:scale-95" type="button">
+<span class="font-label-md text-label-md text-on-surface">English</span>
+<span class="material-symbols-outlined text-base text-on-surface-variant" data-icon="expand_more">expand_more</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<div class="flex-1 flex flex-col px-margin-mobile pt-space-md pb-[108px] overflow-y-auto">
+<!-- Lesson Context Area -->
+<div class="mb-space-md">
+<!-- Subtitle / Eyebrow -->
+<span class="font-label-md text-label-md uppercase tracking-wider text-primary font-bold block mb-1">
+          Lesson preparation
+        </span>
+<!-- Large Lesson Title (High Contrast) -->
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface font-extrabold tracking-tight mb-2">
+          Wire a DIN-rail terminal block
+        </h1>
+<!-- Clear Ergonomic Instruction Subtitle -->
+<p class="font-body-md text-body-md text-on-surface-variant">
+          Choose your coaching language to start audio and camera prompts.
+        </p>
+</div>
+<!-- Language Selection Section -->
+<section aria-labelledby="language-section-heading" class="flex flex-col flex-1">
+<div class="flex items-center justify-between mb-space-sm">
+<h2 class="font-headline-sm text-headline-sm text-on-surface font-semibold" id="language-section-heading">
+            Coaching language
+          </h2>
+<span class="font-label-md text-label-md text-on-surface-variant">6 Available</span>
+</div>
+<!-- 2x3 Grid of Glove-Friendly Interactive Cards (>=64px tall, rounded-xl) -->
+<div aria-label="Select coaching language" class="grid grid-cols-2 gap-space-sm mb-space-md" role="radiogroup">
+<!-- Option 1: English (Selected State) -->
+<button aria-checked="true" class="relative flex flex-col justify-center items-start min-h-[72px] px-space-sm py-space-xs rounded-xl bg-surface-container-high border-2 border-primary-container text-left active:scale-[0.98] transition-all" role="radio" type="button">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface leading-tight">English</span>
+<span class="font-label-md text-label-md text-on-surface-variant leading-tight">Primary</span>
+<!-- Selected Badge Pill -->
+<span class="absolute top-2 right-2 flex items-center gap-0.5 bg-primary-container text-on-primary-container px-1.5 py-0.5 rounded font-label-md text-[11px] leading-tight font-bold uppercase tracking-wider">
+<span class="material-symbols-outlined text-[13px]" data-icon="check">check</span>
+              Selected
+            </span>
+</button>
+<!-- Option 2: Japanese -->
+<button aria-checked="false" class="relative flex flex-col justify-center items-start min-h-[72px] px-space-sm py-space-xs rounded-xl bg-surface-container border border-outline-variant hover:border-surface-bright text-left active:scale-[0.98] transition-all" role="radio" type="button">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface leading-tight">日本語</span>
+<span class="font-label-md text-label-md text-on-surface-variant leading-tight">Japanese</span>
+</button>
+<!-- Option 3: Vietnamese -->
+<button aria-checked="false" class="relative flex flex-col justify-center items-start min-h-[72px] px-space-sm py-space-xs rounded-xl bg-surface-container border border-outline-variant hover:border-surface-bright text-left active:scale-[0.98] transition-all" role="radio" type="button">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface leading-tight">Tiếng Việt</span>
+<span class="font-label-md text-label-md text-on-surface-variant leading-tight">Vietnamese</span>
+</button>
+<!-- Option 4: Hindi -->
+<button aria-checked="false" class="relative flex flex-col justify-center items-start min-h-[72px] px-space-sm py-space-xs rounded-xl bg-surface-container border border-outline-variant hover:border-surface-bright text-left active:scale-[0.98] transition-all" role="radio" type="button">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface leading-tight">हिन्दी</span>
+<span class="font-label-md text-label-md text-on-surface-variant leading-tight">Hindi</span>
+</button>
+<!-- Option 5: Indonesian -->
+<button aria-checked="false" class="relative flex flex-col justify-center items-start min-h-[72px] px-space-sm py-space-xs rounded-xl bg-surface-container border border-outline-variant hover:border-surface-bright text-left active:scale-[0.98] transition-all" role="radio" type="button">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface leading-tight">Bahasa Indo</span>
+<span class="font-label-md text-label-md text-on-surface-variant leading-tight">Indonesian</span>
+</button>
+<!-- Option 6: Filipino (Tagalog) -->
+<button aria-checked="false" class="relative flex flex-col justify-center items-start min-h-[72px] px-space-sm py-space-xs rounded-xl bg-surface-container border border-outline-variant hover:border-surface-bright text-left active:scale-[0.98] transition-all" role="radio" type="button">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface leading-tight">Filipino</span>
+<span class="font-label-md text-label-md text-on-surface-variant leading-tight">Tagalog</span>
+</button>
+</div>
+<!-- Audio Advisory Note Card (Tonal Level 1 with 1px border) -->
+<div class="flex items-center gap-3 p-3.5 rounded-xl bg-surface-container-low border border-outline-variant mt-auto">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0 text-primary">
+<span class="material-symbols-outlined text-2xl" data-icon="headphones">headphones</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface font-medium leading-snug">
+            Use headphones for best results
+          </p>
+</div>
+</section>
+</div>
+<!-- Pinned Bottom Action Zone (Zero Clutter, Single Dedicated Safety Amber Action) -->
+<div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[390px] p-margin-mobile bg-surface-container-lowest/95 backdrop-blur-md border-t border-outline-variant z-30">
+<button class="w-full h-[60px] rounded-lg bg-primary-container text-on-primary-container font-headline-sm text-headline-sm font-extrabold flex items-center justify-center gap-2 shadow-lg active:scale-[0.98] hover:brightness-105 transition-all" type="button">
+<span class="material-symbols-outlined text-2xl font-bold" data-icon="play_arrow">play_arrow</span>
+<span>Start coaching</span>
+</button>
+</div>
+</main>
+<script>
+    // Lightweight tactile selection interaction for language cards
+    document.querySelectorAll('[role="radio"]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[role="radio"]').forEach(btn => {
+          btn.setAttribute('aria-checked', 'false');
+          btn.classList.remove('border-2', 'border-primary-container', 'bg-surface-container-high');
+          btn.classList.add('border', 'border-outline-variant', 'bg-surface-container');
+          const badge = btn.querySelector('.uppercase');
+          if (badge) badge.remove();
+        });
+
+        button.setAttribute('aria-checked', 'true');
+        button.classList.remove('border', 'border-outline-variant', 'bg-surface-container');
+        button.classList.add('border-2', 'border-primary-container', 'bg-surface-container-high');
+
+        const badge = document.createElement('span');
+        badge.className = 'absolute top-2 right-2 flex items-center gap-0.5 bg-primary-container text-on-primary-container px-1.5 py-0.5 rounded font-label-md text-[11px] leading-tight font-bold uppercase tracking-wider';
+        badge.innerHTML = '<span class="material-symbols-outlined text-[13px]" data-icon="check">check</span>Selected';
+        button.appendChild(badge);
+      });
+    });
+  </script>
+</body></html>
