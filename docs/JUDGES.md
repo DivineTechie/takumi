@@ -85,8 +85,8 @@ If you have a standard DIN-rail terminal block assembly kit (DIN rail, screw-cla
    - Say *"Done"*.
    - Notice that TAKUMI **rejects the step**, explaining the exact visual discrepancy (e.g. *"Terminal 1 is empty; wire was placed in terminal 2"* or *"Bare copper strands visible; ferrule missing"*).
 6. **Safety Rule Hazard Test**:
-   - Wave your hand near an energized contact or create a deliberate hazard condition (e.g. leaving loose stripped copper near a chassis ground).
-   - The visual watcher catches the hazard within 2 seconds and speaks a real-time warning.
+   - Leave bare copper strands visible outside the clamp or trigger an unsafe workbench condition.
+   - The visual watcher flags visible hazards such as bare copper, speaks a warning, and stops the trainee with a full-screen STOP overlay until marked safe.
 7. **Skill Passport Credential**:
    - Complete all assembly steps.
    - The session finalizes and issues a cryptographic, verifiable digital **Skill Passport** certifying your competence.

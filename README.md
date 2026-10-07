@@ -13,17 +13,17 @@
 ### The Crisis on the Factory Floor
 Across advanced manufacturing hubs in the Asia-Pacific region, an acute demographic transition is intersecting with rapid industrial reliance on migrant labor:
 
-1. **Aging Master Craftsmen (*Takumi*)**: Japan, South Korea, and Taiwan face an unprecedented wave of retirements among veteran industrial technicians. Decades of tacit procedural knowledge—nuanced assembly ergonomics, tactile torque instincts, and unwritten safety habits—are disappearing without being codified.
+1. **Aging Master Craftsmen (*Takumi*)**: Experienced technicians retire with know-how that paper instructions don't capture.
 2. **Growing Multilingual Migrant Workforce**:
-   - **Japan**: Foreign workers reached an all-time high of **2,571,037** as of October 2025, with Vietnamese nationals forming the single largest demographic at **605,906** workers ([Japan Ministry of Health, Labour and Welfare (MHLW)](https://www.mhlw.go.jp/stf/newpage_47209.html)).
-   - **South Korea**: Employs **287,424** foreign workers under the Employment Permit System (EPS E-9 visa), with approximately 80% assigned to manufacturing and heavy production operations ([South Korea Ministry of Employment and Labor (MOEL)](https://www.moel.go.kr/)).
-   - **Taiwan**: The registered foreign migrant workforce surpassed **866,000** in late 2025, with over **480,000** working directly on manufacturing and fabrication lines ([Taiwan Ministry of Labor (MOL)](https://english.mol.gov.tw/)).
-3. **The Communication and Safety Penalty**: Language barriers between Japanese- or Korean-speaking factory floor supervisors and newly arrived Southeast Asian trainees lead to steep onboarding delays and severe safety risks. In Japan, industrial workplace casualties (injuries requiring 4+ days of absence, and fatalities) among foreign workers passed **6,000 for the first time in 2024, reaching 6,244** ([MHLW 14th Occupational Safety and Health Plan / Industrial Accident Statistics](https://www.mhlw.go.jp/stf/seisakunitsuite/bunya/0000155554.html)).
+   - **Japan**: Foreign workers reached **2,571,037** at the end of October 2025, with Vietnamese nationals forming the largest demographic at **605,906** workers ([MHLW national press release PDF](https://www.mhlw.go.jp/content/11655000/001646128.pdf)).
+   - **South Korea**: Foreign workers under the Employment Permit System reached a record **287,424** as of July 2026, with **229,844** (80%) working in manufacturing ([The Korea Times](https://www.koreatimes.co.kr/southkorea/20260902/number-of-foreign-workers-under-employment-permit-system-hits-record-high)).
+   - **Taiwan**: Taiwan's manufacturing sector similarly depends on a substantial migrant workforce navigating technical operations across language barriers.
+3. **The Communication and Safety Penalty**: Language barriers between supervisors and newly arrived trainees lead to onboarding delays and severe safety risks. In Japan, **6,244** foreign workers were killed or injured (requiring 4+ days off work) in 2024, passing 6,000 for the first time, with the MHLW citing "insufficient education on safety management and poor communication", as reported by the [Business & Human Rights Resource Centre](https://www.business-humanrights.org/en/latest-news/japan-number-of-work-related-injuries-and-deaths-among-foreign-workers-exceeds-6000-for-the-first-time-in-2024/).
 
 ### The TAKUMI Solution
 TAKUMI bridges this gap through a dual-agent architecture built entirely on Google AI and Google Cloud:
-1. **Master Capture & Forge (Member B)**: A master craftsman demonstrates a physical task once while wearing or propping a standard phone camera. An automated Google ADK 2.0 graph pipeline segments the demonstration into precise physical steps, extracts the underlying engineering rationale ("why"), annotates workbench spatial coordinates, cross-validates against standard operating procedure (SOP) manuals, and localizes instructions into 6 regional languages.
-2. **Live Multimodal Coach (Member A)**: A trainee props their smartphone above their workbench. TAKUMI watches their hands in real time through the phone camera and converses with them over bidirectional streaming audio in their native language (e.g. Vietnamese, Hindi, Japanese, English). It offers continuous reassurance, spots safety hazards before accidents occur, points to correct terminal screws via spatial coordinate bounding boxes, and strictly verifies step completion against physical visual criteria.
+1. **Master Capture & Forge (Member B — In Progress)**: In progress to capture a master craftsman's physical demonstration once via a smartphone camera. An automated Google ADK 2.0 graph pipeline is designed to segment demonstrations into discrete steps, extract engineering rationale ("why"), annotate spatial coordinates, cross-reference technical SOP manuals, and localize guidance into 6 regional languages.
+2. **Live Multimodal Coach (Member A)**: A trainee props their smartphone above their workbench. TAKUMI watches their hands in real time through the phone camera and converses with them over bidirectional streaming audio in their native language (e.g. Vietnamese, Hindi, Japanese, English). It offers continuous reassurance, flags visible hazards such as bare copper and stops the trainee with a full-screen STOP, points to correct terminal screws via spatial coordinate bounding boxes, and strictly verifies step completion against physical visual criteria.
 
 ---
 
@@ -43,7 +43,7 @@ TAKUMI decouples rapid conversational speech from high-precision visual verifica
                          [ BigQuery Telemetry & Logging ]
 ```
 
-1. **Forge Pipeline (Member B — In Progress)**: Ingests master demonstration video and technical SOP manuals. Uses `gemini-omni-1.1-flash` for multimodal segmentation, `gemini-3.8-flash` for why-extraction and multilingual translation, `gemini-robotics-er-2-preview` for keyframe spatial annotation, and `gemini-3.1-flash-image` with `veo-3.1-fast-generate-preview` for visual instruction cards and mistake simulation clips.
+1. **Forge Pipeline (Member B — In Progress)**: In development to ingest master demonstration video and technical SOP manuals. Implemented in code on branch `forge` using `gemini-omni-1.1-flash` for multimodal segmentation, `gemini-3.8-flash` for why-extraction and multilingual translation, `gemini-robotics-er-2-preview` for keyframe spatial annotation, and `gemini-3.1-flash-image` with `veo-3.1-fast-generate-preview` for visual instruction cards and mistake simulation clips.
 2. **Live Coach Pipeline (Member A — Live in Production)**: Streams trainee audio and camera frames through a low-latency gateway. Uses `gemini-3.8-live` for natural bidirectional voice conversation, `gemini-3.5-flash-lite` for continuous visual progress tracking and hazard detection (1 FPS), `gemini-3.8-flash` for objective step verification against visible success criteria, and `gemini-robotics-er-2-preview` for reticle coordinates (`[y, x]`).
 
 Detailed architectural rationale, sequence diagrams, and security topology are documented in [docs/architecture.md](docs/architecture.md).
@@ -86,7 +86,7 @@ A granular breakdown of every component's operational status is available in [do
 ## 4. User Personas & Workflows
 
 ### 1. Trainee (Live in Production)
-- **Props a standard smartphone** on their assembly workbench; opens `https://takumi-cup-2026.web.app`.
+- **Props a standard smartphone** on their assembly workbench; opens [https://takumi-cup-2026.web.app](https://takumi-cup-2026.web.app).
 - **Selects native language** (English, Vietnamese, Hindi, Japanese, Indonesian, or Filipino).
 - **Speaks naturally hands-free** with the coach via `gemini-3.8-live` over WebSockets.
 - **Asks contextual questions** at any point (e.g. *"Why do I need a ferrule on stranded wire?"* or *"Can you show me where terminal 1 is?"*).
@@ -290,3 +290,11 @@ docker build -f services/api/Dockerfile . -t asia-southeast1-docker.pkg.dev/taku
 ## 12. License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+
+---
+
+## 13. Sources
+
+1. **Japan Foreign Workers (Oct 2025)**: Ministry of Health, Labour and Welfare (MHLW), *Summary of Foreign Worker Employment Situation*, [https://www.mhlw.go.jp/content/11655000/001646128.pdf](https://www.mhlw.go.jp/content/11655000/001646128.pdf).
+2. **Japan Foreign Worker Casualties (2024)**: Business & Human Rights Resource Centre, *Japan: Number of work-related injuries and deaths among foreign workers exceeds 6,000 for the first time in 2024*, reporting MHLW announcement, [https://www.business-humanrights.org/en/latest-news/japan-number-of-work-related-injuries-and-deaths-among-foreign-workers-exceeds-6000-for-the-first-time-in-2024/](https://www.business-humanrights.org/en/latest-news/japan-number-of-work-related-injuries-and-deaths-among-foreign-workers-exceeds-6000-for-the-first-time-in-2024/).
+3. **South Korea EPS Workforce (July 2026)**: The Korea Times (Sept 2, 2026), *Number of foreign workers under employment permit system hits record high*, [https://www.koreatimes.co.kr/southkorea/20260902/number-of-foreign-workers-under-employment-permit-system-hits-record-high](https://www.koreatimes.co.kr/southkorea/20260902/number-of-foreign-workers-under-employment-permit-system-hits-record-high).
