@@ -64,3 +64,6 @@ class Session(BaseModel):
     ended_at: AwareDatetime | None
     steps: list[Step]
     result: Result | None = None
+    preview: bool | None = Field(
+        None, description='[ADDED] True when session is a master lesson preview'
+    )

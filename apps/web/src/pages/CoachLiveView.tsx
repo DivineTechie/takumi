@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import type { Skill } from '../../../../shared/schema/ts/skills';
 import type { LanguageCode } from '../i18n';
 import { useTranslation } from '../i18n';
@@ -13,10 +13,21 @@ import { GeminiLiveClient, computeMedian } from '../lib/live/client';
 import { OutputAudioQueue, setupMicCapture, type MicCaptureHandle } from '../lib/live/audio';
 import { isCameraMirrored, captureVideoFrame, captureVideoFrameAsync } from '../lib/live/video';
 import { SessionCapTimer } from '../lib/live/sessionCap';
-import { renderReticles, type ReticlePoint } from '../lib/live/reticle';
-import { verify, point, watch, createSession, postSessionEvent, endSession, type WatchRequest } from '../lib/api';
+import {
+  verify,
+  point,
+  watch,
+  createSession,
+  postSessionEvent,
+  endSession,
+  fetchSkillMedia,
+  askMaster,
+  type WatchRequest,
+} from '../lib/api';
 import { SafetyStop } from '../components/SafetyStop';
+import { ClipPlayer } from '../components/ClipPlayer';
 import { watcherReducer, INITIAL_WATCHER_STATE, type WatcherStreakState } from '../lib/live/watcher';
+import { renderReticles, type ReticlePoint } from '../lib/live/reticle';
 
 interface CoachLiveViewProps {
   skill: Skill;
@@ -41,7 +52,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const isDebug = new URLSearchParams(window.location.search).get('debug') === '1';
+  const location = useLocation();
+  const isDebug = new URLSearchParams(location.search || window.location.search).get('debug') === '1';
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -69,6 +81,20 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const [watchReadsCount, setWatchReadsCount] = useState<number>(0);
   const [watchP50Ms, setWatchP50Ms] = useState<number | null>(null);
   const [decisionToAudioDisplay, setDecisionToAudioDisplay] = useState<string>('n/a');
+
+  // Master & Mistake Clips State (Features A5/A8)
+  const [activeClip, setActiveClip] = useState<{
+    url: string;
+    start_s?: number;
+    end_s?: number;
+    kind: 'master_clip' | 'mistake_clip';
+    why?: string;
+    why_lang?: string;
+    translated?: boolean;
+    label?: string;
+    onFinish: (playedSeconds: number) => void;
+  } | null>(null);
+  const isClipPlayingRef = useRef<boolean>(false);
 
   const [stats, setStats] = useState<LiveClientStats>({
     setupCompleteReceived: false,
@@ -644,6 +670,158 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             }
           }
 
+          // --- Tool 3: show_master_clip ---
+          if (call.name === 'show_master_clip') {
+            isToolInFlightRef.current = true;
+            setIsCheckingTool(true);
+            try {
+              const stepN = currentStepRef.current;
+              const currentSkill = skillRef.current;
+              try {
+                const media = await fetchSkillMedia(currentSkill.id, stepN, 'master_clip', language);
+                if (media && media.url) {
+                  clientRef.current?.setExternalGating(true);
+                  isClipPlayingRef.current = true;
+                  return await new Promise<Record<string, unknown>>((resolve) => {
+                    setActiveClip({
+                      url: media.url,
+                      start_s: media.start_s,
+                      end_s: media.end_s,
+                      kind: 'master_clip',
+                      why: media.why,
+                      why_lang: media.why_lang,
+                      translated: media.translated,
+                      onFinish: (playedSeconds) => {
+                        setActiveClip(null);
+                        isClipPlayingRef.current = false;
+                        clientRef.current?.setExternalGating(false);
+                        if (sessionIdRef.current) {
+                          postSessionEvent(sessionIdRef.current, {
+                            step: stepN,
+                            type: 'ask_why',
+                            source: 'coach',
+                            reason: 'master_clip:played',
+                          }).catch((err) => console.warn('Failed to log ask_why event:', err));
+                        }
+                        resolve({ result: { played: true, seconds: Math.round(playedSeconds) } });
+                      },
+                    });
+                  });
+                }
+              } catch {
+                // Not available (e.g. 404)
+              }
+
+              if (sessionIdRef.current) {
+                postSessionEvent(sessionIdRef.current, {
+                  step: stepN,
+                  type: 'ask_why',
+                  source: 'coach',
+                  reason: 'master_clip:not_available',
+                }).catch((err) => console.warn('Failed to log ask_why event:', err));
+              }
+              return { result: { status: 'not available' } };
+            } finally {
+              setIsCheckingTool(false);
+              isToolInFlightRef.current = false;
+            }
+          }
+
+          // --- Tool 4: show_mistake_clip ---
+          if (call.name === 'show_mistake_clip') {
+            isToolInFlightRef.current = true;
+            setIsCheckingTool(true);
+            try {
+              const stepN = currentStepRef.current;
+              const currentSkill = skillRef.current;
+              try {
+                const media = await fetchSkillMedia(currentSkill.id, stepN, 'mistake_clip', language);
+                if (media && media.url) {
+                  clientRef.current?.setExternalGating(true);
+                  isClipPlayingRef.current = true;
+                  return await new Promise<Record<string, unknown>>((resolve) => {
+                    setActiveClip({
+                      url: media.url,
+                      kind: 'mistake_clip',
+                      label: media.label || 'AI-generated example of the wrong way',
+                      onFinish: (playedSeconds) => {
+                        setActiveClip(null);
+                        isClipPlayingRef.current = false;
+                        clientRef.current?.setExternalGating(false);
+                        if (sessionIdRef.current) {
+                          postSessionEvent(sessionIdRef.current, {
+                            step: stepN,
+                            type: 'mistake_clip',
+                            source: 'coach',
+                            reason: 'mistake_clip:played',
+                          }).catch((err) => console.warn('Failed to log mistake_clip event:', err));
+                        }
+                        resolve({ result: { played: true, seconds: Math.round(playedSeconds) } });
+                      },
+                    });
+                  });
+                }
+              } catch {
+                // Not available
+              }
+              return { result: { status: 'not available' } };
+            } finally {
+              setIsCheckingTool(false);
+              isToolInFlightRef.current = false;
+            }
+          }
+
+          // --- Tool 5: ask_master ---
+          if (call.name === 'ask_master') {
+            isToolInFlightRef.current = true;
+            setIsCheckingTool(true);
+            try {
+              const question = String(call.args?.question || '');
+              const currentSkill = skillRef.current;
+              if (sessionIdRef.current && question) {
+                postSessionEvent(sessionIdRef.current, {
+                  step: currentStepRef.current,
+                  type: 'ask_master',
+                  source: 'trainee',
+                  reason: question.slice(0, 200),
+                }).catch((err) => console.warn('Failed to log ask_master event:', err));
+              }
+              const askResp = await askMaster(currentSkill.id, question, language);
+              if (askResp.clip) {
+                const clipStep = askResp.clip.step;
+                fetchSkillMedia(currentSkill.id, clipStep, 'master_clip', language)
+                  .then((media) => {
+                    if (media && media.url) {
+                      clientRef.current?.setExternalGating(true);
+                      isClipPlayingRef.current = true;
+                      setActiveClip({
+                        url: media.url,
+                        start_s: askResp.clip?.start_s ?? media.start_s,
+                        end_s: askResp.clip?.end_s ?? media.end_s,
+                        kind: 'master_clip',
+                        why: media.why,
+                        why_lang: media.why_lang,
+                        translated: media.translated,
+                        onFinish: () => {
+                          setActiveClip(null);
+                          isClipPlayingRef.current = false;
+                          clientRef.current?.setExternalGating(false);
+                        },
+                      });
+                    }
+                  })
+                  .catch((err) => console.warn('Failed to fetch clip for ask_master:', err));
+              }
+              return { result: { answer: askResp.answer, citation: askResp.citation } };
+            } catch (err) {
+              console.warn('ask_master execution failed:', err);
+              return { result: { answer: "Let's come back to that." } };
+            } finally {
+              setIsCheckingTool(false);
+              isToolInFlightRef.current = false;
+            }
+          }
+
           return { status: 'not available yet' };
         },
         onError: (err) => {
@@ -835,15 +1013,23 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     let loopTimeout: number | null = null;
 
     const runWatcherTick = async () => {
-      if (isCancelled || connectionState !== 'connected' || isLessonComplete || isSafetyStopOpen) {
+      if (
+        isCancelled ||
+        connectionState !== 'connected' ||
+        isLessonComplete ||
+        isSafetyStopOpen ||
+        isClipPlayingRef.current
+      ) {
+        loopTimeout = window.setTimeout(runWatcherTick, 400);
         return;
       }
 
-      // Skip conditions: tool call in flight, watch in flight, or tab hidden
+      // Skip conditions: tool call in flight, watch in flight, tab hidden, or clip playing
       if (
         document.visibilityState === 'hidden' ||
         isToolInFlightRef.current ||
-        isWatchInFlightRef.current
+        isWatchInFlightRef.current ||
+        isClipPlayingRef.current
       ) {
         loopTimeout = window.setTimeout(runWatcherTick, 400);
         return;
@@ -1052,27 +1238,56 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     }
   }, []);
 
-  // Expose simulated hazard in debug mode for test harness
-  useEffect(() => {
-    if (isDebug) {
-      (window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: () => void }).__TAKUMI_SIMULATE_HAZARD__ =
-        triggerSimulatedHazard;
-    }
-    return () => {
-      delete (window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: unknown }).__TAKUMI_SIMULATE_HAZARD__;
-    };
-  }, [triggerSimulatedHazard, isDebug]);
+  // Handle "Why?" button action: play master clip directly if available, else send voice question
+  const handleAskWhy = async () => {
+    const stepN = currentStepRef.current;
+    const currentSkill = skillRef.current;
 
-  // Handle "Why?" button action
-  const handleAskWhy = () => {
+    try {
+      const media = await fetchSkillMedia(currentSkill.id, stepN, 'master_clip', language);
+      if (media && media.url) {
+        clientRef.current?.setExternalGating(true);
+        clientRef.current?.sendText(
+          `[CLIP] The master's clip for step ${stepN} is playing. Stay silent until it ends, then add at most one short sentence.`
+        );
+        isClipPlayingRef.current = true;
+        setActiveClip({
+          url: media.url,
+          start_s: media.start_s,
+          end_s: media.end_s,
+          kind: 'master_clip',
+          why: media.why,
+          why_lang: media.why_lang,
+          translated: media.translated,
+          onFinish: () => {
+            setActiveClip(null);
+            isClipPlayingRef.current = false;
+            clientRef.current?.setExternalGating(false);
+            if (sessionIdRef.current) {
+              postSessionEvent(sessionIdRef.current, {
+                step: stepN,
+                type: 'ask_why',
+                source: 'trainee',
+                reason: 'master_clip:played',
+              }).catch((err) => console.warn('Failed to log ask_why event:', err));
+            }
+          },
+        });
+        return;
+      }
+    } catch {
+      // Not available (e.g. 404 seed lesson) -> fall back to voice
+    }
+
     if (clientRef.current) {
       clientRef.current.sendText('The trainee asks: why is this step done this way?');
     }
     if (sessionIdRef.current) {
       postSessionEvent(sessionIdRef.current, {
-        step: currentStepRef.current,
+        step: stepN,
         type: 'ask_why',
         source: 'trainee',
+        reason: 'master_clip:not_available',
         latency_ms: 0,
       }).catch((err) => console.warn('Failed to log ask_why event:', err));
     }
@@ -1757,6 +1972,21 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           rule={activeHazardRule}
           onMadeSafe={handleMadeSafe}
           outputAudioContext={outputAudioContext}
+        />
+      )}
+
+      {/* Picture-in-Picture Clip Player (Features A5 & A8) */}
+      {activeClip && (
+        <ClipPlayer
+          url={activeClip.url}
+          start_s={activeClip.start_s}
+          end_s={activeClip.end_s}
+          kind={activeClip.kind}
+          why={activeClip.why}
+          why_lang={activeClip.why_lang}
+          translated={activeClip.translated}
+          label={activeClip.label}
+          onClose={(playedSeconds) => activeClip.onFinish(playedSeconds)}
         />
       )}
     </main>

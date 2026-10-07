@@ -12,11 +12,17 @@ function versionPlugin() {
     name: 'generate-version-file',
     buildStart() {
       try {
-        let commit = 'dev';
-        try {
-          commit = execSync('git rev-parse --short HEAD').toString().trim();
-        } catch {
-          // fallback
+        let commit =
+          process.env.SHORT_SHA ||
+          (process.env.COMMIT_SHA ? process.env.COMMIT_SHA.slice(0, 7) : '') ||
+          process.env.VITE_COMMIT_SHA ||
+          '';
+        if (!commit) {
+          try {
+            commit = execSync('git rev-parse --short HEAD').toString().trim();
+          } catch {
+            commit = 'dev';
+          }
         }
         const versionData = {
           version: '1.0.0',

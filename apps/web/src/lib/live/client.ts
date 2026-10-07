@@ -96,6 +96,7 @@ export class GeminiLiveClient {
   private speakerMode = true;
   private audioQueue?: OutputAudioQueue;
   private gatingOverridden = false;
+  private externalGating = false;
   private turnEnded = true;
   private simulatedAudioEndMs = 0;
   private simulatedGatingUntil = 0;
@@ -161,7 +162,15 @@ export class GeminiLiveClient {
     this.notifyStats();
   }
 
+  public setExternalGating(gated: boolean): void {
+    this.externalGating = gated;
+    this.notifyStats();
+  }
+
   public isGating(): boolean {
+    if (this.externalGating) {
+      return true;
+    }
     if (!this.speakerMode) {
       return false;
     }
@@ -437,6 +446,51 @@ export class GeminiLiveClient {
                     },
                   },
                   required: ['target'],
+                },
+              },
+              {
+                name: 'show_master_clip',
+                description:
+                  'When the trainee asks why (in any language), call show_master_clip for the current step instead of explaining it yourself; after it plays, add at most one short sentence.',
+                parameters: {
+                  type: 'OBJECT',
+                  properties: {
+                    step: {
+                      type: 'INTEGER',
+                      description: 'The current step number',
+                    },
+                  },
+                  required: ['step'],
+                },
+              },
+              {
+                name: 'show_mistake_clip',
+                description:
+                  'When a mistake event happens and a mistake clip exists, you may call show_mistake_clip once per step.',
+                parameters: {
+                  type: 'OBJECT',
+                  properties: {
+                    step: {
+                      type: 'INTEGER',
+                      description: 'The current step number',
+                    },
+                  },
+                  required: ['step'],
+                },
+              },
+              {
+                name: 'ask_master',
+                description:
+                  'For questions about the craft that the lesson text does not answer, call ask_master and relay the answer in one or two short sentences, naming the master as the source.',
+                parameters: {
+                  type: 'OBJECT',
+                  properties: {
+                    question: {
+                      type: 'STRING',
+                      description: 'Question asked by the trainee about the craft',
+                    },
+                  },
+                  required: ['question'],
                 },
               },
             ],

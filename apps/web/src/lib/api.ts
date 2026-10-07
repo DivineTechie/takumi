@@ -442,3 +442,77 @@ export async function fetchSystemStatus(): Promise<SystemStatusResponse> {
   return await res.json();
 }
 
+export interface MasterClipResponse {
+  url: string;
+  start_s: number;
+  end_s: number;
+  why: string;
+  why_lang: string;
+  translated: boolean;
+}
+
+export interface MistakeClipResponse {
+  url: string;
+  label: string;
+}
+
+export async function fetchSkillMedia(
+  skillId: string,
+  step: number,
+  kind: 'master_clip',
+  lang?: string
+): Promise<MasterClipResponse>;
+export async function fetchSkillMedia(
+  skillId: string,
+  step: number,
+  kind: 'mistake_clip',
+  lang?: string
+): Promise<MistakeClipResponse>;
+export async function fetchSkillMedia(
+  skillId: string,
+  step: number,
+  kind: 'master_clip' | 'mistake_clip',
+  lang = 'en'
+): Promise<MasterClipResponse | MistakeClipResponse> {
+  const query = new URLSearchParams({
+    step: String(step),
+    kind,
+    lang,
+  });
+  return await apiFetch(`/api/skills/${encodeURIComponent(skillId)}/media?${query.toString()}`);
+}
+
+export interface CitationInfo {
+  type: string;
+  t_start?: number | null;
+  t_end?: number | null;
+  step?: number | null;
+  quote?: string | null;
+}
+
+export interface AskMasterResponse {
+  answer: string;
+  citation?: CitationInfo | null;
+  clip?: {
+    step: number;
+    start_s: number;
+    end_s: number;
+  } | null;
+}
+
+export async function askMaster(
+  skillId: string,
+  question: string,
+  language = 'en'
+): Promise<AskMasterResponse> {
+  return await apiFetch<AskMasterResponse>('/api/ask', {
+    method: 'POST',
+    body: JSON.stringify({
+      skill_id: skillId,
+      question,
+      language,
+    }),
+  });
+}
+
+

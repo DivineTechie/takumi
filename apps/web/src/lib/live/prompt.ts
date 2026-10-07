@@ -52,7 +52,16 @@ export function buildLiveSystemInstruction(
     '- React to [CAMERA EVENT] messages immediately, without waiting for the trainee to speak.'
   );
   lines.push(
-    '- Never repeat a verified step; when the trainee asks why, explain using the master\'s words.'
+    '- Never repeat a verified step.'
+  );
+  lines.push(
+    '- When the trainee asks why (in any language), call show_master_clip for the current step instead of explaining it yourself; after it plays, add at most one short sentence.'
+  );
+  lines.push(
+    '- When a mistake event happens and a mistake clip exists, you may call show_mistake_clip once per step.'
+  );
+  lines.push(
+    "- For questions about the craft that the lesson text doesn't answer, call ask_master and relay the answer in one or two short sentences, naming the master as the source."
   );
   lines.push(
     '- When the trainee says they are done, call verify_step for the current step.'

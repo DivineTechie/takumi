@@ -48,6 +48,7 @@ from services.api.config import (
 from services.api.model_armor import screen_text
 from services.api.storage_client import get_signed_url_for_gs_uri, upload_frame_jpeg
 from services.api.gemini import (
+    call_ask,
     call_point,
     call_verify,
     call_watch,
@@ -131,6 +132,13 @@ class VerifyRequest(BaseModel):
 class PointRequest(BaseModel):
     target: str
     image_b64: str
+
+
+class AskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    skill_id: str
+    question: str
+    language: str = "en"
 
 
 class SessionCreateRequest(BaseModel):
@@ -456,6 +464,134 @@ async def point_target(
         raise
 
 
+@app.get("/api/skills/{skill_id}/media")
+async def get_skill_media(
+    skill_id: str,
+    step: int = Query(..., ge=1),
+    kind: Literal["master_clip", "mistake_clip"] = Query(...),
+    lang: str = Query(default="en"),
+    user: AuthUser = Depends(require_any_authenticated_user),
+) -> dict[str, Any]:
+    """Provides short-lived signed URLs for master demonstration clips and AI mistake clips.
+
+    Role requirement: trainee, supervisor, master. Skill must be published.
+    15-minute V4 IAM signed URL. Never logs signed URLs.
+    """
+    db = get_firestore_client()
+    skill_doc = db.collection("skills").document(skill_id).get()
+    if not skill_doc.exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+
+    skill_data = skill_doc.to_dict() or {}
+    if skill_data.get("status") != "published":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill is not published")
+
+    target_step = None
+    for s in skill_data.get("steps", []):
+        if s.get("n") == step:
+            target_step = s
+            break
+
+    if not target_step:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not available")
+
+    if kind == "master_clip":
+        video_uri = skill_data.get("video_uri")
+        clip = target_step.get("clip")
+        if not video_uri or not clip or "start_s" not in clip or "end_s" not in clip:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not available")
+
+        signed_url = get_signed_url_for_gs_uri(video_uri, expires_minutes=15)
+        translations = target_step.get("translations", {})
+        if lang in translations and translations[lang].get("why"):
+            why = translations[lang]["why"]
+            why_lang = lang
+            translated = True
+        else:
+            why = target_step.get("why", "")
+            why_lang = skill_data.get("source_language", "en")
+            translated = (lang == why_lang)
+
+        return {
+            "url": signed_url,
+            "start_s": float(clip["start_s"]),
+            "end_s": float(clip["end_s"]),
+            "why": why,
+            "why_lang": why_lang,
+            "translated": translated,
+        }
+
+    elif kind == "mistake_clip":
+        mistake_clip_uri = target_step.get("mistake_clip_uri")
+        if not mistake_clip_uri:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not available")
+
+        signed_url = get_signed_url_for_gs_uri(mistake_clip_uri, expires_minutes=15)
+        return {
+            "url": signed_url,
+            "label": "AI-generated example of the wrong way",
+        }
+
+
+@app.post("/api/ask")
+async def ask_master(
+    req: AskRequest,
+    user: AuthUser = Depends(require_any_authenticated_user),
+) -> dict[str, Any]:
+    """Answers a craftsmanship question grounded strictly in master transcript and skill manual.
+
+    Fails-closed on Model Armor screening (422).
+    Rate-limited under 'checks'.
+    Uses gemini-3.8-flash without temperature.
+    Timeout 12 s with fallback: "Let's come back to that."
+    """
+    t_handler_start = time.perf_counter()
+    check_rate_limit(user.uid, "checks")
+
+    screening = screen_text(req.question, purpose="question")
+    if not screening.get("allowed", True):
+        record_call_timing("ask", 422, t_handler_start, None)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="I can't help with that question.",
+        )
+
+    db = get_firestore_client()
+    skill_doc = db.collection("skills").document(req.skill_id).get()
+    if not skill_doc.exists:
+        record_call_timing("ask", 404, t_handler_start, None)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill not found")
+
+    skill_data = skill_doc.to_dict() or {}
+    if skill_data.get("status") != "published":
+        record_call_timing("ask", 404, t_handler_start, None)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill is not published")
+
+    capture_data = {}
+    capture_id = skill_data.get("capture_id")
+    if capture_id:
+        cap_doc = db.collection("captures").document(capture_id).get()
+        if cap_doc.exists:
+            capture_data = cap_doc.to_dict() or {}
+
+    t_model_start = time.perf_counter()
+    try:
+        res = await call_ask(
+            skill_data=skill_data,
+            capture_data=capture_data,
+            question=req.question,
+            language=req.language,
+        )
+        record_call_timing("ask", 200, t_handler_start, t_model_start)
+        return res
+    except HTTPException as e:
+        record_call_timing("ask", e.status_code, t_handler_start, t_model_start)
+        raise
+    except Exception:
+        record_call_timing("ask", 500, t_handler_start, t_model_start)
+        raise
+
+
 @app.post("/api/sessions", status_code=status.HTTP_201_CREATED)
 async def create_session(
     req: SessionCreateRequest,
@@ -508,6 +644,7 @@ async def create_session(
         "ended_at": None,
         "steps": steps,
         "result": None,
+        "preview": True if user.role == "master" else False,
     }
 
     db.collection("sessions").document(session_id).set(session_data)
@@ -650,6 +787,7 @@ async def create_session_event(
         "reason": clean_reason,
         "latency_ms": req.latency_ms,
         "ts": now.isoformat(),
+        "preview": session_data.get("preview", False),
     }
     stream_session_event(bq_row)
 
@@ -798,8 +936,6 @@ async def get_insights_matrix(
         t_uid = pd.get("trainee_uid")
         s_id = pd.get("skill_id")
         if t_uid and s_id and t_uid not in EXCLUDED_UIDS:
-            if not include_masters and is_master_user(t_uid):
-                continue
             certified_pairs.add((t_uid, s_id))
 
     # 3. Sessions
@@ -817,7 +953,7 @@ async def get_insights_matrix(
 
         if not t_uid or t_uid in EXCLUDED_UIDS:
             continue
-        if not include_masters and is_master_user(t_uid):
+        if not include_masters and sd.get("preview") is True:
             continue
 
         all_trainee_uids.add(t_uid)
@@ -909,15 +1045,7 @@ async def get_insights_skill(
 
     bq = get_bigquery_client()
     excluded_list = list(EXCLUDED_UIDS)
-    if not include_masters:
-        try:
-            s_docs = db.collection("sessions").where("skill_id", "==", skill_id).stream()
-            for s in s_docs:
-                s_uid = (s.to_dict() or {}).get("trainee_uid")
-                if s_uid and s_uid not in excluded_list and is_master_user(s_uid):
-                    excluded_list.append(s_uid)
-        except Exception:
-            pass
+    preview_filter = "" if include_masters else "AND COALESCE(preview, FALSE) = FALSE"
 
     # Query 1: Step counts (sessions reached, mistakes, safety stops)
     q1 = f"""
@@ -929,6 +1057,7 @@ async def get_insights_skill(
         FROM `{GCP_PROJECT}.takumi.session_events`
         WHERE skill_id = @skill_id
           AND trainee_uid NOT IN UNNEST(@excluded_uids)
+          {preview_filter}
           AND step IS NOT NULL
         GROUP BY step
         ORDER BY step ASC
@@ -943,6 +1072,7 @@ async def get_insights_skill(
           FROM `{GCP_PROJECT}.takumi.session_events`
           WHERE skill_id = @skill_id
             AND trainee_uid NOT IN UNNEST(@excluded_uids)
+            {preview_filter}
           GROUP BY session_id
         ),
         step_dones AS (
@@ -954,6 +1084,7 @@ async def get_insights_skill(
           WHERE skill_id = @skill_id
             AND type = 'step_done'
             AND trainee_uid NOT IN UNNEST(@excluded_uids)
+            {preview_filter}
           GROUP BY session_id, step
         ),
         step_times AS (
@@ -988,6 +1119,7 @@ async def get_insights_skill(
           FROM `{GCP_PROJECT}.takumi.session_events`
           WHERE skill_id = @skill_id
             AND trainee_uid NOT IN UNNEST(@excluded_uids)
+            {preview_filter}
           GROUP BY session_id
         )
         SELECT

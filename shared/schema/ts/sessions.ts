@@ -29,4 +29,8 @@ export interface Session {
     safety_stops: number;
     duration_s: number;
   };
+  /**
+   * [ADDED] True when session is a master lesson preview
+   */
+  preview?: boolean;
 }

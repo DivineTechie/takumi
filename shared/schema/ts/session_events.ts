@@ -17,7 +17,8 @@ export interface SessionEvent {
     | "point"
     | "verify"
     | "coach_line"
-    | "trainee_line";
+    | "trainee_line"
+    | "mistake_clip";
   source: "watcher" | "verify" | "coach" | "trainee";
   reason?: string;
   latency_ms?: number;

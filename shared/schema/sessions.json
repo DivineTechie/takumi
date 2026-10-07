@@ -86,6 +86,10 @@
       },
       "required": ["steps_done", "mistakes", "safety_stops", "duration_s"],
       "additionalProperties": false
+    },
+    "preview": {
+      "type": "boolean",
+      "description": "[ADDED] True when session is a master lesson preview"
     }
   },
   "required": [

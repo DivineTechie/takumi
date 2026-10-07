@@ -144,7 +144,17 @@ describe('GeminiLiveClient', () => {
       startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
       silenceDurationMs: 800,
     });
-    expect(setupMsg.setup.tools[0].functionDeclarations.length).toBe(2);
+    expect(setupMsg.setup.tools[0].functionDeclarations.length).toBe(5);
+    const toolNames = setupMsg.setup.tools[0].functionDeclarations.map(
+      (f: { name: string }) => f.name
+    );
+    expect(toolNames).toEqual([
+      'verify_step',
+      'point_at',
+      'show_master_clip',
+      'show_mistake_clip',
+      'ask_master',
+    ]);
 
     // Simulate setupComplete
     ws.simulateServerMessage({ setupComplete: {} });
@@ -576,6 +586,44 @@ describe('GeminiLiveClient', () => {
     client.sendAudio(rawMicB64);
     const sentMsg = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
     expect(sentMsg.realtimeInput.audio.data).toBe(rawMicB64);
+  });
+
+  it('external gating (e.g. clip playing) silences mic audio even when audioQueue is idle', async () => {
+    const mockAudioQueue = {
+      isPlayingWithTail: vi.fn(() => false),
+      getUnderrunCount: vi.fn(() => 0),
+    } as unknown as OutputAudioQueue;
+
+    const client = createClient({
+      speakerMode: true,
+      audioQueue: mockAudioQueue,
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const ws = MockWebSocket.instances[0];
+    ws.simulateServerMessage({ setupComplete: {} });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(client.isGating()).toBe(false);
+
+    // Turn external gating ON (video clip starts)
+    client.setExternalGating(true);
+    expect(client.isGating()).toBe(true);
+
+    const rawMicB64 = 'dB8gHCAd';
+    client.sendAudio(rawMicB64);
+    const sentGated = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+    expect(sentGated.realtimeInput.audio.data).toBe('AAAAAAAA');
+
+    // Turn external gating OFF (video clip ends)
+    client.setExternalGating(false);
+    expect(client.isGating()).toBe(false);
+
+    client.sendAudio(rawMicB64);
+    const sentUngated = JSON.parse(ws.sentMessages[ws.sentMessages.length - 1]);
+    expect(sentUngated.realtimeInput.audio.data).toBe(rawMicB64);
   });
 
   it('headphones mode (speakerMode: false) disables mic gating entirely', async () => {

@@ -127,3 +127,47 @@ Each point MUST be formatted as [y, x] coordinates normalized to the range 0-100
 
 Return JSON matching the schema with up to 3 points.
 """
+
+
+class CitationInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: str = Field(..., description="'transcript' or 'step'")
+    t_start: float | None = Field(default=None, description="Start timestamp in seconds if from transcript")
+    t_end: float | None = Field(default=None, description="End timestamp in seconds if from transcript")
+    step: int | None = Field(default=None, description="Step number if from skill step")
+    quote: str | None = Field(default=None, description="Direct quote from the source supporting the answer")
+
+
+class AskResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    answer: str = Field(..., description="1-2 short sentences answering the question in the requested language, naming the master as source.")
+    citation: CitationInfo | None = Field(default=None, description="Citation from transcript or step, or null if not covered.")
+
+
+ASK_MASTER_PROMPT_TEMPLATE = """You are TAKUMI's craftsmanship assistant answering a trainee worker's question on behalf of the master craftsman.
+
+SKILL: {skill_title}
+MASTER CRAFTSMAN: {master_name}
+TARGET LANGUAGE: {language}
+
+MASTER'S DEMONSTRATION TRANSCRIPT:
+{transcript_text}
+
+SKILL STEPS & SAFETY RULES:
+{steps_text}
+
+TRAINEE QUESTION:
+"{question}"
+
+INSTRUCTIONS:
+1. Answer strictly based on the master's transcript, steps, and safety rules above.
+2. If the question is NOT covered by or directly supported in the sources above, your answer MUST be:
+"The master didn't cover this; please ask your supervisor" (translated naturally into the TARGET LANGUAGE). In this case, set citation to null.
+3. Keep the answer concise: 1 to 2 short sentences.
+4. Name the master as the source (e.g. "According to the master, ...").
+5. If the answer is found in the sources, provide the citation:
+   - If from transcript: set type="transcript", with t_start, t_end, and quote.
+   - If from a step: set type="step", with step number and quote.
+6. Return valid JSON matching the schema.
+"""
+

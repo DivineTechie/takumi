@@ -108,6 +108,9 @@ steps:
 
   - name: 'node:24-slim'
     id: 'build-web'
+    env:
+      - 'COMMIT_SHA=$COMMIT_SHA'
+      - 'SHORT_SHA=$SHORT_SHA'
     entrypoint: 'bash'
     args:
       - '-c'

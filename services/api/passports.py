@@ -43,6 +43,8 @@ def evaluate_passport_eligibility(
     """
     clean_sessions = []
     for s in completed_sessions:
+        if s.get("preview") is True:
+            continue
         if s.get("status") != "completed":
             continue
         res = s.get("result") or {}
@@ -83,6 +85,8 @@ def issue_passport_if_eligible(
 
     Returns (passport_id, clean_runs_count).
     """
+    if current_session.get("preview") is True:
+        return None, 0
     lock_id = f"{trainee_uid}_{skill_id}"
     lock_ref = db.collection("passport_locks").document(lock_id)
 

@@ -500,8 +500,9 @@ def test_master_preview_and_exclusion_from_insights():
         sess_data = res_sess.json()
         assert sess_data["trainee_uid"] == "master_uid_1"
         assert sess_data["status"] == "live"
+        assert sess_data["preview"] is True
 
-    # 3. Master session is excluded from /api/insights/matrix by default
+    # 3. Master preview session is excluded from /api/insights/matrix by default
     skill_item = MagicMock()
     skill_item.id = "skill_wiring"
     skill_item.to_dict.return_value = {"title": "Wire DIN rail", "status": "published"}
@@ -513,6 +514,7 @@ def test_master_preview_and_exclusion_from_insights():
         "status": "completed",
         "started_at": "2026-10-07T10:00:00Z",
         "result": {"mistakes": 1},
+        "preview": False,
     }
     master_ses = MagicMock()
     master_ses.to_dict.return_value = {
@@ -521,6 +523,7 @@ def test_master_preview_and_exclusion_from_insights():
         "status": "completed",
         "started_at": "2026-10-07T11:00:00Z",
         "result": {"mistakes": 0},
+        "preview": True,
     }
 
     def mock_cols(col_name):
@@ -565,4 +568,103 @@ def test_master_preview_and_exclusion_from_insights():
         uids_all = [t["uid"] for t in data_all["trainees"]]
         assert "master_uid_1" in uids_all
         assert "trainee_real_1" in uids_all
+
+
+def test_user_with_preview_and_trainee_session_only_counts_trainee():
+    """A user who ran a preview session AND a real trainee session:
+
+    In /api/insights/matrix (default, include_masters=False):
+    The user appears as a trainee, but only the trainee session counts towards progress.
+    In /api/insights/skill:
+    BigQuery query receives AND COALESCE(preview, FALSE) = FALSE, filtering out the preview row.
+    """
+    mock_db = MagicMock()
+    skill_item = MagicMock()
+    skill_item.id = "skill_wiring"
+    skill_item.to_dict.return_value = {"title": "Wire DIN rail", "status": "published"}
+
+    # User 'dual_user' has 1 preview session (abandoned or step 1) and 1 trainee session (completed)
+    preview_ses = MagicMock()
+    preview_ses.to_dict.return_value = {
+        "trainee_uid": "dual_user",
+        "skill_id": "skill_wiring",
+        "status": "abandoned",
+        "started_at": "2026-10-07T08:00:00Z",
+        "preview": True,
+        "result": {"steps_done": 1, "mistakes": 5, "safety_stops": 1},
+    }
+    trainee_ses = MagicMock()
+    trainee_ses.to_dict.return_value = {
+        "trainee_uid": "dual_user",
+        "skill_id": "skill_wiring",
+        "status": "completed",
+        "started_at": "2026-10-07T09:00:00Z",
+        "preview": False,
+        "result": {"steps_done": 4, "mistakes": 0, "safety_stops": 0},
+    }
+
+    def mock_cols(col_name):
+        c = MagicMock()
+        if col_name == "skills":
+            c.where.return_value.stream.return_value = [skill_item]
+        elif col_name == "passports":
+            c.stream.return_value = []
+        elif col_name == "sessions":
+            c.stream.return_value = [preview_ses, trainee_ses]
+        return c
+
+    mock_db.collection.side_effect = mock_cols
+
+    def mock_fb_user(uid):
+        u = MagicMock()
+        u.display_name = "Dual Worker"
+        u.custom_claims = {"role": "trainee"}
+        return u
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_db), \
+         patch("services.api.main.fb_auth.get_user", side_effect=mock_fb_user):
+        clear_insights_cache()
+        res = client.get("/api/insights/matrix", headers={"Authorization": "Bearer token"})
+        assert res.status_code == 200
+        data = res.json()
+        assert len(data["trainees"]) == 1
+        assert data["trainees"][0]["uid"] == "dual_user"
+        # The user's cell should show 1 session (the trainee session only, preview excluded)
+        cells = data["cells"]
+        assert len(cells) == 1
+        assert cells[0]["uid"] == "dual_user"
+        assert cells[0]["status"] == "learning"
+        assert cells[0]["sessions"] == 1
+        assert cells[0]["mistakes_trend"] == [0]
+
+    # Also check /api/insights/skill query generation
+    skill_doc = MagicMock()
+    skill_doc.exists = True
+    skill_doc.to_dict.return_value = {
+        "status": "published",
+        "steps": [{"n": 1}, {"n": 2}],
+    }
+    mock_db.collection.return_value.document.return_value.get.return_value = skill_doc
+    mock_bq = MagicMock()
+
+    mock_job1 = MagicMock()
+    mock_job1.result.return_value = []
+    mock_job2 = MagicMock()
+    mock_job2.result.return_value = []
+    mock_job3 = MagicMock()
+    mock_job3.result.return_value = []
+    mock_bq.query.side_effect = [mock_job1, mock_job2, mock_job3]
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_db), \
+         patch("services.api.main.get_bigquery_client", return_value=mock_bq):
+        clear_insights_cache()
+        res_skill = client.get("/api/insights/skill/skill_wiring", headers={"Authorization": "Bearer token"})
+        assert res_skill.status_code == 200
+        # Verify that all 3 queries have the preview filter
+        for call_args in mock_bq.query.call_args_list:
+            sql = call_args[0][0]
+            assert "COALESCE(preview, FALSE) = FALSE" in sql
+
 

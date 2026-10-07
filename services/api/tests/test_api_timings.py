@@ -15,6 +15,12 @@ from services.api.main import app
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _warmup_threads():
+    import asyncio
+    asyncio.run(asyncio.to_thread(time.sleep, 0.05))
+
+
 def _sample_image_b64() -> str:
     img = Image.new("RGB", (100, 100), color=(10, 20, 30))
     buf = io.BytesIO()

@@ -346,3 +346,55 @@ def test_public_rate_limit_first_address_in_xff():
     req2.headers = {"x-forwarded-for": "198.51.100.42, 70.41.3.18"}
     req2.client.host = "10.0.0.1"
     check_public_rate_limit(req2, limit=60, window_s=60)
+
+
+def test_preview_sessions_never_eligible_for_passport():
+    total_steps = 4
+    # 2 clean trainee sessions + 1 preview session (even though clean) should NOT be eligible
+    sessions = [
+        {
+            "id": "ses_1",
+            "status": "completed",
+            "result": {"steps_done": 4, "mistakes": 0, "safety_stops": 0},
+            "started_at": "2026-10-06T10:00:00Z",
+            "preview": False,
+        },
+        {
+            "id": "ses_2",
+            "status": "completed",
+            "result": {"steps_done": 4, "mistakes": 0, "safety_stops": 0},
+            "started_at": "2026-10-06T11:00:00Z",
+            "preview": False,
+        },
+        {
+            "id": "ses_preview",
+            "status": "completed",
+            "result": {"steps_done": 4, "mistakes": 0, "safety_stops": 0},
+            "started_at": "2026-10-06T12:00:00Z",
+            "preview": True,
+        },
+    ]
+    eligible, clean_ids = evaluate_passport_eligibility(sessions, total_steps)
+    assert eligible is False
+    assert clean_ids == ["ses_1", "ses_2"]
+
+
+def test_issue_passport_skips_preview_session():
+    mock_db = MagicMock()
+    preview_session = {
+        "id": "ses_preview",
+        "status": "completed",
+        "preview": True,
+        "result": {"steps_done": 4, "mistakes": 0, "safety_stops": 0},
+    }
+    passport_id, clean_runs = issue_passport_if_eligible(
+        db=mock_db,
+        trainee_uid="master_1",
+        skill_id="skill_wiring",
+        current_session=preview_session,
+    )
+    assert passport_id is None
+    assert clean_runs == 0
+    # Make sure no queries or writes occurred
+    mock_db.collection.assert_not_called()
+
