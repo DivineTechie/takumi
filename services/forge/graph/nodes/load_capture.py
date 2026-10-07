@@ -4,6 +4,7 @@ import time
 import logging
 from services.forge.models.state import ForgeState
 from services.forge.events import emit, get_firestore_client
+from services.forge.transcode import transcode_to_faststart_mp4
 
 logger = logging.getLogger("forge.node.load_capture")
 
@@ -30,6 +31,15 @@ async def run_load_capture(state: ForgeState) -> ForgeState:
     state.duration_s = float(capture_data.get("duration_s", 0.0) or 0.0)
     state.transcript = capture_data.get("transcript", state.transcript)
     state.manual_uris = capture_data.get("manual_uris", state.manual_uris)
+
+    # Transcode WebM to H.264/AAC MP4 with +faststart for mobile/iOS playback
+    mp4_uri = transcode_to_faststart_mp4(state.capture_id, state.video_uri)
+    state.video_uri = mp4_uri
+    if db is not None:
+        try:
+            db.collection("captures").document(state.capture_id).update({"video_uri": mp4_uri})
+        except Exception as e:
+            logger.debug("Could not update capture video_uri: %s", e)
 
     # If transcript is empty (e.g. in test fixture), provide realistic craftsman transcript
     if not state.transcript:

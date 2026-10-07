@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { regenerateStepPart } from '../../lib/api';
+import { regenerateStepPart, ApiError } from '../../lib/api';
 import {
   Sparkles,
   CheckCircle2,
@@ -11,14 +11,18 @@ import {
   Trash2,
   ArrowUp,
   ArrowDown,
-  Volume2,
   ShieldAlert,
   Send,
   Languages,
   Wrench,
   AlertOctagon,
+  Clock,
+  MapPin,
+  Eye,
+  Film,
 } from 'lucide-react';
 import type { Skill } from '../../../../../shared/schema/ts/skills.ts';
+import { validateSkillForPublish, ValidationResult } from './publishValidation';
 
 export interface MasterReviewProps {
   skillId?: string;
@@ -47,6 +51,13 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
   const [regeneratingStep, setRegeneratingStep] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [videoDuration] = useState<number>(() => {
+    const cached =
+      sessionStorage.getItem(`takumi_duration_${skillId}`) ||
+      sessionStorage.getItem('takumi_last_duration');
+    return cached ? parseFloat(cached) : 0;
+  });
+
   // Load skill document from Firestore
   useEffect(() => {
     if (!skillId) return;
@@ -55,11 +66,20 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     getDoc(skillRef)
       .then((snap) => {
         if (snap.exists()) {
-          setSkill(snap.data() as Skill);
+          const data = snap.data() as Skill;
+          // Auto-normalize WebM video_uri to master.mp4 for iOS Safari compatibility
+          if (data.video_uri && data.video_uri.endsWith('.webm')) {
+            data.video_uri = data.video_uri.slice(0, -5) + '.mp4';
+          }
+          setSkill(data);
         } else {
           // Use seed fallback for initial demo/testing
           import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-            setSkill(seed.default as unknown as Skill);
+            const data = seed.default as unknown as Skill;
+            if (!data.video_uri) {
+              data.video_uri = 'gs://takumi-cup-2026.firebasestorage.app/captures/cap_master/master.mp4';
+            }
+            setSkill(data);
           });
         }
         setLoading(false);
@@ -67,7 +87,11 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
       .catch((err) => {
         console.warn('Could not fetch skill doc, using fallback:', err);
         import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-          setSkill(seed.default as unknown as Skill);
+          const data = seed.default as unknown as Skill;
+          if (!data.video_uri) {
+            data.video_uri = 'gs://takumi-cup-2026.firebasestorage.app/captures/cap_master/master.mp4';
+          }
+          setSkill(data);
           setLoading(false);
         });
       });
@@ -86,6 +110,12 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
       // ignore offline query issues
     }
   }, [skillId]);
+
+  // Compute validation against strict schema and publish requirements
+  const validation: ValidationResult = useMemo(() => {
+    if (!skill) return { isValid: false, issues: [], missingFieldsByStep: {} };
+    return validateSkillForPublish(skill, videoDuration);
+  }, [skill, videoDuration]);
 
   if (loading || !skill) {
     return (
@@ -107,8 +137,76 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
 
   // Step mutation helpers
   const handleUpdateStepField = (stepIdx: number, field: string, val: string) => {
+    const updated = { ...skill, steps: [...skill.steps] };
+    const stepObj = { ...updated.steps[stepIdx] };
+
+    if (activeLang !== 'en' && (field === 'instruction' || field === 'why')) {
+      const translations = { ...(stepObj.translations || {}) };
+      const currentTr = translations[activeLang] || {
+        instruction: stepObj.instruction,
+        why: stepObj.why,
+      };
+      translations[activeLang] = { ...currentTr, [field]: val };
+      stepObj.translations = translations;
+    } else {
+      (stepObj as Record<string, unknown>)[field] = val;
+    }
+
+    updated.steps[stepIdx] = stepObj;
+    setSkill(updated);
+  };
+
+  const handleUpdateClip = (stepIdx: number, subfield: 'start_s' | 'end_s', val: number) => {
+    const updated = { ...skill, steps: [...skill.steps] };
+    const stepObj = { ...updated.steps[stepIdx] };
+    const clip = { ...(stepObj.clip || { start_s: 0, end_s: 10 }) };
+    clip[subfield] = val;
+    stepObj.clip = clip;
+    updated.steps[stepIdx] = stepObj;
+    setSkill(updated);
+  };
+
+  const handleUpdateWhySource = (stepIdx: number, subfield: 't_start' | 't_end', val: number) => {
+    const updated = { ...skill, steps: [...skill.steps] };
+    const stepObj = { ...updated.steps[stepIdx] };
+    const whySource = { ...(stepObj.why_source || { t_start: 0, t_end: 10 }) };
+    whySource[subfield] = val;
+    stepObj.why_source = whySource;
+    updated.steps[stepIdx] = stepObj;
+    setSkill(updated);
+  };
+
+  const handleUpdateCommonMistake = (
+    stepIdx: number,
+    mistakeIdx: number,
+    subfield: 'description' | 'visual_cue',
+    val: string
+  ) => {
+    const updated = { ...skill, steps: [...skill.steps] };
+    const stepObj = { ...updated.steps[stepIdx] };
+    const mistakes = [...(stepObj.common_mistakes || [])];
+    if (!mistakes[mistakeIdx]) {
+      mistakes[mistakeIdx] = { description: '', visual_cue: '' };
+    }
+    mistakes[mistakeIdx] = { ...mistakes[mistakeIdx], [subfield]: val };
+    stepObj.common_mistakes = mistakes;
+    updated.steps[stepIdx] = stepObj;
+    setSkill(updated);
+  };
+
+  const handleUpdatePointHint = (stepIdx: number, val: string) => {
+    const updated = { ...skill, steps: [...skill.steps] };
+    const stepObj = { ...updated.steps[stepIdx] };
+    stepObj.point_hint = val;
+    updated.steps[stepIdx] = stepObj;
+    setSkill(updated);
+  };
+
+  const handleUpdateSafetyRule = (ruleIdx: number, val: string) => {
     const updated = { ...skill };
-    (updated.steps[stepIdx] as unknown as Record<string, unknown>)[field] = val;
+    const rules = [...(updated.safety_rules || [])];
+    rules[ruleIdx] = val;
+    updated.safety_rules = rules;
     setSkill(updated);
   };
 
@@ -141,14 +239,23 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     setRegeneratingStep(n);
     try {
       await regenerateStepPart(skill.id, n, part);
-    } catch (e) {
-      console.warn('Regenerate call error:', e);
+    } catch (e: unknown) {
+      if (e instanceof ApiError) {
+        console.warn(`Regenerate failed (${e.status}):`, e.message);
+      } else {
+        console.warn('Regenerate call error:', e);
+      }
     } finally {
       setTimeout(() => setRegeneratingStep(null), 800);
     }
   };
 
   const handlePublish = async () => {
+    if (!validation.isValid) {
+      setError(`Cannot publish: Please resolve the ${validation.issues.length} validation checklist issues.`);
+      return;
+    }
+
     setPublishing(true);
     setError(null);
     try {
@@ -164,6 +271,8 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
         steps: updatedSkill.steps,
         status: 'published',
         published_at: nowIso,
+        safety_rules: updatedSkill.safety_rules,
+        video_uri: updatedSkill.video_uri,
       });
 
       setSkill(updatedSkill);
@@ -193,7 +302,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
         boxSizing: 'border-box',
       }}
     >
-      <div style={{ maxWidth: '860px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '880px', margin: '0 auto' }}>
         {/* Top Header */}
         <header
           style={{
@@ -203,6 +312,8 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
             borderBottom: '1px solid #27272a',
             paddingBottom: '1.25rem',
             marginBottom: '1.5rem',
+            flexWrap: 'wrap',
+            gap: '1rem',
           }}
         >
           <div>
@@ -224,7 +335,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
               {skill.title}
             </h1>
             <div style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-              Master: <strong style={{ color: '#d4d4d8' }}>{skill.master.display_name}</strong> ({skill.master.role})
+              Master: <strong style={{ color: '#d4d4d8' }}>{skill.master.display_name}</strong> ({skill.master.role}) · Video: <code style={{ color: '#fbbf24', fontSize: '0.8rem' }}>{skill.video_uri ? skill.video_uri.split('/').pop() : 'master.mp4'}</code>
             </div>
           </div>
 
@@ -249,8 +360,9 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                   backgroundColor: 'transparent',
                   color: '#ffffff',
                   border: 'none',
-                  fontSize: '0.85rem',
                   outline: 'none',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
                   cursor: 'pointer',
                 }}
               >
@@ -266,20 +378,27 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
             {/* Publish Button */}
             <button
               onClick={handlePublish}
-              disabled={publishing || publishSuccess}
+              disabled={publishing || publishSuccess || !validation.isValid}
+              title={!validation.isValid ? 'Fix validation checklist issues below before publishing' : 'Publish lesson'}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.5rem',
-                backgroundColor: publishSuccess ? '#10b981' : '#f59e0b',
-                color: publishSuccess ? '#ffffff' : '#000000',
+                backgroundColor: publishSuccess
+                  ? '#10b981'
+                  : validation.isValid
+                  ? '#f59e0b'
+                  : '#3f3f46',
+                color: publishSuccess || !validation.isValid ? '#ffffff' : '#000000',
                 border: 'none',
                 borderRadius: '0.75rem',
                 padding: '0.75rem 1.5rem',
                 fontSize: '1rem',
                 fontWeight: 800,
-                cursor: publishing ? 'not-allowed' : 'pointer',
-                boxShadow: '0 4px 15px rgba(245, 158, 11, 0.3)',
+                cursor: publishing || !validation.isValid ? 'not-allowed' : 'pointer',
+                opacity: !validation.isValid ? 0.6 : 1,
+                boxShadow: validation.isValid ? '0 4px 15px rgba(245, 158, 11, 0.3)' : 'none',
+                transition: 'all 0.2s ease',
               }}
             >
               {publishSuccess ? (
@@ -311,6 +430,115 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
             {error}
           </div>
         )}
+
+        {/* Publish Validation Checklist Box */}
+        <div
+          style={{
+            backgroundColor: validation.isValid ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+            border: `1px solid ${validation.isValid ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+            borderRadius: '0.75rem',
+            padding: '1.15rem 1.25rem',
+            marginBottom: '1.5rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
+              {validation.isValid ? (
+                <>
+                  <CheckCircle2 size={18} color="#10b981" />
+                  <span style={{ color: '#10b981' }}>Ready to Publish — All Verification Criteria Passed</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle size={18} color="#f59e0b" />
+                  <span style={{ color: '#fbbf24' }}>
+                    Publish Validation Checklist ({validation.issues.length} item{validation.issues.length === 1 ? '' : 's'} remaining)
+                  </span>
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  padding: '0.2rem 0.5rem',
+                  borderRadius: '0.35rem',
+                  backgroundColor: '#27272a',
+                  color: '#a1a1aa',
+                }}
+              >
+                Schema: strict
+              </span>
+              <span
+                style={{
+                  fontSize: '0.75rem',
+                  padding: '0.2rem 0.5rem',
+                  borderRadius: '0.35rem',
+                  backgroundColor: '#27272a',
+                  color: '#a1a1aa',
+                }}
+              >
+                H.264 MP4 faststart
+              </span>
+            </div>
+          </div>
+
+          {validation.isValid ? (
+            <div style={{ fontSize: '0.85rem', color: '#a7f3d0' }}>
+              ✓ All {skill.steps.length} steps conform to <code>/shared/schema/skills.json</code>. Clip timings are within video duration, objective visible facts verified, common mistakes include visual cues, and both Vietnamese (vi) and Hindi (hi) translations are complete.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+              <div style={{ fontSize: '0.85rem', color: '#d4d4d8', marginBottom: '0.25rem' }}>
+                Please resolve the following fields in the steps below before publishing:
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#fca5a5' }}>
+                {validation.issues.map((iss, i) => (
+                  <li key={i} style={{ marginBottom: '0.2rem' }}>
+                    {iss.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Safety Rules Section (Visible facts) */}
+        <div
+          style={{
+            backgroundColor: '#18181b',
+            border: '1px solid #27272a',
+            borderRadius: '0.75rem',
+            padding: '1.25rem',
+            marginBottom: '1.5rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#f87171', fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+            <ShieldAlert size={16} />
+            <span>Factory Safety Rules (Visible Facts Only)</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {skill.safety_rules.map((rule, rIdx) => (
+              <input
+                key={rIdx}
+                type="text"
+                value={rule}
+                onChange={(e) => handleUpdateSafetyRule(rIdx, e.target.value)}
+                style={{
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  backgroundColor: '#27272a',
+                  border: '1px solid #3f3f46',
+                  borderRadius: '0.4rem',
+                  padding: '0.5rem 0.75rem',
+                  color: '#ffffff',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                }}
+              />
+            ))}
+          </div>
+        </div>
 
         {/* Review Requests from Trainee Live Coach Dashboard */}
         {reviewRequests.length > 0 && (
@@ -376,13 +604,14 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
             const tr = step.translations?.[activeLang];
             const currentInstruction = activeLang === 'en' ? step.instruction : tr?.instruction || step.instruction;
             const currentWhy = activeLang === 'en' ? step.why : tr?.why || step.why;
+            const missingInStep = validation.missingFieldsByStep[step.n] || [];
 
             return (
               <div
                 key={step.n}
                 style={{
                   backgroundColor: '#18181b',
-                  border: '1px solid #27272a',
+                  border: `1px solid ${missingInStep.length > 0 ? 'rgba(239, 68, 68, 0.4)' : '#27272a'}`,
                   borderRadius: '1rem',
                   padding: '1.5rem',
                   display: 'flex',
@@ -391,8 +620,8 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                 }}
               >
                 {/* Step Top Bar & Reordering Controls */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <span
                       style={{
                         backgroundColor: '#f59e0b',
@@ -420,9 +649,19 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                         Inferred Rationale
                       </span>
                     )}
-                    {step.point_hint && (
-                      <span style={{ fontSize: '0.85rem', color: '#fbbf24' }}>
-                        📍 {step.point_hint}
+                    {missingInStep.length > 0 && (
+                      <span
+                        style={{
+                          backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                          color: '#f87171',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          padding: '0.2rem 0.5rem',
+                          borderRadius: '0.35rem',
+                        }}
+                      >
+                        Needs attention: {missingInStep.join(', ')}
                       </span>
                     )}
                   </div>
@@ -500,71 +739,6 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                   </div>
                 </div>
 
-                {/* Verifier Conflict Banner */}
-                {step.verifier?.conflict && (
-                  <div
-                    style={{
-                      backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                      borderRadius: '0.5rem',
-                      padding: '0.75rem',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '0.75rem',
-                    }}
-                  >
-                    <ShieldAlert size={20} color="#f87171" style={{ flexShrink: 0, marginTop: '2px' }} />
-                    <div style={{ flex: 1, fontSize: '0.85rem' }}>
-                      <div style={{ fontWeight: 700, color: '#f87171', marginBottom: '0.2rem' }}>
-                        Safety Conflict: {step.verifier.detail} ({step.verifier.citation})
-                      </div>
-                      <div style={{ color: '#d4d4d8', marginBottom: '0.5rem' }}>
-                        Suggestion: {step.verifier.suggestion}
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button
-                          onClick={() => {
-                            handleUpdateStepField(idx, 'instruction', step.verifier!.suggestion);
-                            const updated = { ...skill };
-                            updated.steps[idx].verifier!.conflict = false;
-                            setSkill(updated);
-                          }}
-                          style={{
-                            backgroundColor: '#ef4444',
-                            color: '#ffffff',
-                            border: 'none',
-                            padding: '0.3rem 0.65rem',
-                            borderRadius: '0.3rem',
-                            fontSize: '0.8rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Accept Suggestion
-                        </button>
-                        <button
-                          onClick={() => {
-                            const updated = { ...skill };
-                            updated.steps[idx].verifier!.conflict = false;
-                            setSkill(updated);
-                          }}
-                          style={{
-                            backgroundColor: '#27272a',
-                            color: '#a1a1aa',
-                            border: '1px solid #3f3f46',
-                            padding: '0.3rem 0.65rem',
-                            borderRadius: '0.3rem',
-                            fontSize: '0.8rem',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          Keep Master&apos;s Version
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {/* Instruction (Editable) */}
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#a1a1aa', marginBottom: '0.35rem' }}>
@@ -602,7 +776,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                       width: '100%',
                       boxSizing: 'border-box',
                       backgroundColor: '#27272a',
-                      border: '1px solid #3f3f46',
+                      border: `1px solid ${missingInStep.includes('success_criteria') ? '#ef4444' : '#3f3f46'}`,
                       borderRadius: '0.5rem',
                       padding: '0.65rem 0.85rem',
                       color: '#34d399',
@@ -615,7 +789,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                 {/* Why Text (Editable) */}
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#a1a1aa', marginBottom: '0.35rem' }}>
-                    Craftsman &ldquo;Why&rdquo; Rationale
+                    Craftsman &ldquo;Why&rdquo; Rationale ({activeLang.toUpperCase()})
                   </label>
                   <textarea
                     rows={2}
@@ -625,7 +799,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                       width: '100%',
                       boxSizing: 'border-box',
                       backgroundColor: '#27272a',
-                      border: '1px solid #3f3f46',
+                      border: `1px solid ${missingInStep.includes('why') ? '#ef4444' : '#3f3f46'}`,
                       borderRadius: '0.5rem',
                       padding: '0.65rem 0.85rem',
                       color: '#fbbf24',
@@ -636,8 +810,162 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                   />
                 </div>
 
-                {/* Tools, Hazards, Common Mistakes Chips */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', fontSize: '0.8rem' }}>
+                {/* Point Hint Guidance (Editable) */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', fontWeight: 600, color: '#a1a1aa', marginBottom: '0.35rem' }}>
+                    <MapPin size={14} color="#fbbf24" />
+                    <span>Spatial Point Guidance (point_hint)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={step.point_hint || ''}
+                    placeholder="e.g. the screw opening of terminal 1"
+                    onChange={(e) => handleUpdatePointHint(idx, e.target.value)}
+                    style={{
+                      width: '100%',
+                      boxSizing: 'border-box',
+                      backgroundColor: '#27272a',
+                      border: `1px solid ${missingInStep.includes('point_hint') ? '#ef4444' : '#3f3f46'}`,
+                      borderRadius: '0.5rem',
+                      padding: '0.5rem 0.75rem',
+                      color: '#fbbf24',
+                      fontSize: '0.85rem',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                {/* Video Clip Range & Why Source Timing Inputs */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                  <div style={{ backgroundColor: '#27272a', padding: '0.75rem', borderRadius: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#60a5fa', fontWeight: 600, fontSize: '0.8rem', marginBottom: '0.4rem' }}>
+                      <Film size={14} />
+                      <span>Video Clip Range (Seconds)</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={step.clip?.start_s ?? 0}
+                        onChange={(e) => handleUpdateClip(idx, 'start_s', parseFloat(e.target.value) || 0)}
+                        style={{
+                          width: '80px',
+                          backgroundColor: '#18181b',
+                          border: '1px solid #3f3f46',
+                          borderRadius: '0.35rem',
+                          color: '#ffffff',
+                          padding: '0.3rem 0.5rem',
+                          fontSize: '0.85rem',
+                        }}
+                      />
+                      <span style={{ color: '#a1a1aa' }}>to</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={step.clip?.end_s ?? 10}
+                        onChange={(e) => handleUpdateClip(idx, 'end_s', parseFloat(e.target.value) || 0)}
+                        style={{
+                          width: '80px',
+                          backgroundColor: '#18181b',
+                          border: '1px solid #3f3f46',
+                          borderRadius: '0.35rem',
+                          color: '#ffffff',
+                          padding: '0.3rem 0.5rem',
+                          fontSize: '0.85rem',
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ backgroundColor: '#27272a', padding: '0.75rem', borderRadius: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#c084fc', fontWeight: 600, fontSize: '0.8rem', marginBottom: '0.4rem' }}>
+                      <Clock size={14} />
+                      <span>Why Interview Timestamp (Seconds)</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={step.why_source?.t_start ?? 0}
+                        onChange={(e) => handleUpdateWhySource(idx, 't_start', parseFloat(e.target.value) || 0)}
+                        style={{
+                          width: '80px',
+                          backgroundColor: '#18181b',
+                          border: '1px solid #3f3f46',
+                          borderRadius: '0.35rem',
+                          color: '#ffffff',
+                          padding: '0.3rem 0.5rem',
+                          fontSize: '0.85rem',
+                        }}
+                      />
+                      <span style={{ color: '#a1a1aa' }}>to</span>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={step.why_source?.t_end ?? 10}
+                        onChange={(e) => handleUpdateWhySource(idx, 't_end', parseFloat(e.target.value) || 0)}
+                        style={{
+                          width: '80px',
+                          backgroundColor: '#18181b',
+                          border: '1px solid #3f3f46',
+                          borderRadius: '0.35rem',
+                          color: '#ffffff',
+                          padding: '0.3rem 0.5rem',
+                          fontSize: '0.85rem',
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Common Mistake & Visual Cue */}
+                <div style={{ backgroundColor: '#27272a', padding: '0.75rem', borderRadius: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#f87171', fontWeight: 600, fontSize: '0.8rem', marginBottom: '0.4rem' }}>
+                    <Eye size={14} />
+                    <span>Common Mistake & Visual Cue</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    <input
+                      type="text"
+                      placeholder="Mistake description"
+                      value={step.common_mistakes?.[0]?.description || ''}
+                      onChange={(e) => handleUpdateCommonMistake(idx, 0, 'description', e.target.value)}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        backgroundColor: '#18181b',
+                        border: '1px solid #3f3f46',
+                        borderRadius: '0.35rem',
+                        padding: '0.4rem 0.6rem',
+                        color: '#ffffff',
+                        fontSize: '0.85rem',
+                      }}
+                    />
+                    <input
+                      type="text"
+                      placeholder="Visual cue (e.g. copper wire visible in second slot)"
+                      value={step.common_mistakes?.[0]?.visual_cue || ''}
+                      onChange={(e) => handleUpdateCommonMistake(idx, 0, 'visual_cue', e.target.value)}
+                      style={{
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        backgroundColor: '#18181b',
+                        border: `1px solid ${missingInStep.includes('common_mistakes') ? '#ef4444' : '#3f3f46'}`,
+                        borderRadius: '0.35rem',
+                        padding: '0.4rem 0.6rem',
+                        color: '#34d399',
+                        fontSize: '0.85rem',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Tools & Hazards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem', fontSize: '0.8rem' }}>
                   <div style={{ backgroundColor: '#27272a', padding: '0.6rem', borderRadius: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#a1a1aa', fontWeight: 600, marginBottom: '0.25rem' }}>
                       <Wrench size={14} />
@@ -655,16 +983,6 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                     </div>
                     <div style={{ color: '#ffffff' }}>
                       {step.hazards.length > 0 ? step.hazards.join(', ') : 'No hazards flagged'}
-                    </div>
-                  </div>
-
-                  <div style={{ backgroundColor: '#27272a', padding: '0.6rem', borderRadius: '0.5rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#fbbf24', fontWeight: 600, marginBottom: '0.25rem' }}>
-                      <Volume2 size={14} />
-                      <span>Narration ({activeLang.toUpperCase()})</span>
-                    </div>
-                    <div style={{ color: '#34d399', fontWeight: 600 }}>
-                      Audio WAV ready
                     </div>
                   </div>
                 </div>

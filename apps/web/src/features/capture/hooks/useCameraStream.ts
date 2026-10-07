@@ -177,20 +177,27 @@ export function useCameraStream(): UseCameraStreamResult {
       setIsStarting(false);
       return mediaStream;
     } catch (err: unknown) {
-      console.warn('Physical camera unavailable, falling back to simulated workbench feed:', err);
-      // Fallback to simulated workbench stream so developer / tester is never blocked
-      const simulatedStream = createSimulatedStream();
-      setStream(simulatedStream);
+      if (import.meta.env.DEV) {
+        console.warn('Physical camera unavailable, falling back to simulated workbench feed (DEV only):', err);
+        // Fallback to simulated workbench stream in DEV so developer / tester is never blocked
+        const simulatedStream = createSimulatedStream();
+        setStream(simulatedStream);
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = simulatedStream;
-        videoRef.current.play().catch((playErr) => {
-          console.warn('Simulated stream autoplay warning:', playErr);
-        });
+        if (videoRef.current) {
+          videoRef.current.srcObject = simulatedStream;
+          videoRef.current.play().catch((playErr) => {
+            console.warn('Simulated stream autoplay warning:', playErr);
+          });
+        }
+
+        setIsStarting(false);
+        return simulatedStream;
       }
 
+      const msg = err instanceof Error ? err.message : 'Camera or microphone access denied or unavailable.';
+      setError(`Camera error: ${msg}`);
       setIsStarting(false);
-      return simulatedStream;
+      throw err;
     }
   }, []);
 

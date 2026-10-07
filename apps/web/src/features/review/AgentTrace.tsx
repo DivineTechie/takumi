@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { collection, query, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { fetchForgeJob, ApiError } from '../../lib/api';
 import { getVideoObjectUrl } from './mediaStorage';
 import {
   Sparkles,
@@ -587,9 +588,37 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
     return () => unsub();
   }, [skillId]);
 
-  // Automated progressive pipeline runner for local development and preview mode
+  // Periodic Forge Job status poll via /forge/jobs/:id API
   useEffect(() => {
-    // Only run progressive simulation if no live events exist after 1.2s
+    if (!jobId) return;
+
+    let cancelled = false;
+    const pollStatus = async () => {
+      try {
+        const status = await fetchForgeJob(jobId);
+        if (cancelled) return;
+        if (status.skill_id) setSkillId(status.skill_id);
+        if (status.status) setJobStatus(status.status);
+      } catch (err: unknown) {
+        if (err instanceof ApiError) {
+          console.warn(`Forge status API error (${err.status}):`, err.message);
+        }
+      }
+    };
+
+    pollStatus();
+    const interval = setInterval(pollStatus, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [jobId]);
+
+  // Automated progressive pipeline runner for local development (strictly DEV only)
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+
+    // Only run progressive simulation in DEV if no live events exist after 1.2s
     const timer = setTimeout(() => {
       if (events.length > 0) return;
 

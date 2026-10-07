@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage, auth } from '../../lib/firebase';
-import { triggerForgeJob } from '../../lib/api';
+import { triggerForgeJob, ApiError } from '../../lib/api';
 import { saveVideoBlob } from '../review/mediaStorage';
 import { SetupForm, SetupFormData } from './components/SetupForm';
 import { RecordingOverlay } from './components/RecordingOverlay';
@@ -121,8 +121,12 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
       try {
         await setDoc(doc(db, 'captures', generatedId), initialDoc);
       } catch (firestoreErr) {
-        console.warn('Firestore write permission denied (requires custom claim role:master). Continuing in local mode:', firestoreErr);
-        sessionStorage.setItem(`takumi_capture_${generatedId}`, JSON.stringify(initialDoc));
+        if (import.meta.env.DEV) {
+          console.warn('Firestore write permission denied (requires custom claim role:master). Continuing in local mode (DEV only):', firestoreErr);
+          sessionStorage.setItem(`takumi_capture_${generatedId}`, JSON.stringify(initialDoc));
+        } else {
+          throw firestoreErr;
+        }
       }
 
       // 4. Start local MediaRecorder
@@ -163,7 +167,11 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
       try {
         await uploadMasterVideo(captureId, videoBlob);
       } catch (uploadErr) {
-        console.warn('Storage video upload bypassed in dev mode:', uploadErr);
+        if (import.meta.env.DEV) {
+          console.warn('Storage video upload bypassed in dev mode (DEV only):', uploadErr);
+        } else {
+          throw uploadErr;
+        }
       }
 
       // 3. Calculate final duration with single-decimal precision
@@ -191,15 +199,26 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
           transcript: transcript,
         });
       } catch (docErr) {
-        console.warn('Firestore updateDoc bypassed (unauthenticated):', docErr);
+        if (import.meta.env.DEV) {
+          console.warn('Firestore updateDoc bypassed (DEV only):', docErr);
+        } else {
+          throw docErr;
+        }
       }
 
       // 5. Call POST /forge/jobs {"capture_id"}
       let forgeJob = { job_id: `job_${captureId}`, skill_id: `skill_${captureId}` };
       try {
         forgeJob = await triggerForgeJob(captureId);
-      } catch (jobErr) {
-        console.warn('Forge job API unavailable, navigating to local preview job:', jobErr);
+      } catch (jobErr: unknown) {
+        if (import.meta.env.DEV) {
+          console.warn('Forge job API unavailable, navigating to local preview job (DEV only):', jobErr);
+        } else {
+          if (jobErr instanceof ApiError) {
+            console.error(`Forge API failed (${jobErr.status}): ${jobErr.message}`);
+          }
+          throw jobErr;
+        }
       }
 
       // Cache under the resolved forgeJob.job_id as well

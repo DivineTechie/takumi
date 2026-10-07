@@ -5,6 +5,7 @@ import time
 import logging
 from services.forge.models.state import ForgeState
 from services.forge.events import emit, get_firestore_client
+from services.forge.config import STORAGE_BUCKET
 from shared.schema.py.skills import Skill, Status, SourceLanguage, Language, Master
 
 logger = logging.getLogger("forge.node.publisher")
@@ -22,6 +23,10 @@ async def run_publisher(state: ForgeState) -> ForgeState:
         step_dict = s.model_dump(exclude_none=True)
         step_dicts.append(step_dict)
 
+    mp4_video_uri = state.video_uri or f"gs://{STORAGE_BUCKET}/captures/{state.capture_id}/master.mp4"
+    if mp4_video_uri.endswith(".webm"):
+        mp4_video_uri = mp4_video_uri[:-5] + ".mp4"
+
     skill_payload = {
         "id": state.skill_id,
         "title": state.title,
@@ -33,7 +38,7 @@ async def run_publisher(state: ForgeState) -> ForgeState:
             "display_name": state.master_info.get("display_name", "Master Craftsman"),
             "role": state.master_info.get("role", "Senior Technician"),
         },
-        "video_uri": state.video_uri or f"gs://takumi-cup-2026.firebasestorage.app/captures/{state.capture_id}/master.webm",
+        "video_uri": mp4_video_uri,
         "safety_rules": state.safety_rules or [
             "No bare copper visible outside a terminal",
             "Panel power must be off",
