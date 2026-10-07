@@ -34,12 +34,17 @@ def test_verifier_and_pointer_templates():
         "Judge only what is visible; a rule whose state cannot be seen "
         "(for example, whether power is off) never makes the check fail."
     )
+    verifier_attr_rule = (
+        "Check every attribute named in the success criteria (wire colour, terminal number, position). "
+        "If any one does not match what you see, passed must be false."
+    )
     verifier_passed_rule = (
         "passed: true ONLY if visible is true, the success criteria are "
         "completely met, and no safety rule is visibly violated."
     )
 
     assert verifier_safety_rule in VERIFIER_PROMPT_TEMPLATE
+    assert verifier_attr_rule in VERIFIER_PROMPT_TEMPLATE
     assert verifier_passed_rule in VERIFIER_PROMPT_TEMPLATE
 
     from services.api.prompts import WatcherResponse
