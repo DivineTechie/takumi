@@ -29,7 +29,7 @@ TAKUMI bridges this gap through a dual-agent architecture built entirely on Goog
 
 ## 2. Architecture
 
-TAKUMI decouples rapid conversational speech from high-precision visual verification to guarantee low voice latency without hallucinated step approvals.
+TAKUMI decouples rapid conversational speech from high-precision visual verification so the voice model never approves a step by itself; every approval comes from a separate vision check of the camera frame.
 
 ![TAKUMI System Architecture](docs/architecture.svg)
 

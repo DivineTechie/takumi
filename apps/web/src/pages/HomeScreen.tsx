@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
 import { fetchMyPassports, type MyPassport } from '../lib/api';
+import { featureRoutes } from '../features/routes';
 import logoSvg from '../assets/logo.svg';
 
 export const HomeScreen: React.FC = () => {
@@ -31,9 +32,12 @@ export const HomeScreen: React.FC = () => {
 
   const unauthorizedMessage = (location.state as { unauthorizedMessage?: string })?.unauthorizedMessage;
 
-  const canLearn = role === 'trainee' || role === 'supervisor';
+  const canLearn = role === 'trainee' || role === 'supervisor' || role === 'master';
   const canTeach = role === 'master' || role === 'supervisor';
   const canSeeTeam = role === 'supervisor';
+
+  const isRouteAvailable = (path: string) => featureRoutes.some((r) => r.path === path);
+  const isCaptureAvailable = isRouteAvailable('/capture');
 
   return (
     <div className="bg-background text-on-surface antialiased min-h-screen flex flex-col font-sans">
@@ -232,7 +236,15 @@ export const HomeScreen: React.FC = () => {
                 {t('card_teach_desc')}
               </p>
             </div>
-            {canTeach ? (
+            {!canTeach ? (
+              <div className="w-full min-h-[56px] py-3.5 px-5 bg-surface-container text-on-surface-variant rounded-xl font-medium text-[16px] flex items-center justify-center border border-outline-variant">
+                {t('ask_supervisor_access')}
+              </div>
+            ) : !isCaptureAvailable ? (
+              <div className="w-full min-h-[56px] py-3.5 px-5 bg-surface-container text-on-surface-variant rounded-xl font-medium text-[16px] flex items-center justify-center border border-outline-variant">
+                Coming soon
+              </div>
+            ) : (
               <button
                 type="button"
                 onClick={() => navigate('/capture')}
@@ -241,10 +253,6 @@ export const HomeScreen: React.FC = () => {
                 <span>{t('card_teach_btn')}</span>
                 <span className="material-symbols-outlined text-[22px]">videocam</span>
               </button>
-            ) : (
-              <div className="w-full min-h-[56px] py-3.5 px-5 bg-surface-container text-on-surface-variant rounded-xl font-medium text-[16px] flex items-center justify-center border border-outline-variant">
-                {t('ask_supervisor_access')}
-              </div>
             )}
           </section>
 

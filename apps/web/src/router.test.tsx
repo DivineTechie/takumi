@@ -98,4 +98,54 @@ describe('Router & Feature Routes behind RoleGuard', () => {
     expect(await screen.findByText('Sign in with Google')).toBeInTheDocument();
     expect(screen.queryByTestId('test-feature-content')).toBeNull();
   });
+
+  it('allows master role to access /coach for lesson preview', async () => {
+    vi.spyOn(authModule, 'useAuth').mockReturnValue({
+      user: { uid: 'master_user', email: 'master@example.com' } as unknown as User,
+      role: 'master',
+      loading: false,
+      signInWithGoogle: vi.fn(),
+      signInWithPassword: vi.fn(),
+      sendSignInLink: vi.fn(),
+      finishSignInWithEmail: vi.fn(),
+      signOut: vi.fn(),
+      refreshRole: vi.fn(),
+      updateDisplayName: vi.fn(),
+    });
+
+    const routes = buildRouteObjects([]);
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/coach'],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    // Master should see the lesson selection screen (Choose a lesson)
+    expect(await screen.findByText('Choose a lesson')).toBeInTheDocument();
+  });
+
+  it('shows "This part of TAKUMI is still being finished" on 404 for known feature paths', async () => {
+    vi.spyOn(authModule, 'useAuth').mockReturnValue({
+      user: { uid: 'master_user', email: 'master@example.com' } as unknown as User,
+      role: 'master',
+      loading: false,
+      signInWithGoogle: vi.fn(),
+      signInWithPassword: vi.fn(),
+      sendSignInLink: vi.fn(),
+      finishSignInWithEmail: vi.fn(),
+      signOut: vi.fn(),
+      refreshRole: vi.fn(),
+      updateDisplayName: vi.fn(),
+    });
+
+    // Without featureRoutes mounted, /capture falls through to 404
+    const routes = buildRouteObjects([]);
+    const router = createMemoryRouter(routes, {
+      initialEntries: ['/capture'],
+    });
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText('This part of TAKUMI is still being finished')).toBeInTheDocument();
+  });
 });

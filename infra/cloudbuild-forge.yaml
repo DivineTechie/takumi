@@ -53,6 +53,8 @@ steps:
       - '-c'
       - |
         cd apps/web
+        mkdir -p public
+        echo "{\"version\":\"1.0.0\",\"commit\":\"$SHORT_SHA\",\"builtAt\":\"$$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" > public/version.json
         npm ci
         npm run build
 

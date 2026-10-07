@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // Owned by Member B: register /capture, /review/:skillId, /library and /forge/:jobId here.
 import type { ReactNode } from 'react';
 import type { Role } from '../lib/auth';
