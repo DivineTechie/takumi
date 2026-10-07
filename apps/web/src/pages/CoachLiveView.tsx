@@ -546,6 +546,17 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 return result;
               } catch (err) {
                 console.error('verify_step execution failed:', err);
+                const errStr = (err instanceof Error ? err.message : String(err)).toLowerCase();
+                if (
+                  errStr.includes('503') ||
+                  errStr.includes('temporarily unavailable') ||
+                  errStr.includes('prepayment credits') ||
+                  errStr.includes('credits depleted') ||
+                  errStr.includes('resource_exhausted')
+                ) {
+                  setConnectionState('error');
+                  setConnectionErrorText('Coaching is temporarily unavailable, please try again later');
+                }
                 const errResult: Record<string, unknown> = {
                   passed: false,
                   visible: false,
@@ -614,6 +625,17 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 }
               } catch (err) {
                 console.error('point_at execution failed:', err);
+                const errStr = (err instanceof Error ? err.message : String(err)).toLowerCase();
+                if (
+                  errStr.includes('503') ||
+                  errStr.includes('temporarily unavailable') ||
+                  errStr.includes('prepayment credits') ||
+                  errStr.includes('credits depleted') ||
+                  errStr.includes('resource_exhausted')
+                ) {
+                  setConnectionState('error');
+                  setConnectionErrorText('Coaching is temporarily unavailable, please try again later');
+                }
                 return { result: { status: 'no visible target' } };
               }
             } finally {
@@ -626,7 +648,9 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         },
         onError: (err) => {
           console.error('Live client error:', err);
-          if (err.message && err.message.includes('keeps dropping')) {
+          if (err.message && err.message.includes('temporarily unavailable')) {
+            setConnectionErrorText('Coaching is temporarily unavailable, please try again later');
+          } else if (err.message && err.message.includes('keeps dropping')) {
             setConnectionErrorText('Connection keeps dropping');
           } else {
             setConnectionErrorText("Couldn't connect");
@@ -1289,6 +1313,16 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         {sessionWarning && (
           <div className="absolute top-16 left-4 right-4 z-30 p-2.5 rounded-xl bg-amber-500/90 text-black text-center font-bold text-xs tracking-wide shadow-lg">
             Session will end in {remainingSeconds}s (10-minute cap)
+          </div>
+        )}
+
+        {/* Coaching Temporarily Unavailable Banner */}
+        {connectionErrorText === 'Coaching is temporarily unavailable, please try again later' && (
+          <div
+            role="alert"
+            className="absolute top-16 left-4 right-4 z-40 p-3 rounded-xl bg-red-950/95 border border-red-500/70 text-white text-center font-bold text-sm tracking-wide shadow-2xl backdrop-blur-md"
+          >
+            Coaching is temporarily unavailable, please try again later
           </div>
         )}
 

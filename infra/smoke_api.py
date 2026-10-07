@@ -196,6 +196,30 @@ async def main():
 
     results: dict[str, str] = {}
 
+    # Check 0: Public Health Endpoints
+    print("\n[0/7] Testing /api/healthz and /api/healthz/deep...")
+    try:
+        r = httpx.get(f"{base_url}/api/healthz", timeout=10)
+        if r.status_code == 200:
+            print("  PASS: /api/healthz returned 200.")
+            results["healthz"] = "PASS"
+        else:
+            print(f"  FAIL: /api/healthz returned {r.status_code}.")
+            results["healthz"] = f"FAIL ({r.status_code})"
+    except Exception as e:
+        results["healthz"] = f"FAIL ({e})"
+
+    try:
+        r = httpx.get(f"{base_url}/api/healthz/deep", timeout=20)
+        if r.status_code == 200:
+            print("  PASS: /api/healthz/deep returned 200.")
+            results["healthz_deep"] = "PASS"
+        else:
+            print(f"  FAIL: /api/healthz/deep returned {r.status_code}.")
+            results["healthz_deep"] = f"FAIL ({r.status_code})"
+    except Exception as e:
+        results["healthz_deep"] = f"FAIL ({e})"
+
     # Check 1: Unauthenticated request gives 401
     print("\n[1/7] Testing unauthenticated access...")
     try:
@@ -290,15 +314,19 @@ async def main():
             if r.status_code == 200:
                 state = r.json().get("state", "unknown")
                 watch_states.append(state)
-                print(f"  Iteration {i+1}: status=200, state={state}, latency={elapsed:.2f}s")
+                if state == "error":
+                    watch_ok = False
+                    print(f"  Iteration {i+1}: status=200, state={state} [FAIL: state is error], latency={elapsed:.2f}s")
+                else:
+                    print(f"  Iteration {i+1}: status=200, state={state}, latency={elapsed:.2f}s")
             else:
                 watch_ok = False
-                print(f"  Iteration {i+1}: status={r.status_code}, latency={elapsed:.2f}s")
+                print(f"  Iteration {i+1}: status={r.status_code} [FAIL: non-200], latency={elapsed:.2f}s")
         except Exception as e:
             watch_ok = False
             print(f"  Iteration {i+1}: error={e}")
 
-    if watch_ok and watch_latencies:
+    if watch_ok and watch_latencies and "error" not in watch_states:
         p50 = statistics.median(watch_latencies)
         print(f"  Watcher p50 latency: {p50:.2f}s (target < 2.5s)")
         if p50 <= 2.5:
@@ -306,7 +334,7 @@ async def main():
         else:
             results["watch_5x"] = f"PASS (p50: {p50:.2f}s, above 2.5s target)"
     else:
-        results["watch_5x"] = "FAIL"
+        results["watch_5x"] = "FAIL (state 'error' or non-200 returned)"
 
     # Check 4: POST /api/verify x 1
     print("\n[4/7] Testing /api/verify...")
@@ -448,6 +476,13 @@ async def main():
     for check_name, status_val in results.items():
         print(f"  {check_name:<30}: {status_val}")
     print("==================================================")
+
+    has_failure = any("FAIL" in str(val) for val in results.values())
+    if has_failure:
+        print("  RESULT: FAILED")
+        sys.exit(1)
+    else:
+        print("  RESULT: ALL PASSED")
 
 
 if __name__ == "__main__":

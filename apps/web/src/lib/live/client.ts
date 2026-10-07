@@ -316,6 +316,24 @@ export class GeminiLiveClient {
           `WebSocket closed by server (code: ${event.code}${event.reason ? `, reason: "${event.reason}"` : ''})`
         );
 
+        const reasonLower = (event.reason || '').toLowerCase();
+        const isUnavailable =
+          event.code === 1011 ||
+          reasonLower.includes('prepayment credits') ||
+          reasonLower.includes('credits depleted') ||
+          reasonLower.includes('resource_exhausted') ||
+          reasonLower.includes('quota') ||
+          reasonLower.includes('billing');
+
+        if (isUnavailable) {
+          this.setState('error');
+          this.config.callbacks.onClose?.(event.code, event.reason || '');
+          this.config.callbacks.onError(
+            new Error('Coaching is temporarily unavailable, please try again later')
+          );
+          return;
+        }
+
         if (!this.explicitlyClosed) {
           this.config.callbacks.onClose?.(event.code, event.reason || '');
           console.warn(`WebSocket closed unexpectedly (code: ${event.code}), scheduling reconnect...`);
@@ -330,6 +348,24 @@ export class GeminiLiveClient {
       this.stats.lastCloseCode = 5000;
       this.stats.lastCloseReason = err instanceof Error ? err.message : String(err);
       this.notifyStats();
+
+      const errMsg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+      const isUnavailable =
+        errMsg.includes('503') ||
+        errMsg.includes('temporarily unavailable') ||
+        errMsg.includes('prepayment credits') ||
+        errMsg.includes('credits depleted') ||
+        errMsg.includes('resource_exhausted');
+
+      if (isUnavailable) {
+        this.setState('error');
+        this.config.callbacks.onClose?.(5000, this.stats.lastCloseReason);
+        this.config.callbacks.onError(
+          new Error('Coaching is temporarily unavailable, please try again later')
+        );
+        return;
+      }
+
       if (!this.explicitlyClosed) {
         this.config.callbacks.onClose?.(5000, this.stats.lastCloseReason);
         this.scheduleReconnect();
@@ -606,6 +642,7 @@ export class GeminiLiveClient {
 
   private scheduleReconnect(): void {
     if (this.explicitlyClosed) return;
+    if (this.state === 'error') return;
 
     const now = Date.now();
     // Rolling 60s window: prune timestamps older than 60s

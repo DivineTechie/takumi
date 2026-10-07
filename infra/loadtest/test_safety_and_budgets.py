@@ -226,6 +226,21 @@ def run_verify_budget_test(
 
 
 def main():
+    import argparse
+    from infra.loadtest.cost_guard import add_cost_guard_args, enforce_cost_guard
+
+    parser = argparse.ArgumentParser(description="Test safety path and verify budgets")
+    add_cost_guard_args(parser, default_max_calls=50)
+    args = parser.parse_args()
+
+    # 10 watch + 40 current prompt + 40 updated prompt = 90 calls
+    enforce_cost_guard(
+        total_calls=90,
+        max_calls=args.max_calls,
+        is_default_thinking_verify=False,
+        i_know_this_costs=args.i_know_this_costs,
+    )
+
     client = get_genai_client()
     image_bytes = get_image_bytes()
 

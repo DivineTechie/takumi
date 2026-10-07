@@ -789,6 +789,56 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
       expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined();
     });
   });
+
+  it('shows "Coaching is temporarily unavailable, please try again later" banner and status on unavailable error', async () => {
+    let capturedCallbacks!: LiveClientCallbacks;
+    vi.mocked(GeminiLiveClient).mockImplementation((cfg) => {
+      capturedCallbacks = cfg.callbacks;
+      return {
+        connect: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn(),
+        isReady: vi.fn().mockReturnValue(true),
+        getState: vi.fn().mockReturnValue('error'),
+        isGating: vi.fn().mockReturnValue(false),
+        setSpeakerMode: vi.fn(),
+        getSpeakerMode: vi.fn().mockReturnValue(true),
+        stopGating: vi.fn(),
+        recordVerifyLatency: vi.fn(),
+        recordPointLatency: vi.fn(),
+        recordToolLatency: vi.fn(),
+        sendAudio: vi.fn(),
+        sendVideoFrame: vi.fn(),
+        sendText: vi.fn(),
+        manualRetry: vi.fn(),
+        getStats: vi.fn().mockReturnValue({}),
+      } as unknown as GeminiLiveClient;
+    });
+
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    capturedCallbacks.onStateChange?.('error');
+    capturedCallbacks.onError?.(new Error('Coaching is temporarily unavailable, please try again later'));
+
+    await waitFor(() => {
+      const msgs = screen.getAllByText('Coaching is temporarily unavailable, please try again later');
+      expect(msgs.length).toBeGreaterThanOrEqual(1);
+    });
+  });
 });
 
 

@@ -258,6 +258,21 @@ def run_positive_verify_benchmark(client: genai.Client, num_runs: int = 10) -> d
 
 
 def main():
+    import argparse
+    from infra.loadtest.cost_guard import add_cost_guard_args, enforce_cost_guard
+
+    parser = argparse.ArgumentParser(description="Benchmark budget 0 and positive verification")
+    add_cost_guard_args(parser, default_max_calls=50)
+    args = parser.parse_args()
+
+    total_calls = 20 + 20 + 10  # 50 calls
+    enforce_cost_guard(
+        total_calls=total_calls,
+        max_calls=args.max_calls,
+        is_default_thinking_verify=False,
+        i_know_this_costs=args.i_know_this_costs,
+    )
+
     client = get_genai_client()
     results = {}
 

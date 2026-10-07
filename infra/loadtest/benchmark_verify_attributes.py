@@ -152,6 +152,22 @@ def main():
     crit_b_instruction = "Insert the black wire into terminal 1 and tighten its screw."
     crit_b_success = "A black wire's ferrule enters terminal 1, the leftmost terminal."
 
+    import argparse
+    from infra.loadtest.cost_guard import add_cost_guard_args, enforce_cost_guard
+
+    parser = argparse.ArgumentParser(description="Attribute benchmark")
+    add_cost_guard_args(parser, default_max_calls=50)
+    args = parser.parse_args()
+
+    total_calls = 40
+    default_verify_calls = 20
+    enforce_cost_guard(
+        total_calls=total_calls,
+        max_calls=args.max_calls,
+        is_default_thinking_verify=(default_verify_calls > 20),
+        i_know_this_costs=args.i_know_this_costs,
+    )
+
     all_results = {}
 
     # Test (a) with default thinking

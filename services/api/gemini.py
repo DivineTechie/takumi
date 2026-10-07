@@ -8,8 +8,29 @@ import random
 import time
 from typing import Any
 
+from fastapi import HTTPException, status
 from google import genai
 from google.genai import types
+
+
+def is_gemini_unavailable_error(exc: Exception) -> bool:
+    """Detects whether exc corresponds to depleted credits, quota exhaustion, 402, or 429."""
+    status_code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if status_code in (402, 429):
+        return True
+
+    err_str = str(exc).lower()
+    quota_indicators = (
+        "resource_exhausted",
+        "prepayment credits are depleted",
+        "credits depleted",
+        "quota exceeded",
+        "rate limit",
+        "402 payment required",
+        "429 too many requests",
+        "billing",
+    )
+    return any(ind in err_str for ind in quota_indicators)
 
 from services.api.config import (
     GEMINI_API_KEY,
@@ -103,10 +124,22 @@ async def create_live_token(purpose: str) -> dict[str, Any]:
         with trace_gemini_call("auth_tokens.create", MODEL_LIVE):
             return client.auth_tokens.create(config=config)
 
-    auth_token = await asyncio.wait_for(
-        asyncio.to_thread(_sync_create),
-        timeout=TIMEOUT_LIVE_TOKEN_S,
-    )
+    try:
+        auth_token = await asyncio.wait_for(
+            asyncio.to_thread(_sync_create),
+            timeout=TIMEOUT_LIVE_TOKEN_S,
+        )
+    except Exception as e:
+        if is_gemini_unavailable_error(e):
+            logger.error(
+                "Live token creation failed due to Gemini quota/billing exhaustion",
+                extra={"props": {"category": "gemini_unavailable", "endpoint": "live-token", "error_class": type(e).__name__}},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Coaching is temporarily unavailable.",
+            ) from e
+        raise
 
     # Return token dictionary without logging the token value
     return {
@@ -251,6 +284,18 @@ async def call_watch(
     except Exception as e:
         secs = round(time.perf_counter() - t_start, 2)
         error_class = type(e).__name__
+        if is_gemini_unavailable_error(e):
+            logger.error(
+                "Watch call failed due to Gemini quota/billing exhaustion",
+                extra={"props": {"category": "gemini_unavailable", "endpoint": "watch", "error_class": error_class, "latency_s": secs}},
+            )
+            return {
+                "state": "error",
+                "reason": "gemini_unavailable",
+                "fix": "",
+                "rule": None,
+                "secs": secs,
+            }
         logger.warning(
             "Watch call failed fast",
             extra={"props": {"endpoint": "watch", "error_class": error_class, "latency_s": secs}},
@@ -334,8 +379,29 @@ async def call_verify(
             }
         except Exception as e:
             last_err = e
+            # Depleted credits or explicit 402: immediate fail without retry
+            err_lower = str(e).lower()
+            if "credits are depleted" in err_lower or "credits depleted" in err_lower or getattr(e, "code", None) == 402:
+                logger.error(
+                    "Verify failed due to Gemini billing exhaustion",
+                    extra={"props": {"category": "gemini_unavailable", "endpoint": "verify", "error_class": type(e).__name__}},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Coaching is temporarily unavailable.",
+                ) from e
             if attempts == 1:
                 await asyncio.sleep(random.uniform(0.5, 1.5))
+
+    if last_err and is_gemini_unavailable_error(last_err):
+        logger.error(
+            "Verify failed due to Gemini quota/billing exhaustion",
+            extra={"props": {"category": "gemini_unavailable", "endpoint": "verify", "error_class": type(last_err).__name__}},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Coaching is temporarily unavailable.",
+        ) from last_err
 
     raise last_err or RuntimeError("Verify call failed")
 
@@ -385,7 +451,68 @@ async def call_point(
             }
         except Exception as e:
             last_err = e
+            err_lower = str(e).lower()
+            if "credits are depleted" in err_lower or "credits depleted" in err_lower or getattr(e, "code", None) == 402:
+                logger.error(
+                    "Point failed due to Gemini billing exhaustion",
+                    extra={"props": {"category": "gemini_unavailable", "endpoint": "point", "error_class": type(e).__name__}},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Coaching is temporarily unavailable.",
+                ) from e
             if attempts == 1:
                 await asyncio.sleep(random.uniform(0.5, 1.5))
 
+    if last_err and is_gemini_unavailable_error(last_err):
+        logger.error(
+            "Point failed due to Gemini quota/billing exhaustion",
+            extra={"props": {"category": "gemini_unavailable", "endpoint": "point", "error_class": type(last_err).__name__}},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Coaching is temporarily unavailable.",
+        ) from last_err
+
     raise last_err or RuntimeError("Point call failed")
+
+
+_deep_health_cache_ts: float = 0.0
+
+
+async def check_deep_health() -> bool:
+    """Checks Gemini availability with a tiny gemini-3.5-flash-lite call, cached for 10 minutes (600s).
+
+    Returns True if healthy. Raises HTTPException(503) if Gemini call fails.
+    """
+    global _deep_health_cache_ts
+    now = time.time()
+    if (now - _deep_health_cache_ts) < 600.0:
+        return True
+
+    client = get_genai_client()
+
+    def _sync_ping():
+        with trace_gemini_call("healthz_deep.generate_content", MODEL_FLASH_LITE):
+            return client.models.generate_content(
+                model=MODEL_FLASH_LITE,
+                contents="ping",
+            )
+
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(_sync_ping),
+            timeout=10.0,
+        )
+        _deep_health_cache_ts = now
+        return True
+    except Exception as e:
+        logger.error(
+            "Deep health check failed due to Gemini error",
+            extra={"props": {"category": "gemini_unavailable", "endpoint": "healthz_deep", "error_class": type(e).__name__}},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Coaching is temporarily unavailable.",
+        ) from e
+

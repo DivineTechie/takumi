@@ -51,6 +51,7 @@ from services.api.gemini import (
     call_point,
     call_verify,
     call_watch,
+    check_deep_health,
     create_live_token,
 )
 from services.api.images import decode_and_validate_image, resize_to_jpeg_bytes
@@ -230,6 +231,14 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/healthz/deep")
+@app.get("/api/healthz/deep")
+async def healthz_deep(request: Request) -> dict[str, str]:
+    check_public_rate_limit(request, limit=60, window_s=60)
+    await check_deep_health()
+    return {"status": "ok"}
+
+
 @app.get("/api/me", response_model=MeResponse)
 def get_me(user: AuthUser = Depends(verify_auth_token)) -> MeResponse:
     if user.role is not None:
@@ -288,20 +297,43 @@ async def issue_live_token(
     check_rate_limit(user.uid, "live_tokens")
 
     t_model_start = time.perf_counter()
-    token_data = await create_live_token(req.purpose)
-    model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-    total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+    try:
+        token_data = await create_live_token(req.purpose)
+        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
 
-    stream_api_call({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "endpoint": "live-token",
-        "status": 200,
-        "model_ms": model_ms,
-        "total_ms": total_ms,
-    })
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "live-token",
+            "status": 200,
+            "model_ms": model_ms,
+            "total_ms": total_ms,
+        })
 
-    response.headers["Cache-Control"] = "no-store"
-    return token_data
+        response.headers["Cache-Control"] = "no-store"
+        return token_data
+    except HTTPException as e:
+        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "live-token",
+            "status": e.status_code,
+            "model_ms": model_ms,
+            "total_ms": total_ms,
+        })
+        raise
+    except Exception:
+        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "live-token",
+            "status": 500,
+            "model_ms": model_ms,
+            "total_ms": total_ms,
+        })
+        raise
 
 
 @app.post("/api/watch")
@@ -352,24 +384,47 @@ async def verify_step(
     jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=VERIFY_MAX_PX)
 
     t_model_start = time.perf_counter()
-    res = await call_verify(
-        step=req.step,
-        instruction=req.instruction,
-        success_criteria=req.success_criteria,
-        safety_rules=req.safety_rules,
-        jpeg_bytes=jpeg_bytes,
-    )
-    model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-    total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+    try:
+        res = await call_verify(
+            step=req.step,
+            instruction=req.instruction,
+            success_criteria=req.success_criteria,
+            safety_rules=req.safety_rules,
+            jpeg_bytes=jpeg_bytes,
+        )
+        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
 
-    stream_api_call({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "endpoint": "verify",
-        "status": 200,
-        "model_ms": model_ms,
-        "total_ms": total_ms,
-    })
-    return res
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "verify",
+            "status": 200,
+            "model_ms": model_ms,
+            "total_ms": total_ms,
+        })
+        return res
+    except HTTPException as e:
+        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "verify",
+            "status": e.status_code,
+            "model_ms": model_ms,
+            "total_ms": total_ms,
+        })
+        raise
+    except Exception:
+        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "verify",
+            "status": 500,
+            "model_ms": model_ms,
+            "total_ms": total_ms,
+        })
+        raise
 
 
 @app.post("/api/point")
@@ -397,21 +452,44 @@ async def point_target(
     jpeg_bytes = resize_to_jpeg_bytes(img, max_long_side=1280)
 
     t_model_start = time.perf_counter()
-    res = await call_point(
-        target=req.target,
-        jpeg_bytes=jpeg_bytes,
-    )
-    model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-    total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+    try:
+        res = await call_point(
+            target=req.target,
+            jpeg_bytes=jpeg_bytes,
+        )
+        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
 
-    stream_api_call({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "endpoint": "point",
-        "status": 200,
-        "model_ms": model_ms,
-        "total_ms": total_ms,
-    })
-    return res
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "point",
+            "status": 200,
+            "model_ms": model_ms,
+            "total_ms": total_ms,
+        })
+        return res
+    except HTTPException as e:
+        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "point",
+            "status": e.status_code,
+            "model_ms": model_ms,
+            "total_ms": total_ms,
+        })
+        raise
+    except Exception:
+        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
+        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
+        stream_api_call({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "endpoint": "point",
+            "status": 500,
+            "model_ms": model_ms,
+            "total_ms": total_ms,
+        })
+        raise
 
 
 @app.post("/api/sessions", status_code=status.HTTP_201_CREATED)

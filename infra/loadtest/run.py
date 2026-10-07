@@ -453,12 +453,27 @@ def cleanup_firestore_loadtest_data():
 
 
 if __name__ == "__main__":
+    from infra.loadtest.cost_guard import add_cost_guard_args, enforce_cost_guard
+
     parser = argparse.ArgumentParser(description="TAKUMI Authenticated Load Test & Live Concurrency")
     parser.add_argument("--url", default="https://takumi-cup-2026.web.app", help="Base URL of target API")
     parser.add_argument("--duration", type=int, default=180, help="Load test duration in seconds (default 180)")
     parser.add_argument("--workers", type=int, default=10, help="Number of concurrent workers (default 10)")
     parser.add_argument("--skip-live", action="store_true", help="Skip Live WebSocket concurrency test")
+    add_cost_guard_args(parser, default_max_calls=50)
     args = parser.parse_args()
+
+    # Estimate verify calls: (duration_s / 60) * workers
+    est_verify_calls = int((args.duration / 60) * args.workers)
+    # Estimate total calls: watch every 2.3s + verify + point
+    est_total_calls = int((args.duration / 2.3) * args.workers) + (est_verify_calls * 2)
+
+    enforce_cost_guard(
+        total_calls=est_total_calls,
+        max_calls=args.max_calls,
+        is_default_thinking_verify=(est_verify_calls > 20),
+        i_know_this_costs=args.i_know_this_costs,
+    )
 
     # 1. Run 10-Worker Coach Load Test (3 minutes)
     load_results = asyncio.run(run_coach_load_test(args.url, duration_s=args.duration, num_workers=args.workers))

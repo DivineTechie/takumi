@@ -193,26 +193,44 @@ def run_point_benchmark(
 
 
 def main():
+    import argparse
+    from infra.loadtest.cost_guard import add_cost_guard_args, enforce_cost_guard
+
+    parser = argparse.ArgumentParser(description="Benchmark configs")
+    add_cost_guard_args(parser, default_max_calls=50)
+    parser.add_argument("--runs-per-config", type=int, default=20)
+    args = parser.parse_args()
+
+    # 6 configs * runs_per_config
+    total_calls = 6 * args.runs_per_config
+    enforce_cost_guard(
+        total_calls=total_calls,
+        max_calls=args.max_calls,
+        is_default_thinking_verify=(args.runs_per_config > 20),
+        i_know_this_costs=args.i_know_this_costs,
+    )
+
     client = get_genai_client()
     results = {}
 
+    runs = args.runs_per_config
     # 1. verify: default
-    results["verify_default"] = run_verify_benchmark(client, "verify: default (1280px, default thinking)", 1280, None, 20)
+    results["verify_default"] = run_verify_benchmark(client, "verify: default (1280px, default thinking)", 1280, None, runs)
 
     # 2. verify: lowest thinking
-    results["verify_low_1280"] = run_verify_benchmark(client, "verify: lowest thinking (1280px, LOW)", 1280, types.ThinkingLevel.LOW, 20)
+    results["verify_low_1280"] = run_verify_benchmark(client, "verify: lowest thinking (1280px, LOW)", 1280, types.ThinkingLevel.LOW, runs)
 
     # 3. verify: lowest thinking + 1024 px
-    results["verify_low_1024"] = run_verify_benchmark(client, "verify: lowest thinking + 1024px", 1024, types.ThinkingLevel.LOW, 20)
+    results["verify_low_1024"] = run_verify_benchmark(client, "verify: lowest thinking + 1024px", 1024, types.ThinkingLevel.LOW, runs)
 
     # 4. verify: lowest thinking + 768 px
-    results["verify_low_768"] = run_verify_benchmark(client, "verify: lowest thinking + 768px", 768, types.ThinkingLevel.LOW, 20)
+    results["verify_low_768"] = run_verify_benchmark(client, "verify: lowest thinking + 768px", 768, types.ThinkingLevel.LOW, runs)
 
     # 5. point: default
-    results["point_default"] = run_point_benchmark(client, "point: default (1280px, default thinking)", 1280, None, 20)
+    results["point_default"] = run_point_benchmark(client, "point: default (1280px, default thinking)", 1280, None, runs)
 
     # 6. point: lowest thinking
-    results["point_low_1280"] = run_point_benchmark(client, "point: lowest thinking (1280px, LOW)", 1280, types.ThinkingLevel.LOW, 20)
+    results["point_low_1280"] = run_point_benchmark(client, "point: lowest thinking (1280px, LOW)", 1280, types.ThinkingLevel.LOW, runs)
 
     out_file = Path(__file__).resolve().parent / "benchmark_results.json"
     with open(out_file, "w", encoding="utf-8") as f:

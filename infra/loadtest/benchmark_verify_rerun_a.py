@@ -135,6 +135,22 @@ def run_experiment(
 
 
 def main():
+    import argparse
+    from infra.loadtest.cost_guard import add_cost_guard_args, enforce_cost_guard
+
+    parser = argparse.ArgumentParser(description="Post prompt rerun A benchmark")
+    add_cost_guard_args(parser, default_max_calls=50)
+    args = parser.parse_args()
+
+    total_calls = 20
+    default_verify_calls = 10
+    enforce_cost_guard(
+        total_calls=total_calls,
+        max_calls=args.max_calls,
+        is_default_thinking_verify=(default_verify_calls > 20),
+        i_know_this_costs=args.i_know_this_costs,
+    )
+
     client = get_genai_client()
     image_bytes = get_image_bytes()
 

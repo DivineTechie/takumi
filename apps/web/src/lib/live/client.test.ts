@@ -875,5 +875,54 @@ describe('GeminiLiveClient', () => {
 
     expect(onCoachLine).toHaveBeenCalledWith('Great, insert it into terminal 1.');
   });
+
+  it('fails immediately with unavailable error on 503 liveToken and does not reconnect', async () => {
+    liveTokenSpy.mockRejectedValueOnce(new Error('503: Coaching is temporarily unavailable.'));
+    const onError = vi.fn();
+    const onStateChange = vi.fn();
+
+    const client = createClient({
+      callbacks: {
+        onError,
+        onStateChange,
+      },
+    });
+
+    await client.connect();
+
+    expect(client.getState()).toBe('error');
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Coaching is temporarily unavailable, please try again later',
+      })
+    );
+    expect(MockWebSocket.instances.length).toBe(0);
+  });
+
+  it('fails immediately with unavailable error on socket close 1011 credits depleted and does not reconnect', async () => {
+    const onError = vi.fn();
+    const onStateChange = vi.fn();
+
+    const client = createClient({
+      callbacks: {
+        onError,
+        onStateChange,
+      },
+    });
+
+    await client.connect();
+    await new Promise((r) => setTimeout(r, 20));
+
+    const ws = MockWebSocket.instances[0];
+    ws.close(1011, 'prepayment credits are depleted');
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(client.getState()).toBe('error');
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'Coaching is temporarily unavailable, please try again later',
+      })
+    );
+  });
 });
 
