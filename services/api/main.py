@@ -55,7 +55,7 @@ from services.api.gemini import (
     create_live_token,
 )
 from services.api.images import decode_and_validate_image, resize_to_jpeg_bytes
-from services.api.telemetry import init_telemetry, setup_logging
+from services.api.telemetry import elapsed_ms, init_telemetry, setup_logging
 
 logger = setup_logging()
 init_telemetry()
@@ -266,6 +266,29 @@ def get_me(user: AuthUser = Depends(verify_auth_token)) -> MeResponse:
     )
 
 
+def record_call_timing(
+    endpoint: str,
+    status_code: int,
+    t_handler_start: float,
+    t_model_start: float | None = None,
+) -> dict[str, Any]:
+    """Records API timing metrics using elapsed_ms for both model and handler durations."""
+    t_now = time.perf_counter()
+    model_ms = elapsed_ms(t_model_start, t_now) if t_model_start is not None else None
+    total_ms = elapsed_ms(t_handler_start, t_now)
+    if model_ms is not None and total_ms < model_ms:
+        total_ms = model_ms
+    row = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "endpoint": endpoint,
+        "status": status_code,
+        "model_ms": model_ms,
+        "total_ms": total_ms,
+    }
+    stream_api_call(row)
+    return row
+
+
 @app.post("/api/live-token")
 async def issue_live_token(
     req: LiveTokenRequest,
@@ -299,40 +322,14 @@ async def issue_live_token(
     t_model_start = time.perf_counter()
     try:
         token_data = await create_live_token(req.purpose)
-        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "live-token",
-            "status": 200,
-            "model_ms": model_ms,
-            "total_ms": total_ms,
-        })
-
+        record_call_timing("live-token", 200, t_handler_start, t_model_start)
         response.headers["Cache-Control"] = "no-store"
         return token_data
     except HTTPException as e:
-        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "live-token",
-            "status": e.status_code,
-            "model_ms": model_ms,
-            "total_ms": total_ms,
-        })
+        record_call_timing("live-token", e.status_code, t_handler_start, t_model_start)
         raise
     except Exception:
-        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "live-token",
-            "status": 500,
-            "model_ms": model_ms,
-            "total_ms": total_ms,
-        })
+        record_call_timing("live-token", 500, t_handler_start, t_model_start)
         raise
 
 
@@ -350,25 +347,23 @@ async def watch_step(
 
     mistakes_dicts = [m.model_dump() for m in req.common_mistakes]
     t_model_start = time.perf_counter()
-    res = await call_watch(
-        step=req.step,
-        instruction=req.instruction,
-        success_criteria=req.success_criteria,
-        common_mistakes=mistakes_dicts,
-        safety_rules=req.safety_rules,
-        jpeg_bytes=jpeg_bytes,
-    )
-    model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-    total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-
-    stream_api_call({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "endpoint": "watch",
-        "status": 200,
-        "model_ms": model_ms,
-        "total_ms": total_ms,
-    })
-    return res
+    try:
+        res = await call_watch(
+            step=req.step,
+            instruction=req.instruction,
+            success_criteria=req.success_criteria,
+            common_mistakes=mistakes_dicts,
+            safety_rules=req.safety_rules,
+            jpeg_bytes=jpeg_bytes,
+        )
+        record_call_timing("watch", 200, t_handler_start, t_model_start)
+        return res
+    except HTTPException as e:
+        record_call_timing("watch", e.status_code, t_handler_start, t_model_start)
+        raise
+    except Exception:
+        record_call_timing("watch", 500, t_handler_start, t_model_start)
+        raise
 
 
 @app.post("/api/verify")
@@ -392,38 +387,13 @@ async def verify_step(
             safety_rules=req.safety_rules,
             jpeg_bytes=jpeg_bytes,
         )
-        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "verify",
-            "status": 200,
-            "model_ms": model_ms,
-            "total_ms": total_ms,
-        })
+        record_call_timing("verify", 200, t_handler_start, t_model_start)
         return res
     except HTTPException as e:
-        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "verify",
-            "status": e.status_code,
-            "model_ms": model_ms,
-            "total_ms": total_ms,
-        })
+        record_call_timing("verify", e.status_code, t_handler_start, t_model_start)
         raise
     except Exception:
-        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "verify",
-            "status": 500,
-            "model_ms": model_ms,
-            "total_ms": total_ms,
-        })
+        record_call_timing("verify", 500, t_handler_start, t_model_start)
         raise
 
 
@@ -438,14 +408,7 @@ async def point_target(
     # Screen target text with Model Armor (fail-open)
     screening = screen_text(req.target, purpose="point_target")
     if not screening.get("allowed", True):
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "point",
-            "status": 200,
-            "model_ms": None,
-            "total_ms": total_ms,
-        })
+        record_call_timing("point", 200, t_handler_start, None)
         return {"points": [], "secs": 0.0, "blocked": True}
 
     img = decode_and_validate_image(req.image_b64)
@@ -457,38 +420,13 @@ async def point_target(
             target=req.target,
             jpeg_bytes=jpeg_bytes,
         )
-        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "point",
-            "status": 200,
-            "model_ms": model_ms,
-            "total_ms": total_ms,
-        })
+        record_call_timing("point", 200, t_handler_start, t_model_start)
         return res
     except HTTPException as e:
-        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "point",
-            "status": e.status_code,
-            "model_ms": model_ms,
-            "total_ms": total_ms,
-        })
+        record_call_timing("point", e.status_code, t_handler_start, t_model_start)
         raise
     except Exception:
-        model_ms = int(round((time.perf_counter() - t_model_start) * 1000))
-        total_ms = int(round((time.perf_counter() - t_handler_start) * 1000))
-        stream_api_call({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "endpoint": "point",
-            "status": 500,
-            "model_ms": model_ms,
-            "total_ms": total_ms,
-        })
+        record_call_timing("point", 500, t_handler_start, t_model_start)
         raise
 
 

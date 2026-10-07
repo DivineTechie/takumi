@@ -54,7 +54,7 @@ from services.api.prompts import (
     WATCHER_PROMPT_TEMPLATE,
     WatcherResponse,
 )
-from services.api.telemetry import trace_gemini_call
+from services.api.telemetry import elapsed_ms, trace_gemini_call
 
 logger = logging.getLogger("takumi.gemini")
 
@@ -255,7 +255,7 @@ async def call_watch(
             timeout=TIMEOUT_WATCH_S,
         )
 
-        secs = round(time.perf_counter() - t_start, 2)
+        secs = round(elapsed_ms(t_start) / 1000.0, 2)
         parsed = json.loads(response.text)
         
         state = str(parsed.get("state", "error"))
@@ -282,20 +282,17 @@ async def call_watch(
         }
 
     except Exception as e:
-        secs = round(time.perf_counter() - t_start, 2)
+        secs = round(elapsed_ms(t_start) / 1000.0, 2)
         error_class = type(e).__name__
         if is_gemini_unavailable_error(e):
             logger.error(
                 "Watch call failed due to Gemini quota/billing exhaustion",
                 extra={"props": {"category": "gemini_unavailable", "endpoint": "watch", "error_class": error_class, "latency_s": secs}},
             )
-            return {
-                "state": "error",
-                "reason": "gemini_unavailable",
-                "fix": "",
-                "rule": None,
-                "secs": secs,
-            }
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Coaching is temporarily unavailable.",
+            ) from e
         logger.warning(
             "Watch call failed fast",
             extra={"props": {"endpoint": "watch", "error_class": error_class, "latency_s": secs}},
@@ -354,7 +351,7 @@ async def call_verify(
                 asyncio.to_thread(_sync_generate),
                 timeout=TIMEOUT_VERIFY_S,
             )
-            secs = round(time.perf_counter() - t_start, 2)
+            secs = round(elapsed_ms(t_start) / 1000.0, 2)
             parsed = json.loads(response.text)
             return {
                 "passed": bool(parsed.get("passed", False)),
@@ -364,7 +361,7 @@ async def call_verify(
                 "secs": secs,
             }
         except (TimeoutError, asyncio.TimeoutError):
-            secs = round(time.perf_counter() - t_start, 2)
+            secs = round(elapsed_ms(t_start) / 1000.0, 2)
             logger.warning(
                 "Verify call timed out after %ss; asking trainee to hold steady and try again",
                 TIMEOUT_VERIFY_S,
@@ -441,7 +438,7 @@ async def call_point(
                 asyncio.to_thread(_sync_generate),
                 timeout=TIMEOUT_POINT_S,
             )
-            secs = round(time.perf_counter() - t_start, 2)
+            secs = round(elapsed_ms(t_start) / 1000.0, 2)
             parsed = json.loads(response.text)
             raw_points = parsed.get("points", [])
             clamped = clamp_point_coordinates(raw_points)

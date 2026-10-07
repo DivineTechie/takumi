@@ -49,6 +49,12 @@ def get_tracer() -> Tracer:
     return _tracer
 
 
+def elapsed_ms(start_time: float, end_time: float | None = None) -> int:
+    """Calculates elapsed integer milliseconds from time.perf_counter() difference."""
+    t_end = time.perf_counter() if end_time is None else end_time
+    return int(round((t_end - start_time) * 1000))
+
+
 @contextlib.contextmanager
 def trace_gemini_call(span_name: str, model_id: str) -> Generator[Span, None, None]:
     """Context manager to trace a call to Gemini, setting model and latency attributes."""
@@ -59,7 +65,7 @@ def trace_gemini_call(span_name: str, model_id: str) -> Generator[Span, None, No
         try:
             yield span
         finally:
-            latency_ms = int((time.perf_counter() - t_start) * 1000)
+            latency_ms = elapsed_ms(t_start)
             span.set_attribute("genai.latency_ms", latency_ms)
 
 

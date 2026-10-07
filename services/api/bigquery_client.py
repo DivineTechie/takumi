@@ -1,6 +1,7 @@
 """BigQuery streaming client for TAKUMI session events."""
 
 import logging
+import os
 from typing import Any
 from google.cloud import bigquery
 from services.api.config import GCP_PROJECT, BQ_LOCATION
@@ -43,6 +44,9 @@ def stream_api_call(row: dict[str, Any]) -> None:
     Row contains: ts, endpoint, status, model_ms, total_ms.
     Fire-and-forget: logs warning on failure but never raises.
     """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+
     try:
         client = get_bigquery_client()
         table_id = f"{GCP_PROJECT}.takumi.api_calls"

@@ -336,6 +336,36 @@ async def main():
     else:
         results["watch_5x"] = "FAIL (state 'error' or non-200 returned)"
 
+    # Check 3b: Query takumi.api_calls for newest watch row and FAIL if total_ms < 300
+    print("\n[3b/7] Verifying takumi.api_calls timing units for watch...")
+    try:
+        bq = bigquery.Client(project=PROJECT_ID)
+        watch_timing_query = f"""
+            SELECT total_ms, model_ms, ts
+            FROM `{PROJECT_ID}.takumi.api_calls`
+            WHERE endpoint = 'watch'
+            ORDER BY ts DESC
+            LIMIT 1
+        """
+        rows = list(bq.query(watch_timing_query).result())
+        if rows:
+            latest_watch_call = rows[0]
+            latest_total_ms = latest_watch_call.total_ms
+            latest_model_ms = latest_watch_call.model_ms
+            print(f"  Newest watch api_calls row: total_ms={latest_total_ms}, model_ms={latest_model_ms}, ts={latest_watch_call.ts}")
+            if latest_total_ms is not None and latest_total_ms < 300:
+                print(f"  FAIL: Newest watch row total_ms ({latest_total_ms}) < 300 ms (units regression)!")
+                results["watch_timing_units"] = f"FAIL (total_ms {latest_total_ms} < 300)"
+            else:
+                print(f"  PASS: Newest watch row total_ms is {latest_total_ms} ms (>= 300 ms).")
+                results["watch_timing_units"] = "PASS"
+        else:
+            print("  FAIL: No watch rows found in takumi.api_calls!")
+            results["watch_timing_units"] = "FAIL (no rows found)"
+    except Exception as e:
+        print(f"  FAIL: Could not query takumi.api_calls: {e}")
+        results["watch_timing_units"] = f"FAIL ({e})"
+
     # Check 4: POST /api/verify x 1
     print("\n[4/7] Testing /api/verify...")
     try:
