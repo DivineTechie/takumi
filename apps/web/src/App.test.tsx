@@ -14,6 +14,7 @@ describe('App', () => {
       role: null,
       loading: false,
       signInWithGoogle: vi.fn(),
+      signInWithPassword: vi.fn(),
       sendSignInLink: vi.fn(),
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
