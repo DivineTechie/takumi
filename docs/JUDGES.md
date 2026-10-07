@@ -17,7 +17,7 @@ TAKUMI supports three specialized personas. Pre-configured evaluation accounts h
 | :--- | :--- | :--- |
 | **Trainee** | `judge-trainee@takumi-cup-2026.web.app` | Live multimodal workbench coaching, speech interaction, spatial reticles, and Skill Passport generation. |
 | **Supervisor** | `judge-supervisor@takumi-cup-2026.web.app` | Factory line competency analytics, skill matrix, error heatmaps, triage queue, and session timeline replay. |
-| **Master** | `judge-master@takumi-cup-2026.web.app` | Demonstration review, step verification criteria tuning, and curriculum authoring. |
+| **Master** | `judge-master@takumi-cup-2026.web.app` | Live skill capture (/capture), lesson preview (/coach), demonstration review, and curriculum authoring. |
 
 > [!NOTE]
 > **Account Passwords**:
@@ -56,7 +56,15 @@ You do **not** need physical industrial wiring hardware to evaluate TAKUMI's con
    - **Review Triage Queue**: View flagged steps where trainees struggled or where anomalous verifications occurred.
    - **Session Replay**: Select a recorded session to inspect the **event timeline with transcript lines**, reticle coordinates, and step verification states. (To respect worker privacy, no raw trainee audio is stored).
 
-### Walkthrough C: Reference Photos (Coming Oct 14)
+### Walkthrough C: Master Skill Capture & Lesson Preview
+1. Sign in as `judge-master@takumi-cup-2026.web.app`.
+2. **Master Skill Capture** (`/capture`):
+   - Access the live **Capture Studio** via the "Teach a skill" card or direct navigation to `/capture`.
+   - Experience live camera recording, device switching, or video upload for master demonstrations with client-side frame extraction and structured step authoring.
+3. **Lesson Preview**:
+   - Masters can preview trainee coaching modules directly at `/coach` and `/coach/:skillId` without polluting factory line analytics (master sessions are excluded from supervisor metrics by default).
+
+### Walkthrough D: Reference Photos (Coming Oct 14)
 > [!NOTE]
 > During final physical test-rig validation on **October 14**, high-resolution interactive workbench photos will be provided directly in this section so evaluators can point their phone camera at an on-screen monitor to trigger live visual step transitions.
 
@@ -107,9 +115,10 @@ TAKUMI provides production transparency through dedicated endpoints:
 
 ## 4. Master Pipeline Status (Member B)
 
-The master demonstration capture and Forge workflow (Google ADK 2.0 graph pipeline) is being built by team Member B on branch `forge`:
-- Nodes for multimodal segmentation (`gemini-omni-1.1-flash`), "why" rationale extraction (`gemini-3.8-flash`), spatial annotation (`gemini-robotics-er-2-preview`), and mistake simulation video generation (`veo-3.1-fast-generate-preview`) are implemented in code under `/services/forge`.
-- End-to-end integration with the production web UI is slated for the post-competition master authoring update.
+The master demonstration capture studio (`/capture`) is now deployed and live on the production site:
+- **Master Capture Screen (`/capture`)**: **Live**. Enables hands-on video recording, multi-camera selection, client-side frame extraction, and demonstration ingestion in the browser.
+- **Automated Forge Graph Pipeline (`takumi-forge`)**: **In progress**. Google ADK 2.0 graph workflow on Cloud Run processing master videos through multimodal segmentation (`gemini-omni-1.1-flash`), "why" rationale extraction (`gemini-3.8-flash`), spatial annotation (`gemini-robotics-er-2-preview`), and mistake simulation (`veo-3.1-fast-generate-preview`) until end-to-end automated publishing is finalized.
+- **Skill Review & Library (`/review/:skillId`, `/library`)**: **Live in web application**, staging integration active.
 
 ---
 

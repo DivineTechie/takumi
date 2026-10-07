@@ -464,3 +464,105 @@ def test_session_replay_stale_live_session_marked_abandoned():
                 data = res.json()
                 assert data["session"]["status"] == "abandoned"
 
+
+def test_master_preview_and_exclusion_from_insights():
+    # 1. Master can issue live-token for purpose 'coach'
+    mock_token_data = {"token": "live_test_token_master"}
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "master_uid_1", "role": "master"}), \
+         patch("services.api.main.create_live_token", return_value=mock_token_data), \
+         patch("services.api.main.check_rate_limit"):
+        res_token = client.post(
+            "/api/live-token",
+            json={"purpose": "coach"},
+            headers={"Authorization": "Bearer token"},
+        )
+        assert res_token.status_code == 200
+        assert res_token.json()["token"] == "live_test_token_master"
+
+    # 2. Master can create a session (POST /api/sessions)
+    mock_db = MagicMock()
+    skill_doc = MagicMock()
+    skill_doc.exists = True
+    skill_doc.to_dict.return_value = {
+        "status": "published",
+        "steps": [{"n": 1}, {"n": 2}],
+    }
+    mock_db.collection.return_value.document.return_value.get.return_value = skill_doc
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "master_uid_1", "role": "master"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_db):
+        res_sess = client.post(
+            "/api/sessions",
+            json={"skill_id": "skill_wiring", "language": "en"},
+            headers={"Authorization": "Bearer token"},
+        )
+        assert res_sess.status_code == 201
+        sess_data = res_sess.json()
+        assert sess_data["trainee_uid"] == "master_uid_1"
+        assert sess_data["status"] == "live"
+
+    # 3. Master session is excluded from /api/insights/matrix by default
+    skill_item = MagicMock()
+    skill_item.id = "skill_wiring"
+    skill_item.to_dict.return_value = {"title": "Wire DIN rail", "status": "published"}
+
+    trainee_ses = MagicMock()
+    trainee_ses.to_dict.return_value = {
+        "trainee_uid": "trainee_real_1",
+        "skill_id": "skill_wiring",
+        "status": "completed",
+        "started_at": "2026-10-07T10:00:00Z",
+        "result": {"mistakes": 1},
+    }
+    master_ses = MagicMock()
+    master_ses.to_dict.return_value = {
+        "trainee_uid": "master_uid_1",
+        "skill_id": "skill_wiring",
+        "status": "completed",
+        "started_at": "2026-10-07T11:00:00Z",
+        "result": {"mistakes": 0},
+    }
+
+    def mock_cols(col_name):
+        c = MagicMock()
+        if col_name == "skills":
+            c.where.return_value.stream.return_value = [skill_item]
+        elif col_name == "passports":
+            c.stream.return_value = []
+        elif col_name == "sessions":
+            c.stream.return_value = [trainee_ses, master_ses]
+        return c
+
+    mock_db.collection.side_effect = mock_cols
+
+    def mock_fb_user(uid):
+        u = MagicMock()
+        if uid == "master_uid_1":
+            u.display_name = "Master Ken"
+            u.custom_claims = {"role": "master"}
+        else:
+            u.display_name = "Trainee Tim"
+            u.custom_claims = {"role": "trainee"}
+        return u
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_db), \
+         patch("services.api.main.fb_auth.get_user", side_effect=mock_fb_user):
+        # Default: master excluded
+        clear_insights_cache()
+        res_matrix_default = client.get("/api/insights/matrix", headers={"Authorization": "Bearer token"})
+        assert res_matrix_default.status_code == 200
+        data_default = res_matrix_default.json()
+        uids_default = [t["uid"] for t in data_default["trainees"]]
+        assert "master_uid_1" not in uids_default
+        assert "trainee_real_1" in uids_default
+
+        # include_masters=true: master included
+        clear_insights_cache()
+        res_matrix_all = client.get("/api/insights/matrix?include_masters=true", headers={"Authorization": "Bearer token"})
+        assert res_matrix_all.status_code == 200
+        data_all = res_matrix_all.json()
+        uids_all = [t["uid"] for t in data_all["trainees"]]
+        assert "master_uid_1" in uids_all
+        assert "trainee_real_1" in uids_all
+

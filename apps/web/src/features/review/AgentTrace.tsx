@@ -113,7 +113,7 @@ function extractThumbnailFromVideo(
           done(dataUrl);
           return;
         }
-      } catch (e) {
+      } catch {
         // canvas fallback
       }
       done('');

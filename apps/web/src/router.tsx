@@ -81,11 +81,11 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
       ),
     },
 
-    // Trainee or supervisor
+    // Trainee, supervisor, or master (lesson preview)
     {
       path: '/coach',
       element: (
-        <RoleGuard allowedRoles={['trainee', 'supervisor']}>
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
           <Suspense fallback={<LoadingFallback />}>
             <ChooseLessonScreen />
           </Suspense>
@@ -95,7 +95,7 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
     {
       path: '/coach/:skillId',
       element: (
-        <RoleGuard allowedRoles={['trainee', 'supervisor']}>
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
           <Suspense fallback={<LoadingFallback />}>
             <CoachBeforeStartScreen />
           </Suspense>

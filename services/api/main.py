@@ -9,7 +9,7 @@ import statistics
 import time
 from typing import Any, Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from google.cloud import bigquery, firestore
@@ -200,8 +200,34 @@ def set_in_cache(key: str, val: Any) -> None:
     _insights_cache[key] = (time.time(), val)
 
 
+_user_master_cache: dict[str, tuple[float, bool]] = {}
+
+
 def clear_insights_cache() -> None:
     _insights_cache.clear()
+    _user_master_cache.clear()
+
+
+def is_master_user(uid: str | None) -> bool:
+    """Checks whether user UID has role 'master' in Firebase Auth."""
+    if not uid:
+        return False
+    now = time.time()
+    if uid in _user_master_cache:
+        ts, is_m = _user_master_cache[uid]
+        if now - ts < 300:  # 5 min TTL
+            return is_m
+    init_firebase_admin()
+    is_master = False
+    try:
+        user_record = fb_auth.get_user(uid)
+        claims = getattr(user_record, "custom_claims", None)
+        if isinstance(claims, dict) and claims.get("role") == "master":
+            is_master = True
+    except Exception:
+        pass
+    _user_master_cache[uid] = (now, is_master)
+    return is_master
 
 
 def get_trainee_first_name(uid: str | None) -> str:
@@ -309,10 +335,10 @@ async def issue_live_token(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Coaching is paused for maintenance.",
             )
-        if user.role not in ("trainee", "supervisor"):
+        if user.role not in ("trainee", "supervisor", "master"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Forbidden: purpose 'coach' requires role 'trainee' or 'supervisor'",
+                detail="Forbidden: purpose 'coach' requires role 'trainee', 'supervisor', or 'master'",
             )
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid purpose")
@@ -433,7 +459,7 @@ async def point_target(
 @app.post("/api/sessions", status_code=status.HTTP_201_CREATED)
 async def create_session(
     req: SessionCreateRequest,
-    user: AuthUser = Depends(require_trainee_or_supervisor),
+    user: AuthUser = Depends(require_any_authenticated_user),
 ) -> dict[str, Any]:
     if not SESSIONS_ENABLED:
         raise HTTPException(
@@ -492,7 +518,7 @@ async def create_session(
 async def create_session_event(
     session_id: str,
     req: SessionEventCreateRequest,
-    user: AuthUser = Depends(require_trainee_or_supervisor),
+    user: AuthUser = Depends(require_any_authenticated_user),
 ) -> dict[str, Any]:
     db = get_firestore_client()
     session_ref = db.collection("sessions").document(session_id)
@@ -635,7 +661,7 @@ async def patch_session(
     session_id: str,
     req: SessionPatchRequest,
     background_tasks: BackgroundTasks,
-    user: AuthUser = Depends(require_trainee_or_supervisor),
+    user: AuthUser = Depends(require_any_authenticated_user),
 ) -> dict[str, Any]:
     db = get_firestore_client()
     session_ref = db.collection("sessions").document(session_id)
@@ -746,9 +772,11 @@ async def patch_session(
 
 @app.get("/api/insights/matrix")
 async def get_insights_matrix(
+    include_masters: bool = Query(default=False),
     user: AuthUser = Depends(require_supervisor),
 ) -> dict[str, Any]:
-    cached = get_from_cache("insights:matrix")
+    cache_key = f"insights:matrix:include_masters={include_masters}"
+    cached = get_from_cache(cache_key)
     if cached is not None:
         return cached
 
@@ -770,6 +798,8 @@ async def get_insights_matrix(
         t_uid = pd.get("trainee_uid")
         s_id = pd.get("skill_id")
         if t_uid and s_id and t_uid not in EXCLUDED_UIDS:
+            if not include_masters and is_master_user(t_uid):
+                continue
             certified_pairs.add((t_uid, s_id))
 
     # 3. Sessions
@@ -786,6 +816,8 @@ async def get_insights_matrix(
         s_id = sd.get("skill_id")
 
         if not t_uid or t_uid in EXCLUDED_UIDS:
+            continue
+        if not include_masters and is_master_user(t_uid):
             continue
 
         all_trainee_uids.add(t_uid)
@@ -851,16 +883,17 @@ async def get_insights_matrix(
         "skills": published_skills,
         "cells": cells,
     }
-    set_in_cache("insights:matrix", result)
+    set_in_cache(cache_key, result)
     return result
 
 
 @app.get("/api/insights/skill/{skill_id}")
 async def get_insights_skill(
     skill_id: str,
+    include_masters: bool = Query(default=False),
     user: AuthUser = Depends(require_supervisor),
 ) -> dict[str, Any]:
-    cache_key = f"insights:skill:{skill_id}"
+    cache_key = f"insights:skill:{skill_id}:include_masters={include_masters}"
     cached = get_from_cache(cache_key)
     if cached is not None:
         return cached
@@ -876,6 +909,15 @@ async def get_insights_skill(
 
     bq = get_bigquery_client()
     excluded_list = list(EXCLUDED_UIDS)
+    if not include_masters:
+        try:
+            s_docs = db.collection("sessions").where("skill_id", "==", skill_id).stream()
+            for s in s_docs:
+                s_uid = (s.to_dict() or {}).get("trainee_uid")
+                if s_uid and s_uid not in excluded_list and is_master_user(s_uid):
+                    excluded_list.append(s_uid)
+        except Exception:
+            pass
 
     # Query 1: Step counts (sessions reached, mistakes, safety stops)
     q1 = f"""
