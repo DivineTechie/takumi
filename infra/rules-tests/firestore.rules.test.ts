@@ -163,6 +163,15 @@ describe('Firestore Security Rules', () => {
     );
   });
 
+  it('master updating a skill they do not own is denied', async () => {
+    const master2Db = testEnv.authenticatedContext('master-2', { role: 'master' }).firestore();
+    await assertFails(
+      updateDoc(doc(master2Db, 'skills', 'skill_published'), {
+        title: 'Master-2 unauthorized title update',
+      })
+    );
+  });
+
   it('master changing a review_request field other than status is denied', async () => {
     const master1Db = testEnv.authenticatedContext('master-1', { role: 'master' }).firestore();
     await assertFails(

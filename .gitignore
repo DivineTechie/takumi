@@ -72,3 +72,7 @@ evals/**/eval_set/
 Thumbs.db
 .vscode/
 .idea/
+
+# Private submission materials (safety net)
+takumi-private/
+*PRIVATE*

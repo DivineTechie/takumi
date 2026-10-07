@@ -5,13 +5,18 @@ import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n'
 import logoSvg from '../assets/logo.svg';
 
 export const SignInScreen: React.FC = () => {
-  const { user, loading, signInWithGoogle, sendSignInLink } = useAuth();
+  const { user, loading, signInWithGoogle, sendSignInLink, signInWithPassword } = useAuth();
   const { language, setLanguage, t } = useTranslation();
   const location = useLocation();
   const [email, setEmail] = useState('');
   const [emailSent, setEmailSent] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const [showTestAccount, setShowTestAccount] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
+  const [testPassword, setTestPassword] = useState('');
+  const [isTestSubmitting, setIsTestSubmitting] = useState(false);
 
   if (!loading && user) {
     const fromPath = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
@@ -43,6 +48,22 @@ export const SignInScreen: React.FC = () => {
       setErrorMessage(msg);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleTestAccountSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testEmail || !testPassword) return;
+    try {
+      setIsTestSubmitting(true);
+      setErrorMessage(null);
+      await signInWithPassword(testEmail, testPassword);
+    } catch (err: unknown) {
+      console.error('Test account sign-in error:', err);
+      const msg = err instanceof Error ? err.message : 'Invalid test credentials';
+      setErrorMessage(msg);
+    } finally {
+      setIsTestSubmitting(false);
     }
   };
 
@@ -158,6 +179,49 @@ export const SignInScreen: React.FC = () => {
                   <span>{isSubmitting ? t('sign_in_email_sending') : t('sign_in_email_button')}</span>
                 </button>
               </form>
+
+              {/* Test Account Section for Judges / QA */}
+              <div className="w-full pt-1 flex flex-col items-center">
+                <button
+                  type="button"
+                  onClick={() => setShowTestAccount(!showTestAccount)}
+                  className="text-xs font-semibold text-on-surface-variant hover:text-on-surface flex items-center gap-1 cursor-pointer transition-colors py-1"
+                >
+                  <span>Use a test account</span>
+                  <span className="material-symbols-outlined text-[16px]">
+                    {showTestAccount ? 'expand_less' : 'expand_more'}
+                  </span>
+                </button>
+
+                {showTestAccount && (
+                  <form onSubmit={handleTestAccountSubmit} className="w-full space-y-2.5 mt-2.5 pt-2.5 border-t border-outline-variant/60">
+                    <input
+                      type="email"
+                      required
+                      value={testEmail}
+                      onChange={(e) => setTestEmail(e.target.value)}
+                      placeholder="judge-trainee@takumi-cup-2026.web.app"
+                      className="w-full min-h-[48px] h-[48px] bg-surface-container border border-outline-variant rounded-lg px-3.5 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary-container text-[15px]"
+                    />
+                    <input
+                      type="password"
+                      required
+                      value={testPassword}
+                      onChange={(e) => setTestPassword(e.target.value)}
+                      placeholder="Password"
+                      className="w-full min-h-[48px] h-[48px] bg-surface-container border border-outline-variant rounded-lg px-3.5 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary-container text-[15px]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isTestSubmitting || !testEmail || !testPassword}
+                      className="w-full min-h-[48px] h-[48px] bg-primary text-on-primary hover:bg-primary/90 active:bg-primary rounded-lg font-semibold text-[15px] flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer shadow-sm"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">badge</span>
+                      <span>{isTestSubmitting ? 'Signing in…' : 'Sign in with test account'}</span>
+                    </button>
+                  </form>
+                )}
+              </div>
             </>
           )}
         </div>

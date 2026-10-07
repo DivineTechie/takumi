@@ -7,6 +7,7 @@ import {
   sendSignInLinkToEmail,
   isSignInWithEmailLink,
   signInWithEmailLink,
+  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   updateProfile,
@@ -25,6 +26,7 @@ export interface AuthContextType {
   role: Role | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
   sendSignInLink: (email: string) => Promise<void>;
   finishSignInWithEmail: (email?: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -79,6 +81,11 @@ export async function completeEmailSignIn(email?: string): Promise<User> {
 
   const credential = await signInWithEmailLink(auth, targetEmail, window.location.href);
   window.localStorage.removeItem('emailForSignIn');
+  return credential.user;
+}
+
+export async function signInWithPasswordAction(email: string, pass: string): Promise<User> {
+  const credential = await signInWithEmailAndPassword(auth, email, pass);
   return credential.user;
 }
 
@@ -162,6 +169,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     role,
     loading,
     signInWithGoogle: signInWithGoogleAction,
+    signInWithPassword: async (email: string, pass: string) => {
+      const newUser = await signInWithPasswordAction(email, pass);
+      setUser(newUser);
+      await syncUserRole(newUser);
+    },
     sendSignInLink: sendEmailSignInLink,
     finishSignInWithEmail: async (email) => {
       const newUser = await completeEmailSignIn(email);

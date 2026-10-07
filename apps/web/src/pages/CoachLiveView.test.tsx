@@ -285,11 +285,11 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
   });
 
   it('shows Checking… chip and plays soft tick during tool call, then clears chip on return', async () => {
-    let resolveVerify: (val: any) => void;
-    const verifyPromise = new Promise((resolve) => {
+    let resolveVerify!: (val: apiModule.VerifyResponse) => void;
+    const verifyPromise = new Promise<apiModule.VerifyResponse>((resolve) => {
       resolveVerify = resolve;
     });
-    vi.mocked(apiModule.verify).mockImplementation(() => verifyPromise as any);
+    vi.mocked(apiModule.verify).mockImplementation(() => verifyPromise);
 
     render(
       <MemoryRouter>
