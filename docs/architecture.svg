@@ -1,0 +1,248 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" width="100%" height="100%">
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .box { fill: #ffffff; stroke: #0f766e; stroke-width: 2; rx: 8; ry: 8; }
+      .box-dashed { fill: #ffffff; stroke: #94a3b8; stroke-width: 2; stroke-dasharray: 6 4; rx: 8; ry: 8; }
+      .box-cloud { fill: #f0fdf4; stroke: #15803d; stroke-width: 2; rx: 8; ry: 8; }
+      .box-ai { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 8; ry: 8; }
+      .box-ai-dashed { fill: #f8fafc; stroke: #64748b; stroke-width: 2; stroke-dasharray: 6 4; rx: 8; ry: 8; }
+      .box-data { fill: #fefce8; stroke: #ca8a04; stroke-width: 2; rx: 8; ry: 8; }
+      .text-title { font-family: 'Noto Sans', system-ui, sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+      .text-sub { font-family: 'Noto Sans', system-ui, sans-serif; font-size: 11px; font-weight: 500; fill: #475569; }
+      .text-flow { font-family: 'Noto Sans', system-ui, sans-serif; font-size: 10px; font-weight: 600; fill: #0369a1; }
+      .arrow { stroke: #0284c7; stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
+      .arrow-dashed { stroke: #64748b; stroke-width: 1.5; stroke-dasharray: 4 3; fill: none; marker-end: url(#arrowhead-gray); }
+      .group-label { font-family: 'Noto Sans', system-ui, sans-serif; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; fill: #334155; }
+      .legend-text { font-family: 'Noto Sans', system-ui, sans-serif; font-size: 12px; font-weight: 500; fill: #1e293b; }
+    </style>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#0284c7" />
+    </marker>
+    <marker id="arrowhead-gray" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#64748b" />
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="820" class="bg" />
+
+  <!-- Diagram Title Header -->
+  <text x="40" y="40" font-family="'Noto Sans', system-ui, sans-serif" font-size="22" font-weight="800" fill="#0f172a">TAKUMI (匠) — System Architecture</text>
+  <text x="40" y="62" font-family="'Noto Sans', system-ui, sans-serif" font-size="13" font-weight="500" fill="#475569">Manufacturing Skill Capture &amp; Multilingual Live Coaching on Google Cloud &amp; Gemini</text>
+
+  <!-- Section 1: User Clients (Left) -->
+  <rect x="40" y="90" width="220" height="420" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="12" />
+  <text x="55" y="115" class="group-label">Clients &amp; Edge Devices</text>
+
+  <!-- Trainee Phone -->
+  <g transform="translate(55, 135)">
+    <rect width="190" height="75" class="box" />
+    <text x="15" y="28" class="text-title">Trainee Phone (PWA)</text>
+    <text x="15" y="46" class="text-sub">Camera stream (1 FPS JPEG)</text>
+    <text x="15" y="60" class="text-sub">16 kHz PCM Mic / 24 kHz Spkr</text>
+  </g>
+
+  <!-- Supervisor Laptop -->
+  <g transform="translate(55, 230)">
+    <rect width="190" height="65" class="box" />
+    <text x="15" y="26" class="text-title">Supervisor Dashboard</text>
+    <text x="15" y="44" class="text-sub">Desktop Web (1440x900)</text>
+    <text x="15" y="58" class="text-sub">Active sessions, matrix, replay</text>
+  </g>
+
+  <!-- Master Phone -->
+  <g transform="translate(55, 315)">
+    <rect width="190" height="65" class="box-dashed" />
+    <text x="15" y="26" class="text-title">Master Craftsman</text>
+    <text x="15" y="44" class="text-sub">Capture &amp; Review UI</text>
+    <text x="15" y="58" class="text-sub">Video ingestion &amp; verification</text>
+  </g>
+
+  <!-- Firebase Hosting & Auth -->
+  <g transform="translate(55, 400)">
+    <rect width="190" height="85" class="box-cloud" />
+    <text x="15" y="24" class="text-title">Firebase App Shell</text>
+    <text x="15" y="42" class="text-sub">Firebase Hosting (CDN)</text>
+    <text x="15" y="56" class="text-sub">Firebase Auth (Google / Email)</text>
+    <text x="15" y="70" class="text-sub">Custom claims (role)</text>
+  </g>
+
+  <!-- Section 2: Application Compute & Security (Middle Column) -->
+  <rect x="300" y="90" width="270" height="580" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" rx="12" />
+  <text x="315" y="115" class="group-label">Cloud Run Services &amp; Security</text>
+
+  <!-- takumi-api -->
+  <g transform="translate(315, 135)">
+    <rect width="240" height="135" class="box-cloud" />
+    <text x="15" y="26" class="text-title">takumi-api (Cloud Run)</text>
+    <text x="15" y="46" class="text-sub">Python 3.12 FastAPI (Member A)</text>
+    <text x="15" y="64" class="text-sub">• POST /api/live-token (single-use)</text>
+    <text x="15" y="80" class="text-sub">• POST /api/watch (1-FPS watcher)</text>
+    <text x="15" y="96" class="text-sub">• POST /api/verify, /api/point</text>
+    <text x="15" y="112" class="text-sub">• POST /api/sessions &amp; /api/status</text>
+  </g>
+
+  <!-- Model Armor -->
+  <g transform="translate(315, 290)">
+    <rect width="240" height="60" class="box" />
+    <text x="15" y="26" class="text-title">Model Armor</text>
+    <text x="15" y="46" class="text-sub">Prompt injection &amp; safety filter</text>
+  </g>
+
+  <!-- Secret Manager -->
+  <g transform="translate(315, 370)">
+    <rect width="240" height="60" class="box" />
+    <text x="15" y="26" class="text-title">Secret Manager</text>
+    <text x="15" y="46" class="text-sub">GEMINI_API_KEY (server-only)</text>
+  </g>
+
+  <!-- Cloud Monitoring & Logging -->
+  <g transform="translate(315, 450)">
+    <rect width="240" height="60" class="box" />
+    <text x="15" y="26" class="text-title">Cloud Monitoring &amp; Logs</text>
+    <text x="15" y="46" class="text-sub">Trace correlation, latency alerts</text>
+  </g>
+
+  <!-- takumi-forge -->
+  <g transform="translate(315, 530)">
+    <rect width="240" height="120" class="box-dashed" />
+    <text x="15" y="26" class="text-title">takumi-forge (Cloud Run)</text>
+    <text x="15" y="46" class="text-sub">Google ADK 2.0 Graph (Member B)</text>
+    <text x="15" y="64" class="text-sub">• Video segmentation &amp; keyframes</text>
+    <text x="15" y="80" class="text-sub">• Step &amp; "Why" extraction</text>
+    <text x="15" y="96" class="text-sub">• Multilingual localization</text>
+  </g>
+
+  <!-- Section 3: Google GenAI Models (Top Right) -->
+  <rect x="610" y="90" width="550" height="340" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" rx="12" />
+  <text x="625" y="115" class="group-label">Google AI Models (google-genai SDK)</text>
+
+  <!-- Gemini Live -->
+  <g transform="translate(625, 135)">
+    <rect width="250" height="85" class="box-ai" />
+    <text x="15" y="26" class="text-title">gemini-3.8-live (Live)</text>
+    <text x="15" y="46" class="text-sub">Direct WebSocket over wss://</text>
+    <text x="15" y="60" class="text-sub">Single-use ephemeral token</text>
+    <text x="15" y="74" class="text-sub">Reacts to speech &amp; camera events</text>
+  </g>
+
+  <!-- Visual Watcher -->
+  <g transform="translate(895, 135)">
+    <rect width="250" height="85" class="box-ai" />
+    <text x="15" y="26" class="text-title">gemini-3.5-flash-lite (Live)</text>
+    <text x="15" y="46" class="text-sub">1-FPS Visual Step Watcher</text>
+    <text x="15" y="60" class="text-sub">Detects state, mistake, hazard</text>
+    <text x="15" y="74" class="text-sub">Fast error fallback &lt; 2.5s</text>
+  </g>
+
+  <!-- Strict Verifier -->
+  <g transform="translate(625, 235)">
+    <rect width="250" height="85" class="box-ai" />
+    <text x="15" y="26" class="text-title">gemini-3.8-flash (Live)</text>
+    <text x="15" y="46" class="text-sub">Objective Step Verifier</text>
+    <text x="15" y="60" class="text-sub">Evaluates visible success criteria</text>
+    <text x="15" y="74" class="text-sub">Enforces safety rules strictly</text>
+  </g>
+
+  <!-- Spatial Pointer -->
+  <g transform="translate(895, 235)">
+    <rect width="250" height="85" class="box-ai" />
+    <text x="15" y="26" class="text-title">gemini-robotics-er-2-preview (Live)</text>
+    <text x="15" y="46" class="text-sub">Spatial Pointing &amp; Coordinates</text>
+    <text x="15" y="60" class="text-sub">Identifies terminal screws &amp; parts</text>
+    <text x="15" y="74" class="text-sub">Returns normalized [y, x] reticle</text>
+  </g>
+
+  <!-- Forge Models (Dashed) -->
+  <g transform="translate(625, 335)">
+    <rect width="520" height="80" class="box-ai-dashed" />
+    <text x="15" y="24" class="text-title">Forge Pipeline Models (In Progress - Member B)</text>
+    <text x="15" y="44" class="text-sub">• gemini-omni-1.1-flash (video segmentation)  • gemini-3.8-flash (why &amp; translation)</text>
+    <text x="15" y="60" class="text-sub">• veo-3.1-fast-generate-preview (mistakes)    • gemini-3.1-flash-image (diagram cards)</text>
+  </g>
+
+  <!-- Section 4: Data Layer (Bottom Right) -->
+  <rect x="610" y="450" width="550" height="220" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" rx="12" />
+  <text x="625" y="475" class="group-label">Google Cloud Data Layer</text>
+
+  <!-- Cloud Firestore -->
+  <g transform="translate(625, 495)">
+    <rect width="165" height="155" class="box-data" />
+    <text x="12" y="24" class="text-title">Cloud Firestore</text>
+    <text x="12" y="42" class="text-sub">Native mode database</text>
+    <text x="12" y="60" class="text-sub">• skills</text>
+    <text x="12" y="76" class="text-sub">• sessions</text>
+    <text x="12" y="92" class="text-sub">• session events</text>
+    <text x="12" y="108" class="text-sub">• review_requests</text>
+    <text x="12" y="124" class="text-sub">• passports</text>
+    <text x="12" y="140" class="text-sub">Role security rules</text>
+  </g>
+
+  <!-- Cloud Storage -->
+  <g transform="translate(805, 495)">
+    <rect width="165" height="155" class="box-data" />
+    <text x="12" y="24" class="text-title">Cloud Storage</text>
+    <text x="12" y="42" class="text-sub">Unified media bucket</text>
+    <text x="12" y="60" class="text-sub">• step frame JPEGs</text>
+    <text x="12" y="76" class="text-sub">• badge SVG / PNGs</text>
+    <text x="12" y="92" class="text-sub">• master video raw</text>
+    <text x="12" y="108" class="text-sub">• generated clips</text>
+    <text x="12" y="124" class="text-sub">Direct signed URLs</text>
+    <text x="12" y="140" class="text-sub">Storage security rules</text>
+  </g>
+
+  <!-- BigQuery -->
+  <g transform="translate(985, 495)">
+    <rect width="160" height="155" class="box-data" />
+    <text x="12" y="24" class="text-title">BigQuery</text>
+    <text x="12" y="42" class="text-sub">Dataset: takumi</text>
+    <text x="12" y="60" class="text-sub">• session_events</text>
+    <text x="12" y="76" class="text-sub">  (streamed audit)</text>
+    <text x="12" y="92" class="text-sub">• api_calls</text>
+    <text x="12" y="108" class="text-sub">  (latency timings)</text>
+    <text x="12" y="124" class="text-sub">Powers /status p50</text>
+    <text x="12" y="140" class="text-sub">&amp; supervisor insights</text>
+  </g>
+
+  <!-- Interconnection Arrows -->
+  <!-- Trainee to Live Model Direct WS -->
+  <path d="M 245, 160 C 440, 160 440, 160 625, 160" class="arrow" />
+  <text x="350" y="152" class="text-flow">wss:// Live Audio + Video (direct)</text>
+
+  <!-- Trainee to takumi-api -->
+  <path d="M 245, 185 C 280, 185 280, 200 315, 200" class="arrow" />
+  <text x="248" y="200" class="text-flow">POST /watch, /token</text>
+
+  <!-- takumi-api to Models -->
+  <path d="M 555, 180 L 895, 180" class="arrow" />
+  <path d="M 555, 250 L 625, 260" class="arrow" />
+  <path d="M 555, 265 L 895, 275" class="arrow" />
+
+  <!-- takumi-api to Data -->
+  <path d="M 555, 220 C 585, 220 585, 520 625, 520" class="arrow" />
+  <path d="M 435, 270 C 435, 550 780, 550 805, 550" class="arrow" />
+  <path d="M 450, 270 C 450, 600 950, 600 985, 600" class="arrow" />
+
+  <!-- Legend (Bottom Left) -->
+  <rect x="40" y="700" width="1120" height="90" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" rx="8" />
+  <text x="60" y="725" font-family="'Noto Sans', system-ui, sans-serif" font-size="13" font-weight="700" fill="#0f172a">LEGEND &amp; OWNERSHIP</text>
+
+  <rect x="60" y="740" width="24" height="14" class="box-cloud" />
+  <text x="92" y="752" class="legend-text">Live Deployed Platform / Compute (Member A)</text>
+
+  <rect x="390" y="740" width="24" height="14" class="box-ai" />
+  <text x="422" y="752" class="legend-text">Live Deployed Gemini Models (Member A)</text>
+
+  <rect x="700" y="740" width="24" height="14" class="box-data" />
+  <text x="732" y="752" class="legend-text">Live Database, Storage &amp; Telemetry (Both / A)</text>
+
+  <rect x="60" y="765" width="24" height="14" class="box-dashed" />
+  <text x="92" y="777" class="legend-text">In Progress Master Capture Pipeline (Member B - branch forge)</text>
+
+  <rect x="520" y="765" width="24" height="14" class="box-ai-dashed" />
+  <text x="552" y="777" class="legend-text">In Progress Video &amp; Simulation Models (Member B)</text>
+
+  <line x1="880" y1="772" x2="920" y2="772" class="arrow" />
+  <text x="930" y="777" class="legend-text">Authenticated / Encrypted Flow</text>
+</svg>

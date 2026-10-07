@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import {
@@ -13,7 +14,7 @@ import {
 } from 'lucide-react';
 import type { Skill } from '../../../../../shared/schema/ts/skills.ts';
 
-interface SkillLibraryProps {
+export interface SkillLibraryProps {
   onNavigateToCapture?: () => void;
   onNavigateToReview?: (skillId: string) => void;
 }
@@ -22,6 +23,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
   onNavigateToCapture,
   onNavigateToReview,
 }) => {
+  const navigate = useNavigate();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'in_review'>('all');
@@ -104,7 +106,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
           <button
             onClick={() => {
               if (onNavigateToCapture) onNavigateToCapture();
-              else window.location.href = '/capture';
+              else navigate('/capture');
             }}
             style={{
               display: 'flex',
@@ -205,7 +207,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
                 key={item.id}
                 onClick={() => {
                   if (onNavigateToReview) onNavigateToReview(item.id);
-                  else window.location.href = `/review/${item.id}`;
+                  else navigate(`/review/${item.id}`);
                 }}
                 style={{
                   backgroundColor: '#18181b',

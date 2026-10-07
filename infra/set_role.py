@@ -18,7 +18,7 @@ ALLOWED_ROLES = {"master", "trainee", "supervisor"}
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Set custom user role claim in Firebase Auth")
-    parser.add_argument("email", help="User email address")
+    parser.add_argument("identifier", help="User UID or email address")
     parser.add_argument("role", help="Role: master | trainee | supervisor")
     args = parser.parse_args()
 
@@ -29,7 +29,10 @@ def main() -> None:
     try:
         if not firebase_admin._apps:
             firebase_admin.initialize_app()
-        user = auth.get_user_by_email(args.email)
+        try:
+            user = auth.get_user(args.identifier)
+        except Exception:
+            user = auth.get_user_by_email(args.identifier)
         auth.set_custom_user_claims(user.uid, {"role": args.role})
         print("role set")
     except Exception as e:

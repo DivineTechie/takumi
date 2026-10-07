@@ -17,6 +17,8 @@ class AuthUser(NamedTuple):
     uid: str
     role: str | None
     email: str | None
+    email_verified: bool = False
+    display_name: str | None = None
 
 
 _firestore_client: firestore.Client | None = None
@@ -59,11 +61,19 @@ def verify_auth_token(
     uid = decoded_token.get("uid")
     role = decoded_token.get("role")
     email = decoded_token.get("email")
+    email_verified = bool(decoded_token.get("email_verified", False))
+    display_name = decoded_token.get("name")
 
     if not uid:
         raise HTTPException(status_code=401, detail="Invalid token: missing uid")
 
-    return AuthUser(uid=uid, role=role, email=email)
+    return AuthUser(
+        uid=uid,
+        role=role,
+        email=email,
+        email_verified=email_verified,
+        display_name=display_name,
+    )
 
 
 def require_role(*roles: str):

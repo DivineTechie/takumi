@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { regenerateStepPart } from '../../lib/api';
@@ -19,8 +20,8 @@ import {
 } from 'lucide-react';
 import type { Skill } from '../../../../../shared/schema/ts/skills.ts';
 
-interface MasterReviewProps {
-  skillId: string;
+export interface MasterReviewProps {
+  skillId?: string;
   onPublished?: (skillId: string) => void;
 }
 
@@ -33,7 +34,10 @@ interface ReviewRequestItem {
   status: 'open' | 'applied' | 'dismissed';
 }
 
-export const MasterReview: React.FC<MasterReviewProps> = ({ skillId, onPublished }) => {
+export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId, onPublished }) => {
+  const { skillId: routeSkillId } = useParams<{ skillId: string }>();
+  const navigate = useNavigate();
+  const skillId = propSkillId || routeSkillId || '';
   const [skill, setSkill] = useState<Skill | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeLang, setActiveLang] = useState<string>('en');
@@ -164,7 +168,11 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId, onPublished
 
       setSkill(updatedSkill);
       setPublishSuccess(true);
-      if (onPublished) onPublished(skill.id);
+      if (onPublished) {
+        onPublished(skill.id);
+      } else {
+        setTimeout(() => navigate('/library'), 1200);
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('Failed to publish skill:', msg);

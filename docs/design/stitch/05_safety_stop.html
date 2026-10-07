@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>TAKUMI // ST-04 - Safety Stop</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface": "#0f141b",
+            "tertiary-fixed": "#ffdad7",
+            "surface-bright": "#343941",
+            "primary": "#ffc174",
+            "surface-container-lowest": "#090f15",
+            "tertiary-fixed-dim": "#ffb3ad",
+            "on-surface": "#dee2ec",
+            "surface-container-high": "#252a32",
+            "on-error": "#690005",
+            "primary-fixed-dim": "#ffb95f",
+            "on-tertiary": "#68000a",
+            "inverse-on-surface": "#2c3138",
+            "surface-container": "#1b2027",
+            "outline-variant": "#534434",
+            "on-secondary-container": "#004119",
+            "surface-variant": "#30353d",
+            "secondary-fixed": "#6bff8f",
+            "on-tertiary-fixed-variant": "#930013",
+            "on-primary-fixed-variant": "#653e00",
+            "background": "#0f141b",
+            "on-secondary-fixed-variant": "#005321",
+            "tertiary-container": "#ff938c",
+            "inverse-primary": "#855300",
+            "on-background": "#dee2ec",
+            "tertiary": "#ffbcb7",
+            "on-primary-fixed": "#2a1700",
+            "secondary": "#4ae176",
+            "on-surface-variant": "#d8c3ad",
+            "inverse-surface": "#dee2ec",
+            "surface-container-low": "#171c23",
+            "on-primary": "#472a00",
+            "surface-container-highest": "#30353d",
+            "on-primary-container": "#613b00",
+            "secondary-fixed-dim": "#4ae176",
+            "outline": "#a08e7a",
+            "primary-container": "#f59e0b",
+            "surface-tint": "#ffb95f",
+            "on-secondary": "#003915",
+            "secondary-container": "#00b954",
+            "on-secondary-fixed": "#002109",
+            "on-error-container": "#ffdad6",
+            "on-tertiary-fixed": "#410004",
+            "error-container": "#93000a",
+            "error": "#ffb4ab",
+            "on-tertiary-container": "#8d0012",
+            "primary-fixed": "#ffddb8",
+            "surface-dim": "#0f141b"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "gutter": "1.5rem",
+            "space-sm": "0.75rem",
+            "space-xs": "0.5rem",
+            "space-xl": "3rem",
+            "margin": "2rem",
+            "space-md": "1.25rem",
+            "gutter-mobile": "1rem",
+            "space-lg": "2rem",
+            "margin-mobile": "1rem"
+          },
+          "fontFamily": {
+            "body-lg": ["Noto Sans"],
+            "headline-sm": ["Noto Sans"],
+            "headline-xl": ["Noto Sans"],
+            "label-md": ["Noto Sans"],
+            "body-md": ["Noto Sans"],
+            "headline-lg": ["Noto Sans"],
+            "code-num": ["Noto Sans"],
+            "headline-md": ["Noto Sans"],
+            "label-lg": ["Noto Sans"],
+            "headline-xl-mobile": ["Noto Sans"],
+            "headline-lg-mobile": ["Noto Sans"]
+          },
+          "fontSize": {
+            "body-lg": ["20px", { "lineHeight": "30px", "fontWeight": "400" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "headline-xl": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800" }],
+            "label-md": ["16px", { "lineHeight": "22px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "body-md": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+            "headline-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+            "code-num": ["22px", { "lineHeight": "28px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "700" }],
+            "label-lg": ["18px", { "lineHeight": "24px", "letterSpacing": "0.04em", "fontWeight": "700" }],
+            "headline-xl-mobile": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "800" }],
+            "headline-lg-mobile": ["26px", { "lineHeight": "34px", "letterSpacing": "0em", "fontWeight": "700" }]
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 600, 'GRAD' 0, 'opsz' 48;
+      display: inline-block;
+      vertical-align: middle;
+      line-height: 1;
+    }
+    @keyframes alert-pulse {
+      0%, 100% { border-color: rgba(239, 68, 68, 0.9); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      50% { border-color: rgba(254, 202, 202, 1); box-shadow: 0 0 24px 6px rgba(220, 38, 38, 0.55); }
+    }
+    .animate-alert-border {
+      animation: alert-pulse 1.8s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="bg-background text-on-surface m-0 p-0 overflow-x-hidden antialiased flex justify-center items-center min-h-screen">
+<!-- Mobile Viewport Container: 390x844 (iPhone 14 standard) -->
+<div class="relative w-full max-w-[390px] h-[844px] overflow-hidden bg-surface flex flex-col justify-between select-none shadow-2xl"><!-- Full Screen Red Emergency Background with 10% Opacity Camera Image --><div class="absolute inset-0 z-0 bg-[#C62828] overflow-hidden"><img alt="Workstation camera view" class="w-full h-full object-cover opacity-10 mix-blend-luminosity" src="https://lh3.googleusercontent.com/aida/AEtjO1Vq5QtzpQQg0FDa1peDskbvZFolUcfRBVBcDrJiQFHlyIX3V6RItposijn0t3M8Bqxe4dMEwsxtbFpzFORxMsqGNMG81xN27BF7xI-CVUEWyYq6wCn8o6BdUPHi2-5aDA02uCnn1glOJ9qMNjL36oo_dpfYOTEQXRL7XvaDZAVdb_W0cgzNSDIUU0Ue37TLbFZB0mt8bNOM_jSOd5srnQbAUZMq3dzlJRGYr1-XYmGbdI95k0Bi4RTOsXbw"/></div><!-- Main Emergency Content Layer --><div class="relative z-10 flex-1 flex flex-col justify-between px-6 pt-16 pb-8 select-none"><div class="flex-1 flex flex-col items-center justify-center text-center"><!-- 120px Crisp White Stop Hand Icon --><div class="mb-4 flex items-center justify-center"><span class="material-symbols-outlined text-white" style="font-size: 120px; font-variation-settings: 'FILL' 1;">front_hand</span></div><!-- Massive STOP Label --><h1 class="text-white font-extrabold tracking-wide uppercase leading-none mb-6" style="font-size: 72px; font-weight: 900;">STOP</h1><!-- Violation Rule --><p class="text-white font-bold text-center leading-tight mb-4 max-w-[320px]" style="font-size: 28px;">No bare copper visible outside a terminal</p><!-- Direct Imperative --><p class="text-white font-medium tracking-normal text-center" style="font-size: 22px;">Keep your hands away.</p></div><!-- Bottom Action Area --><div class="w-full pt-4"><button class="w-full h-16 min-h-[64px] rounded-xl bg-white text-[#C62828] font-extrabold text-xl shadow-lg active:scale-95 transition-all flex items-center justify-center tracking-wide cursor-pointer" id="safeButton" onclick="confirmSafe()" type="button"><span id="btnText">I've made it safe</span></button></div></div></div>
+<script>
+    function confirmSafe() {
+      const btn = document.getElementById('safeButton');
+      const text = document.getElementById('btnText');
+      const icon = document.getElementById('btnIcon');
+
+      // Visual feedback for industrial touch confirmation
+      btn.classList.remove('bg-surface-bright', 'border-white', 'text-white');
+      btn.classList.add('bg-secondary-container', 'border-secondary', 'text-on-secondary-container');
+      text.innerText = "VERIFYING CAMERA FEED...";
+      icon.innerText = "sync";
+      icon.classList.add('animate-spin');
+
+      setTimeout(() => {
+        text.innerText = "SAFETY VERIFIED";
+        icon.innerText = "check_circle";
+        icon.classList.remove('animate-spin');
+      }, 1200);
+    }
+  </script>
+</body></html>

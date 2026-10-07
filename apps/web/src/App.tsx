@@ -1,55 +1,17 @@
-import { useState, useEffect } from 'react';
-import { CaptureScreen } from './features/capture/CaptureScreen';
-import { AgentTrace } from './features/review/AgentTrace';
-import { MasterReview } from './features/review/MasterReview';
-import { SkillLibrary } from './features/library/SkillLibrary';
+import { useMemo } from 'react';
+import { RouterProvider } from 'react-router-dom';
+import { AuthProvider } from './lib/auth';
+import { I18nProvider } from './i18n';
+import { createAppRouter } from './router';
 
 export default function App() {
-  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const router = useMemo(() => createAppRouter(), []);
 
-  useEffect(() => {
-    const onPopState = () => setCurrentPath(window.location.pathname);
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, []);
-
-  const navigate = (path: string) => {
-    window.history.pushState({}, '', path);
-    setCurrentPath(path);
-  };
-
-  if (currentPath === '/capture' || currentPath === '/') {
-    return <CaptureScreen onJobCreated={(jobId) => navigate(`/forge/${jobId}`)} />;
-  }
-
-  if (currentPath.startsWith('/forge/')) {
-    const jobId = currentPath.replace('/forge/', '');
-    return (
-      <AgentTrace
-        jobId={jobId}
-        onNavigateToReview={(skillId) => navigate(`/review/${skillId}`)}
-      />
-    );
-  }
-
-  if (currentPath.startsWith('/review/')) {
-    const skillId = currentPath.replace('/review/', '');
-    return (
-      <MasterReview
-        skillId={skillId}
-        onPublished={() => navigate('/library')}
-      />
-    );
-  }
-
-  if (currentPath === '/library') {
-    return (
-      <SkillLibrary
-        onNavigateToCapture={() => navigate('/capture')}
-        onNavigateToReview={(skillId) => navigate(`/review/${skillId}`)}
-      />
-    );
-  }
-
-  return <CaptureScreen onJobCreated={(jobId) => navigate(`/forge/${jobId}`)} />;
+  return (
+    <I18nProvider>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </I18nProvider>
+  );
 }

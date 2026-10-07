@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { collection, query, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { getVideoObjectUrl } from './mediaStorage';
@@ -18,8 +19,8 @@ import {
   FastForward,
 } from 'lucide-react';
 
-interface AgentTraceProps {
-  jobId: string;
+export interface AgentTraceProps {
+  jobId?: string;
   onNavigateToReview?: (skillId: string) => void;
 }
 
@@ -385,7 +386,10 @@ const TRANSLATIONS_MAP: Record<string, Record<string, { instruction: string; why
   },
 };
 
-export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToReview }) => {
+export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavigateToReview }) => {
+  const { jobId: paramJobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
+  const jobId = propJobId || paramJobId || '';
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [activeAgent, setActiveAgent] = useState<string>('segmenter');
   const [completedAgents, setCompletedAgents] = useState<Set<string>>(new Set());
@@ -851,7 +855,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId, onNavigateToRevie
                 if (onNavigateToReview) {
                   onNavigateToReview(skillId || 'skill_terminal_wiring_v1');
                 } else {
-                  window.location.href = `/review/${skillId || 'skill_terminal_wiring_v1'}`;
+                  navigate(`/review/${skillId || 'skill_terminal_wiring_v1'}`);
                 }
               }}
               style={{

@@ -29,9 +29,25 @@ LIMIT_CHECKS_PER_DAY = int(os.environ.get("LIMIT_CHECKS_PER_DAY", "3000"))
 
 # Timeouts in seconds
 TIMEOUT_WATCH_S = 6.0
-TIMEOUT_VERIFY_S = 15.0
+TIMEOUT_VERIFY_S = 12.0
 TIMEOUT_POINT_S = 15.0
 TIMEOUT_LIVE_TOKEN_S = 10.0
 
 # Request limits
 MAX_REQUEST_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
+
+# Cloud Storage Bucket
+STORAGE_BUCKET = os.environ.get("FIREBASE_STORAGE_BUCKET", "takumi-cup-2026.firebasestorage.app")
+BQ_LOCATION = os.environ.get("BIGQUERY_LOCATION", "asia-southeast1")
+SESSIONS_ENABLED = os.environ.get("SESSIONS_ENABLED", "true").lower() in ("true", "1", "yes")
+
+# Supervisor insight exclusions
+EXCLUDED_UIDS = set(
+    filter(None, [u.strip() for u in os.environ.get("EXCLUDED_UIDS", "").split(",")])
+) | {"smoke-trainee"} | {f"loadtest-{i}" for i in range(1, 11)}
+
+# Latency tuning settings (defaults preserve existing production behavior)
+VERIFY_THINKING = os.environ.get("VERIFY_THINKING", "default").strip().lower()
+VERIFY_MAX_PX = int(os.environ.get("VERIFY_MAX_PX", "1280"))
+POINT_THINKING = os.environ.get("POINT_THINKING", "default").strip().lower()
+

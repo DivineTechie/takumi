@@ -163,6 +163,15 @@ describe('Firestore Security Rules', () => {
     );
   });
 
+  it('master updating a skill they do not own is denied', async () => {
+    const master2Db = testEnv.authenticatedContext('master-2', { role: 'master' }).firestore();
+    await assertFails(
+      updateDoc(doc(master2Db, 'skills', 'skill_published'), {
+        title: 'Master-2 unauthorized title update',
+      })
+    );
+  });
+
   it('master changing a review_request field other than status is denied', async () => {
     const master1Db = testEnv.authenticatedContext('master-1', { role: 'master' }).firestore();
     await assertFails(
@@ -190,14 +199,14 @@ describe('Firestore Security Rules', () => {
     await assertSucceeds(getDoc(doc(supervisorDb, 'review_requests', 'rev_1')));
   });
 
-  it('unauthenticated user getting a passport is allowed', async () => {
+  it('client reading or listing passports directly is denied', async () => {
     const unauthDb = testEnv.unauthenticatedContext().firestore();
-    await assertSucceeds(getDoc(doc(unauthDb, 'passports', 'pass_1')));
-  });
-
-  it('unauthenticated user listing passports is denied', async () => {
-    const unauthDb = testEnv.unauthenticatedContext().firestore();
+    await assertFails(getDoc(doc(unauthDb, 'passports', 'pass_1')));
     await assertFails(getDocs(collection(unauthDb, 'passports')));
+
+    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    await assertFails(getDoc(doc(traineeDb, 'passports', 'pass_1')));
+    await assertFails(getDoc(doc(traineeDb, 'passport_locks', 'lock_1')));
   });
 
   it('signed-in user with no role can read published skills but not sessions', async () => {

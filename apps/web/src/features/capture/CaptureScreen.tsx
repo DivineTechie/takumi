@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 import { db, storage, auth } from '../../lib/firebase';
@@ -16,6 +17,7 @@ export interface CaptureScreenProps {
 }
 
 export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) => {
+  const navigate = useNavigate();
   const [stage, setStage] = useState<'setup' | 'recording' | 'finished'>('setup');
   const [skillTitle, setSkillTitle] = useState('');
   const [sourceLanguage, setSourceLanguage] = useState<'ja' | 'en' | 'hi' | 'vi' | 'id' | 'fil'>('ja');
@@ -95,8 +97,12 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
         }
       }
 
-      // 3. Create captures/{captureId} in Firestore
-      const masterUid = auth.currentUser?.uid || 'master_dev_user';
+      // 3. Create captures/{captureId} in Firestore (requires signed-in master)
+      if (!auth.currentUser) {
+        throw new Error('Sign-in required: Please sign in with an authorized Master account to record captures.');
+      }
+
+      const masterUid = auth.currentUser.uid;
       const initialDoc: Capture = {
         id: generatedId,
         master_uid: masterUid,
@@ -213,8 +219,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
       if (onJobCreated) {
         onJobCreated(forgeJob.job_id, forgeJob.skill_id);
       } else {
-        window.history.pushState({}, '', `/forge/${forgeJob.job_id}`);
-        window.dispatchEvent(new PopStateEvent('popstate'));
+        navigate(`/forge/${forgeJob.job_id}`);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
