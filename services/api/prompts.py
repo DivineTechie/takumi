@@ -171,3 +171,31 @@ INSTRUCTIONS:
 6. Return valid JSON matching the schema.
 """
 
+
+class InspectionStageResponse(BaseModel):
+    defective: bool = Field(..., description="True if a defect is present, false otherwise.")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score between 0.0 and 1.0.")
+    defect: str | None = Field(default=None, description="Short name of the defect or 'none'.")
+    where: str | None = Field(default=None, description="Short location of the defect or 'none'.")
+
+
+def build_inspection_prompt(description: str, defect_types: list[str], stage: str) -> str:
+    """Builds the exact factory inspector prompt for screen or confirm stages."""
+    defect_types_str = "; ".join(defect_types) if defect_types else "none"
+    stage_line = (
+        "The first 3 images are known-good reference units. The LAST image is the unit to inspect. Compare it against the references."
+        if stage == "screen"
+        else "Inspect the unit in the image."
+    )
+    lines = [
+        "You are a strict end-of-line quality inspector in a factory.",
+        f"The product is {description}.",
+        f"Known defect types for this product: {defect_types_str}.",
+        "Any other visible damage, contamination or missing material also counts as a defect.",
+        "Normal small variation in position, rotation, lighting and natural texture is NOT a defect.",
+        stage_line,
+        'Answer in JSON: defective (true/false), confidence (0-1), defect (short name or "none"), where (short location or "none").',
+    ]
+    return "\n".join(lines)
+
+

@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 import firebase_admin
 from firebase_admin import auth
 from google.cloud import firestore
@@ -88,7 +88,7 @@ def require_role(*roles: str):
     return _role_checker
 
 
-def check_rate_limit(uid: str, limit_type: str) -> None:
+def check_rate_limit(uid: str, limit_type: str, cost: int = 1) -> None:
     """Enforces daily per-user rate limits in Firestore collection rate_limits/{uid}_{YYYYMMDD}.
 
     limit_type: "live_tokens" (max LIMIT_LIVE_TOKENS_PER_DAY) or "checks" (max LIMIT_CHECKS_PER_DAY).
@@ -114,11 +114,11 @@ def check_rate_limit(uid: str, limit_type: str) -> None:
             data = snapshot.to_dict() or {}
             current = data.get(limit_type, 0)
 
-        if current >= limit:
+        if current + cost > limit:
             return False, current
 
-        txn.set(doc_ref, {limit_type: current + 1}, merge=True)
-        return True, current + 1
+        txn.set(doc_ref, {limit_type: current + cost}, merge=True)
+        return True, current + cost
 
     allowed, current_val = txn_rate_limit(transaction)
 
@@ -131,3 +131,4 @@ def check_rate_limit(uid: str, limit_type: str) -> None:
             detail=f"Daily rate limit for {limit_type} exceeded ({current_val}/{limit})",
             headers={"Retry-After": str(retry_after)},
         )
+

@@ -10,3 +10,6 @@ export * from './review_requests.js';
 export * from './sessions.js';
 export * from './session_events.js';
 export * from './passports.js';
+export * from './products.js';
+export * from './units.js';
+export * from './inspections.js';

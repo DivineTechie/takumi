@@ -2,13 +2,16 @@
 
 import base64
 from datetime import datetime, timedelta, timezone
+import io
 import json
 import logging
+import re
 import secrets
 import statistics
 import time
 from typing import Any, Literal
 
+from PIL import Image
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -29,11 +32,13 @@ from services.api.auth import (
     check_rate_limit,
     get_firestore_client,
     init_firebase_admin,
+    require_role,
     verify_auth_token,
 )
 from services.api.bigquery_client import (
     get_bigquery_client,
     stream_api_call,
+    stream_inspection_event,
     stream_session_event,
 )
 from services.api.config import (
@@ -46,7 +51,12 @@ from services.api.config import (
     VERIFY_MAX_PX,
 )
 from services.api.model_armor import screen_text
-from services.api.storage_client import get_signed_url_for_gs_uri, upload_frame_jpeg
+from services.api.storage_client import (
+    download_blob_bytes,
+    get_signed_url_for_gs_uri,
+    upload_frame_jpeg,
+    upload_inspection_jpeg,
+)
 from services.api.gemini import (
     call_ask,
     call_point,
@@ -56,6 +66,7 @@ from services.api.gemini import (
     create_live_token,
 )
 from services.api.images import decode_and_validate_image, resize_to_jpeg_bytes
+from services.api.inspection import resize_inspection_image, run_inspection_pipeline
 from services.api.telemetry import elapsed_ms, init_telemetry, setup_logging
 
 logger = setup_logging()
@@ -68,14 +79,17 @@ app = FastAPI(title="TAKUMI API", version="0.1.0")
 
 
 class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
-    """Rejects incoming request payloads larger than MAX_REQUEST_SIZE_BYTES (2 MB) with 413."""
+    """Rejects incoming request payloads larger than MAX_REQUEST_SIZE_BYTES (2 MB) with 413,
+    except for inspection routes which accept up to 12 MB for 8 MB decoded images.
+    """
 
     async def dispatch(self, request: Request, call_next):
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > MAX_REQUEST_SIZE_BYTES:
+        limit = 12 * 1024 * 1024 if request.url.path.startswith("/api/inspect") else MAX_REQUEST_SIZE_BYTES
+        if content_length and int(content_length) > limit:
             return JSONResponse(
                 status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                content={"detail": "Payload too large: maximum request body size is 2MB"},
+                content={"detail": "Payload too large"},
             )
         return await call_next(request)
 
@@ -1481,4 +1495,379 @@ async def post_csp_report(request: Request) -> Response:
         logger.warning(f"Failed to parse CSP report: {exc}")
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- End-of-Line Quality Inspection (P15) ---
+
+UNIT_ID_REGEX = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+class InspectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    product_id: str
+    image_b64: str
+    unit_id: str | None = None
+    mode: Literal["few_false_alarms", "catch_everything"] | None = None
+    source: Literal["manual_upload", "batch_eval", "station_camera"] | None = "manual_upload"
+
+
+class InspectionDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["confirmed_defect", "overridden_ok", "confirmed_ok"]
+    notes: str | None = None
+
+
+class CreateProductRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    name: str
+    description: str
+    defect_types: list[str]
+    reference_image_paths: list[str] = Field(..., min_length=3, max_length=3)
+    default_mode: Literal["few_false_alarms", "catch_everything"] = "few_false_alarms"
+    source: Literal["LIVE", "PUBLIC DATA: VisA (CC BY 4.0)"] = "PUBLIC DATA: VisA (CC BY 4.0)"
+
+
+@app.post("/api/inspect")
+async def post_inspect(
+    req: InspectRequest,
+    user: AuthUser = Depends(verify_auth_token),
+) -> dict[str, Any]:
+    """Runs dual-stage visual inspection on a candidate product unit."""
+    t_api_start = time.perf_counter()
+    # Rate limit counts 2 checks against daily limit for both modes
+    check_rate_limit(user.uid, "checks", cost=2)
+
+    # 1. Validate unit_id format if provided
+    if req.unit_id is not None:
+        if not UNIT_ID_REGEX.match(req.unit_id):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid unit_id: must match regex ^[A-Za-z0-9._-]{1,64}$",
+            )
+
+    # 2. Decode and validate image
+    try:
+        cand_bytes = base64.b64decode(req.image_b64)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid base64 image data",
+        ) from e
+
+    if len(cand_bytes) > 8 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Image payload exceeds maximum allowed size of 8 MB decoded",
+        )
+
+    try:
+        with Image.open(io.BytesIO(cand_bytes)) as img:
+            img_format = (img.format or "").upper()
+            if img_format not in ("JPEG", "PNG", "MPO", "WEBP"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Image format '{img_format}' is not supported. Must be JPEG, PNG, or WebP.",
+                )
+            img.load()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file cannot be opened as a valid image",
+        ) from e
+
+    # 3. Retrieve product from Firestore
+    db = get_firestore_client()
+    prod_snap = db.collection("products").document(req.product_id).get()
+    if not prod_snap.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product '{req.product_id}' not found",
+        )
+    prod_data = prod_snap.to_dict() or {}
+
+    ref_paths = prod_data.get("reference_image_paths") or []
+    if len(ref_paths) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Product '{req.product_id}' does not have 3 reference images configured",
+        )
+
+    try:
+        ref_bytes_list = [download_blob_bytes(p) for p in ref_paths[:3]]
+    except Exception as e:
+        logger.error("Failed to load reference images for product %s: %s", req.product_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load product reference images from storage",
+        ) from e
+
+    mode = req.mode or prod_data.get("default_mode", "few_false_alarms")
+
+    # 4. Run inspection pipeline
+    inspect_res = await run_inspection_pipeline(
+        product_description=prod_data.get("description", ""),
+        defect_types=prod_data.get("defect_types", []),
+        candidate_bytes=cand_bytes,
+        reference_bytes_list=ref_bytes_list,
+        mode=mode,
+    )
+
+    # 5. Persist inspection image and document
+    inspection_id = f"insp_{secrets.token_hex(12)}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    image_path = f"inspections/{inspection_id}.jpg"
+
+    try:
+        cand_jpeg = resize_inspection_image(cand_bytes)
+        upload_inspection_jpeg(inspection_id, cand_jpeg)
+    except Exception as e:
+        logger.warning("Failed to upload inspection image: %s", e)
+
+    inspection_doc = {
+        "id": inspection_id,
+        "unit_id": req.unit_id,
+        "product_id": req.product_id,
+        "image_path": image_path,
+        "mode": mode,
+        "screen": inspect_res["screen"],
+        "confirm": inspect_res.get("confirm"),
+        "ai_verdict": inspect_res["ai_verdict"],
+        "human_decision": None,
+        "decided_by_uid": None,
+        "decided_at": None,
+        "source": prod_data.get("source", "PUBLIC DATA: VisA (CC BY 4.0)"),
+        "inspector_uid": user.uid,
+        "created_at": now_iso,
+        "total_ms": inspect_res["total_ms"],
+    }
+    db.collection("inspections").document(inspection_id).set(inspection_doc)
+
+    # 6. Update unit lifecycle if unit_id is provided
+    if req.unit_id:
+        unit_ref = db.collection("units").document(req.unit_id)
+        unit_snap = unit_ref.get()
+
+        # Status transition: "passed" if ok, else "needs_review" (never failed directly by AI)
+        unit_status = "passed" if inspect_res["ai_verdict"] == "ok" else "needs_review"
+
+        if unit_snap.exists:
+            existing = unit_snap.to_dict() or {}
+            existing_inspections = existing.get("inspections", [])
+            if inspection_id not in existing_inspections:
+                existing_inspections.append(inspection_id)
+            unit_ref.update({
+                "status": unit_status,
+                "inspections": existing_inspections,
+            })
+        else:
+            unit_ref.set({
+                "id": req.unit_id,
+                "product_id": req.product_id,
+                "created_at": now_iso,
+                "status": unit_status,
+                "station_records": [],
+                "inspections": [inspection_id],
+                "created_by": user.uid,
+            })
+
+    # 7. BigQuery events & telemetry
+    screen_ms = inspect_res["screen"]["ms"] if inspect_res.get("screen") else None
+    confirm_ms = inspect_res["confirm"]["ms"] if inspect_res.get("confirm") else None
+    model_ms = (screen_ms or 0) + (confirm_ms or 0)
+
+    stream_inspection_event({
+        "ts": now_iso,
+        "inspection_id": inspection_id,
+        "product_id": req.product_id,
+        "unit_id": req.unit_id,
+        "mode": mode,
+        "ai_verdict": inspect_res["ai_verdict"],
+        "defect": inspect_res.get("defect"),
+        "screen_ms": screen_ms,
+        "confirm_ms": confirm_ms,
+        "total_ms": inspect_res["total_ms"],
+        "human_decision": None,
+        "source": req.source or "manual_upload",
+    })
+
+    stream_api_call({
+        "ts": now_iso,
+        "endpoint": "inspect",
+        "status": 200,
+        "model_ms": model_ms,
+        "total_ms": elapsed_ms(t_api_start),
+    })
+
+    return {
+        "inspection_id": inspection_id,
+        "ai_verdict": inspect_res["ai_verdict"],
+        "defect": inspect_res.get("defect"),
+        "where": inspect_res.get("where"),
+        "confidence": inspect_res.get("confidence", 0.0),
+        "mode": mode,
+        "screen": inspect_res["screen"],
+        "confirm": inspect_res.get("confirm"),
+        "total_ms": inspect_res["total_ms"],
+        "image_path": image_path,
+        "unit_id": req.unit_id,
+    }
+
+
+@app.post("/api/inspections/{inspection_id}/decision")
+async def post_inspection_decision(
+    inspection_id: str,
+    req: InspectionDecisionRequest,
+    user: AuthUser = Depends(require_role("supervisor")),
+) -> dict[str, Any]:
+    """Records a supervisor human verification or override on an inspection."""
+    db = get_firestore_client()
+    insp_ref = db.collection("inspections").document(inspection_id)
+    insp_snap = insp_ref.get()
+    if not insp_snap.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Inspection '{inspection_id}' not found",
+        )
+
+    insp_data = insp_snap.to_dict() or {}
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    update_fields: dict[str, Any] = {
+        "human_decision": req.decision,
+        "decided_by_uid": user.uid,
+        "decided_at": now_iso,
+    }
+    if req.notes is not None:
+        update_fields["decision_notes"] = req.notes
+    insp_ref.update(update_fields)
+
+    # Update unit lifecycle
+    unit_id = insp_data.get("unit_id")
+    if unit_id:
+        unit_ref = db.collection("units").document(unit_id)
+        unit_snap = unit_ref.get()
+        if unit_snap.exists:
+            # confirmed_defect sets failed; overridden_ok / confirmed_ok sets passed
+            new_status = "failed" if req.decision == "confirmed_defect" else "passed"
+            unit_ref.update({"status": new_status})
+
+    # Stream event to BigQuery
+    screen_data = insp_data.get("screen") or {}
+    confirm_data = insp_data.get("confirm") or {}
+    stream_inspection_event({
+        "ts": now_iso,
+        "inspection_id": inspection_id,
+        "product_id": insp_data.get("product_id", ""),
+        "unit_id": unit_id,
+        "mode": insp_data.get("mode", "few_false_alarms"),
+        "ai_verdict": insp_data.get("ai_verdict", "needs_review"),
+        "defect": screen_data.get("defect") or confirm_data.get("defect"),
+        "screen_ms": screen_data.get("ms"),
+        "confirm_ms": confirm_data.get("ms"),
+        "total_ms": insp_data.get("total_ms", 0),
+        "human_decision": req.decision,
+        "source": insp_data.get("source", "LIVE"),
+    })
+
+    return {
+        "inspection_id": inspection_id,
+        "human_decision": req.decision,
+        "decided_at": now_iso,
+        "decided_by_uid": user.uid,
+    }
+
+
+@app.get("/api/products")
+async def list_products(
+    user: AuthUser = Depends(verify_auth_token),
+) -> list[dict[str, Any]]:
+    """Lists all products registered in TAKUMI."""
+    db = get_firestore_client()
+    docs = db.collection("products").stream()
+    products = [d.to_dict() for d in docs]
+    products.sort(key=lambda p: p.get("id", ""))
+    return products
+
+
+@app.get("/api/products/{product_id}")
+async def get_product(
+    product_id: str,
+    user: AuthUser = Depends(verify_auth_token),
+) -> dict[str, Any]:
+    """Retrieves a single product document by ID."""
+    db = get_firestore_client()
+    doc = db.collection("products").document(product_id).get()
+    if not doc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product '{product_id}' not found",
+        )
+    return doc.to_dict() or {}
+
+
+@app.post("/api/products")
+async def create_product(
+    req: CreateProductRequest,
+    user: AuthUser = Depends(require_role("supervisor")),
+) -> dict[str, Any]:
+    """Registers or updates a product definition (supervisor only)."""
+    db = get_firestore_client()
+    doc_ref = db.collection("products").document(req.id)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    data = {
+        "id": req.id,
+        "name": req.name,
+        "description": req.description,
+        "defect_types": req.defect_types,
+        "reference_image_paths": req.reference_image_paths,
+        "default_mode": req.default_mode,
+        "source": req.source,
+        "created_at": now_iso,
+    }
+    doc_ref.set(data)
+    return data
+
+
+@app.get("/api/units/{unit_id}")
+async def get_unit(
+    unit_id: str,
+    user: AuthUser = Depends(verify_auth_token),
+) -> dict[str, Any]:
+    """Retrieves a unit tracking document and lifecycle state."""
+    if not UNIT_ID_REGEX.match(unit_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid unit_id: must match regex ^[A-Za-z0-9._-]{1,64}$",
+        )
+    db = get_firestore_client()
+    doc = db.collection("units").document(unit_id).get()
+    if not doc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unit '{unit_id}' not found",
+        )
+    return doc.to_dict() or {}
+
+
+@app.get("/api/inspections/{inspection_id}")
+async def get_inspection(
+    inspection_id: str,
+    user: AuthUser = Depends(verify_auth_token),
+) -> dict[str, Any]:
+    """Retrieves an inspection result by ID with signed media URL."""
+    db = get_firestore_client()
+    doc = db.collection("inspections").document(inspection_id).get()
+    if not doc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Inspection '{inspection_id}' not found",
+        )
+    data = doc.to_dict() or {}
+    if "image_path" in data and data["image_path"]:
+        data["image_url"] = get_signed_url_for_gs_uri(f"gs://{STORAGE_BUCKET}/{data['image_path']}")
+    return data
+
 

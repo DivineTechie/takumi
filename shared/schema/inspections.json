@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/inspections.json",
+  "title": "Inspection",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique inspection identifier (insp_...)"
+    },
+    "unit_id": {
+      "type": ["string", "null"],
+      "description": "Unit serial or identifier if supplied"
+    },
+    "product_id": {
+      "type": "string",
+      "description": "Inspected product identifier"
+    },
+    "image_path": {
+      "type": "string",
+      "description": "Cloud Storage path to candidate image (inspections/{id}.jpg)"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["few_false_alarms", "catch_everything"],
+      "description": "Inspection mode used for evaluation"
+    },
+    "screen": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "defective": { "type": "boolean" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "defect": { "type": ["string", "null"] },
+        "where": { "type": ["string", "null"] },
+        "ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["model", "defective", "confidence", "ms"],
+      "additionalProperties": false
+    },
+    "confirm": {
+      "type": ["object", "null"],
+      "properties": {
+        "model": { "type": "string" },
+        "defective": { "type": "boolean" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "defect": { "type": ["string", "null"] },
+        "where": { "type": ["string", "null"] },
+        "ms": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["model", "defective", "confidence", "ms"],
+      "additionalProperties": false
+    },
+    "ai_verdict": {
+      "type": "string",
+      "enum": ["defective", "ok", "needs_review"],
+      "description": "Algorithmic decision outcome"
+    },
+    "human_decision": {
+      "type": ["string", "null"],
+      "enum": ["confirmed_defect", "overridden_ok", "confirmed_ok", null],
+      "description": "Human inspection verification outcome"
+    },
+    "decided_by_uid": {
+      "type": ["string", "null"],
+      "description": "Firebase UID of human decider"
+    },
+    "decided_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Timestamp of human confirmation or override"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["LIVE", "PUBLIC DATA: VisA (CC BY 4.0)"],
+      "description": "Data provenance tag"
+    },
+    "inspector_uid": {
+      "type": "string",
+      "description": "Firebase UID of user requesting inspection"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Inspection creation timestamp"
+    },
+    "total_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total elapsed processing time in milliseconds"
+    }
+  },
+  "required": [
+    "id",
+    "product_id",
+    "image_path",
+    "mode",
+    "screen",
+    "ai_verdict",
+    "source",
+    "inspector_uid",
+    "created_at",
+    "total_ms"
+  ],
+  "additionalProperties": false
+}

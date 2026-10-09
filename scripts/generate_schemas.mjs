@@ -21,6 +21,9 @@ const schemas = [
   'sessions',
   'session_events',
   'passports',
+  'products',
+  'units',
+  'inspections',
 ];
 
 // Ensure target directories exist

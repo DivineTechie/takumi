@@ -1,0 +1,74 @@
+[
+  {
+    "name": "ts",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Event timestamp"
+  },
+  {
+    "name": "inspection_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Inspection identifier"
+  },
+  {
+    "name": "product_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Product identifier"
+  },
+  {
+    "name": "unit_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Unit serial number"
+  },
+  {
+    "name": "mode",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Inspection mode (few_false_alarms, catch_everything)"
+  },
+  {
+    "name": "ai_verdict",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "AI verdict (defective, ok, needs_review)"
+  },
+  {
+    "name": "defect",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Identified defect category"
+  },
+  {
+    "name": "screen_ms",
+    "type": "INT64",
+    "mode": "NULLABLE",
+    "description": "Screening stage latency in milliseconds"
+  },
+  {
+    "name": "confirm_ms",
+    "type": "INT64",
+    "mode": "NULLABLE",
+    "description": "Confirmation stage latency in milliseconds"
+  },
+  {
+    "name": "total_ms",
+    "type": "INT64",
+    "mode": "REQUIRED",
+    "description": "Total inspection pipeline latency in milliseconds"
+  },
+  {
+    "name": "human_decision",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Human decision outcome (confirmed_defect, overridden_ok, confirmed_ok)"
+  },
+  {
+    "name": "source",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Data provenance tag"
+  }
+]

@@ -52,5 +52,16 @@ service firebase.storage {
     match /passports/{allPaths=**} {
       allow read, write: if false;
     }
+
+    // products/** reference images readable by signed-in users; written by supervisor/server
+    match /products/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSupervisor();
+    }
+
+    // inspections/** has no client access; served exclusively via server signed URLs
+    match /inspections/{allPaths=**} {
+      allow read, write: if false;
+    }
   }
 }

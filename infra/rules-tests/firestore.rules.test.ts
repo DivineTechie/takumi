@@ -214,4 +214,66 @@ describe('Firestore Security Rules', () => {
     await assertSucceeds(getDoc(doc(noRoleDb, 'skills', 'skill_published')));
     await assertFails(getDoc(doc(noRoleDb, 'sessions', 'ses_1')));
   });
+
+  it('products are readable by any signed-in user, writable only by supervisors', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'products', 'prod_1'), {
+        id: 'prod_1',
+        name: 'PCB 1',
+      });
+    });
+
+    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
+    const unauthDb = testEnv.unauthenticatedContext().firestore();
+
+    await assertSucceeds(getDoc(doc(traineeDb, 'products', 'prod_1')));
+    await assertSucceeds(getDoc(doc(supervisorDb, 'products', 'prod_1')));
+    await assertFails(getDoc(doc(unauthDb, 'products', 'prod_1')));
+
+    await assertFails(setDoc(doc(traineeDb, 'products', 'prod_2'), { name: 'New' }));
+    await assertSucceeds(setDoc(doc(supervisorDb, 'products', 'prod_2'), { name: 'New' }));
+  });
+
+  it('units are readable by supervisor or creator, server-written only', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'units', 'unit_1'), {
+        id: 'unit_1',
+        created_by: 'trainee-1',
+        status: 'in_progress',
+      });
+    });
+
+    const creatorDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    const otherDb = testEnv.authenticatedContext('trainee-2', { role: 'trainee' }).firestore();
+    const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
+
+    await assertSucceeds(getDoc(doc(creatorDb, 'units', 'unit_1')));
+    await assertSucceeds(getDoc(doc(supervisorDb, 'units', 'unit_1')));
+    await assertFails(getDoc(doc(otherDb, 'units', 'unit_1')));
+
+    await assertFails(setDoc(doc(creatorDb, 'units', 'unit_2'), { status: 'in_progress' }));
+    await assertFails(setDoc(doc(supervisorDb, 'units', 'unit_2'), { status: 'in_progress' }));
+  });
+
+  it('inspections are readable by supervisor or inspector, server-written only', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'inspections', 'insp_1'), {
+        id: 'insp_1',
+        inspector_uid: 'trainee-1',
+        ai_verdict: 'ok',
+      });
+    });
+
+    const inspectorDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    const otherDb = testEnv.authenticatedContext('trainee-2', { role: 'trainee' }).firestore();
+    const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
+
+    await assertSucceeds(getDoc(doc(inspectorDb, 'inspections', 'insp_1')));
+    await assertSucceeds(getDoc(doc(supervisorDb, 'inspections', 'insp_1')));
+    await assertFails(getDoc(doc(otherDb, 'inspections', 'insp_1')));
+
+    await assertFails(setDoc(doc(inspectorDb, 'inspections', 'insp_2'), { ai_verdict: 'ok' }));
+    await assertFails(setDoc(doc(supervisorDb, 'inspections', 'insp_2'), { ai_verdict: 'ok' }));
+  });
 });

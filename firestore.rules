@@ -97,5 +97,23 @@ service cloud.firestore {
     match /passport_locks/{lockId} {
       allow read, write: if false;
     }
+
+    // products: readable by any signed-in user, written by supervisors.
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow write: if isSupervisor();
+    }
+
+    // units: readable by supervisors and the creator, server-written only.
+    match /units/{unitId} {
+      allow read: if isSupervisor() || (isSignedIn() && resource.data.created_by == request.auth.uid);
+      allow write: if false;
+    }
+
+    // inspections: readable by supervisors and the inspecting creator, server-written only.
+    match /inspections/{inspectionId} {
+      allow read: if isSupervisor() || (isSignedIn() && resource.data.inspector_uid == request.auth.uid);
+      allow write: if false;
+    }
   }
 }

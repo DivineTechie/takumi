@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/units.json",
+  "title": "Unit",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$",
+      "description": "Unit serial number or unique identifier"
+    },
+    "product_id": {
+      "type": "string",
+      "description": "Identifier of the product"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Creation timestamp"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["in_progress", "passed", "failed", "needs_review"],
+      "description": "Lifecycle state of the unit"
+    },
+    "station_records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "description": "Station records across factory workflow (P16)"
+    },
+    "inspections": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ordered inspection IDs performed on this unit"
+    },
+    "created_by": {
+      "type": ["string", "null"],
+      "description": "Firebase UID of operator or inspector"
+    }
+  },
+  "required": [
+    "id",
+    "product_id",
+    "created_at",
+    "status",
+    "station_records",
+    "inspections"
+  ],
+  "additionalProperties": false
+}
