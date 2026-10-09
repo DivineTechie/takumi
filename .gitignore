@@ -79,3 +79,4 @@ takumi-private/
 
 # Build artifacts generated during deployment
 apps/web/public/version.json
+.firebase/
