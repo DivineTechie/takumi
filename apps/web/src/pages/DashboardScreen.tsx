@@ -20,12 +20,13 @@ import {
 import { LiveNowStrip } from '../components/dashboard/LiveNowStrip';
 import { SkillMatrixTable } from '../components/dashboard/SkillMatrixTable';
 import { LessonHeatmap } from '../components/dashboard/LessonHeatmap';
+import { MachinesPanel } from '../components/dashboard/MachinesPanel';
 import {
   SessionReplayViewer,
   type RecentSessionItem,
 } from '../components/dashboard/SessionReplayViewer';
 
-type DashboardTab = 'matrix' | 'heatmap' | 'replay' | 'inspections';
+type DashboardTab = 'matrix' | 'heatmap' | 'replay' | 'inspections' | 'machines';
 
 export const DashboardScreen: React.FC = () => {
   const { t, language, setLanguage } = useTranslation();
@@ -394,6 +395,20 @@ export const DashboardScreen: React.FC = () => {
               </span>
             )}
           </button>
+
+          <button
+            role="tab"
+            aria-selected={activeTab === 'machines'}
+            onClick={() => setActiveTab('machines')}
+            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'machines'
+                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">precision_manufacturing</span>
+            <span>Machines</span>
+          </button>
         </div>
 
         {/* Tab 1: Team Skill Matrix */}
@@ -441,6 +456,9 @@ export const DashboardScreen: React.FC = () => {
             }}
           />
         )}
+
+        {/* Tab 5: Machine Watch */}
+        {activeTab === 'machines' && <MachinesPanel />}
 
         {/* Tab 4: End-of-Line Quality Inspection */}
         {activeTab === 'inspections' && (

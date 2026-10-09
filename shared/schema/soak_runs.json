@@ -18,7 +18,10 @@
       "description": "Server timestamp when run started"
     },
     "ended_at": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date-time",
       "description": "Timestamp when run completed or stopped"
     },
@@ -28,17 +31,26 @@
       "description": "Planned run duration in minutes"
     },
     "schedule_seed": {
-      "type": ["integer", "string"],
+      "type": [
+        "integer",
+        "string"
+      ],
       "description": "Deterministic seed for state transition schedule"
     },
     "machines": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "List of machine IDs included in this soak run"
     },
     "status": {
       "type": "string",
-      "enum": ["running", "completed", "cancelled"],
+      "enum": [
+        "running",
+        "completed",
+        "cancelled"
+      ],
       "description": "Current status of the soak run"
     },
     "truth": {
@@ -47,6 +59,24 @@
         "$ref": "#/$defs/SoakTruth"
       },
       "description": "Optional embedded truth entries or subcollection documents"
+    },
+    "reads": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "description": "Gemini machine reads during this run, per machine id"
+    },
+    "tokens_in": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Gemini input tokens used by machine reads in this run"
+    },
+    "tokens_out": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Gemini output tokens (incl. thinking) used by machine reads in this run"
     }
   },
   "required": [
@@ -63,16 +93,57 @@
     "SoakTruth": {
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "machine_id": { "type": "string" },
-        "ts": { "type": "string", "format": "date-time" },
-        "run_s": { "type": ["number", "null"], "minimum": 0 },
-        "event_type": { "type": "string", "enum": ["state_change", "alarm", "alarm_cleared", "count"] },
-        "state": { "type": ["string", "null"] },
-        "count": { "type": ["integer", "null"] },
-        "alarm_code": { "type": ["string", "null"] }
+        "id": {
+          "type": "string"
+        },
+        "machine_id": {
+          "type": "string"
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "run_s": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "event_type": {
+          "type": "string",
+          "enum": [
+            "state_change",
+            "alarm",
+            "alarm_cleared",
+            "count"
+          ]
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "count": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "alarm_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
-      "required": ["machine_id", "ts", "run_s", "event_type"],
+      "required": [
+        "machine_id",
+        "ts",
+        "run_s",
+        "event_type"
+      ],
       "additionalProperties": false
     }
   }

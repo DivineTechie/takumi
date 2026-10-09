@@ -71,3 +71,11 @@ class Machine(BaseModel):
     )
     created_at: AwareDatetime = Field(..., description='Creation timestamp')
     updated_at: AwareDatetime | None = Field(None, description='Last update timestamp')
+    bench_slot: conint(ge=1, le=6) | None = Field(
+        None,
+        description='Position (1 = leftmost) of this machine on the HOME RIG test bench, used to match soak-run truth; null for real machines',
+    )
+    last_misread_count: int | None = Field(
+        None,
+        description='Last counter reading rejected as a misread (a lower value confirmed twice is a reset)',
+    )

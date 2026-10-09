@@ -679,6 +679,40 @@ export async function postSoakTruth(
   });
 }
 
+export async function fetchMySoakRuns(): Promise<SoakRun[]> {
+  return await apiFetch<SoakRun[]>('/api/soak/mine');
+}
+
+export interface MachineDaySummary {
+  id: string;
+  name: string;
+  bench_slot?: number | null;
+  state: string | null;
+  last_alarm: string | null;
+  last_count: number | null;
+  last_seen_at: string | null;
+  segments: { state: string; start: string; end: string }[];
+  running_s: number;
+  idle_s: number;
+  stopped_s: number;
+  availability: number | null;
+  performance: number | null;
+  stops: number;
+  parts: number;
+  top_alarms: { alarm_text: string; count: number }[];
+  source: string | null;
+  events: number;
+}
+
+export async function fetchMachinesSummary(day?: string): Promise<{
+  day: string;
+  window_end: string;
+  machines: MachineDaySummary[];
+}> {
+  const query = day ? `?day=${encodeURIComponent(day)}` : '';
+  return await apiFetch(`/api/machines/summary${query}`);
+}
+
 export async function fetchMachines(): Promise<Machine[]> {
   return await apiFetch<Machine[]>('/api/machines');
 }
@@ -714,6 +748,7 @@ export async function createMachine(machine: {
   };
   ideal_cycle_s?: number;
   source?: 'LIVE' | 'VIRTUAL';
+  bench_slot?: number | null;
 }): Promise<Machine> {
   return await apiFetch<Machine>('/api/machines', {
     method: 'POST',

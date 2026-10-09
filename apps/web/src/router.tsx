@@ -17,6 +17,7 @@ const EvalsScreen = lazy(() => import('./pages/EvalsScreen'));
 const InspectScreen = lazy(() => import('./pages/InspectScreen'));
 const GalleryScreen = lazy(() => import('./pages/GalleryScreen'));
 const VirtualMachineScreen = lazy(() => import('./pages/VirtualMachineScreen'));
+const MachineWatchScreen = lazy(() => import('./pages/MachineWatchScreen'));
 const NotFoundScreen = lazy(() => import('./pages/NotFoundScreen'));
 
 export const LoadingFallback: React.FC = () => (
@@ -159,6 +160,16 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
         <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
           <Suspense fallback={<LoadingFallback />}>
             <VirtualMachineScreen />
+          </Suspense>
+        </RoleGuard>
+      ),
+    },
+    {
+      path: '/machines/watch',
+      element: (
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
+          <Suspense fallback={<LoadingFallback />}>
+            <MachineWatchScreen />
           </Suspense>
         </RoleGuard>
       ),

@@ -10,3 +10,16 @@ export const MODEL_VEO = 'veo-3.1-fast-generate-preview';
 export const MODEL_OMNI = 'gemini-omni-1.1-flash';
 export const MODEL_TTS = 'gemini-3.8-flash-tts';
 export const MODEL_EMBEDDING = 'gemini-embedding-2-preview';
+
+// Machine Watch edge settings (P17). The browser checks every frame for free; Gemini is called only
+// on a stable change, at most maxReadsPerMinute per machine (the API enforces the same cap).
+export const MACHINE_WATCH = {
+  frameIntervalMs: 500,
+  lightStableFrames: 3,
+  regionStableFrames: 2,
+  regionDiffThreshold: 12,
+  counterReadEveryMs: 60_000,
+  heartbeatMs: 5 * 60_000,
+  maxReadsPerMinute: 6,
+  cropMaxPx: 512,
+};

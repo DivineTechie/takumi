@@ -330,18 +330,26 @@ export const HomeScreen: React.FC = () => {
                 </span>
               </div>
               <p className="text-[16px] sm:text-[18px] leading-[24px] sm:leading-[26px] text-on-surface-variant">
-                Gemini configures, the edge watches, Gemini reasons. Simulate factory cells or run deterministic soak benchmarks.
+                A camera you already have reads stack lights, counters and alarm screens. No wiring.
               </p>
             </div>
 
-            <div>
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/machines/watch')}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">videocam</span>
+                <span>Watch machines</span>
+              </button>
               <button
                 type="button"
                 onClick={() => navigate('/machines/virtual')}
-                className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
+                className="w-full min-h-[56px] py-3.5 px-4 bg-surface-container-high text-on-surface rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[20px]">precision_manufacturing</span>
-                <span>Virtual Machine Rig</span>
+                <span>Machine test bench</span>
               </button>
             </div>
           </section>

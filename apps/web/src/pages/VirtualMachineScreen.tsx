@@ -1,773 +1,364 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { startSoakRun, endSoakRun, postSoakTruth } from '../lib/api';
+import { endSoakRun, postSoakTruth, startSoakRun } from '../lib/api';
+import {
+  BENCH_ALARMS,
+  buildBenchSchedule,
+  formatRunClock,
+  phaseAt,
+  type BenchPace,
+  type BenchPhase,
+  type BenchState,
+} from '../lib/benchSchedule';
 import logoSvg from '../assets/logo.svg';
 
-interface VirtualMachineDef {
-  id: string;
+/**
+ * HOME RIG test bench (P17): 1-3 simulated machines with a stack light, a parts counter and an HMI
+ * screen. A camera pointed at this page is watched by /machines/watch. During a soak run every state
+ * change, alarm and part is logged as ground truth (server timestamps) so detections can be scored.
+ */
+
+const BENCH = [
+  { slot: 1, name: 'CNC Mill 1', idealCycleS: 12 },
+  { slot: 2, name: 'Press 2', idealCycleS: 8 },
+  { slot: 3, name: 'Packer 3', idealCycleS: 15 },
+];
+
+const DURATIONS = [15, 60, 240, 480];
+
+interface BenchMachine {
+  slot: number;
   name: string;
-  type: string;
-  lightOrder: string[];
   idealCycleS: number;
+  state: BenchState;
+  alarm: string | null;
+  count: number;
+  nextPartAt: number;
 }
 
-const MACHINES: VirtualMachineDef[] = [
-  {
-    id: 'mach_cnc_01',
-    name: 'CNC Milling Center 1',
-    type: 'Subtractive 5-Axis',
-    lightOrder: ['red', 'yellow', 'green'],
-    idealCycleS: 10,
-  },
-  {
-    id: 'mach_pack_02',
-    name: 'Packaging Cell 2',
-    type: 'High-Speed Cartoner',
-    lightOrder: ['red', 'yellow', 'green'],
-    idealCycleS: 8,
-  },
-  {
-    id: 'mach_asm_03',
-    name: 'Assembly Station 3',
-    type: 'Robotic Pick & Place',
-    lightOrder: ['red', 'yellow', 'green'],
-    idealCycleS: 15,
-  },
-];
+type TruthType = 'state_change' | 'alarm' | 'alarm_cleared' | 'count';
 
-const PRESET_ALARMS = [
-  { code: 'E-101', text: 'E-STOP PRESSED [E-101]' },
-  { code: 'E-204', text: 'DOOR INTERLOCK OPEN [E-204]' },
-  { code: 'E-315', text: 'FEED JAM DETECTED [E-315]' },
-  { code: 'E-402', text: 'SPINDLE OVERTEMP [E-402]' },
-];
+function nextCycleMs(idealCycleS: number): number {
+  return idealCycleS * 1000 * (0.9 + Math.random() * 0.2);
+}
+
+const LIGHT_STYLE: Record<string, { on: string; off: string }> = {
+  red: { on: 'bg-red-500 shadow-[0_0_40px_12px_rgba(239,68,68,0.75)]', off: 'bg-red-950' },
+  yellow: { on: 'bg-amber-400 shadow-[0_0_40px_12px_rgba(251,191,36,0.75)]', off: 'bg-amber-950' },
+  green: { on: 'bg-green-500 shadow-[0_0_40px_12px_rgba(34,197,94,0.75)]', off: 'bg-green-950' },
+};
+const STATE_LIGHT: Record<BenchState, string> = { stopped: 'red', idle: 'yellow', running: 'green' };
+
+const MachinePanel: React.FC<{
+  m: BenchMachine;
+  showControls: boolean;
+  onSet: (slot: number, state: BenchState, alarm: string | null) => void;
+}> = ({ m, showControls, onSet }) => {
+  const [alarmPick, setAlarmPick] = useState(BENCH_ALARMS[0]);
+  const lit = STATE_LIGHT[m.state];
+  return (
+    <div className="flex flex-col items-center gap-5 bg-neutral-900 border-2 border-neutral-800 rounded-3xl p-5 min-w-0">
+      <div className="text-lg font-bold tracking-wide text-neutral-200">{m.name}</div>
+      <div className="flex items-end gap-6">
+        {/* Stack light tower: red, yellow, green top to bottom */}
+        <div className="flex flex-col items-center">
+          <div className="flex flex-col gap-2 bg-neutral-800 border-4 border-neutral-700 rounded-xl p-2" data-testid={`stack-light-${m.slot}`}>
+            {['red', 'yellow', 'green'].map((c) => (
+              <div
+                key={c}
+                data-lit={c === lit}
+                className={`w-20 h-16 rounded-md transition-all duration-150 ${c === lit ? LIGHT_STYLE[c].on : LIGHT_STYLE[c].off}`}
+              />
+            ))}
+          </div>
+          <div className="w-3 h-16 bg-neutral-700" />
+          <div className="w-16 h-3 bg-neutral-700 rounded" />
+        </div>
+        <div className="flex flex-col gap-4 min-w-0">
+          {/* Parts counter */}
+          <div className="bg-black border-4 border-neutral-700 rounded-lg px-4 py-2">
+            <div className="text-[10px] font-mono text-neutral-500 tracking-widest">PARTS</div>
+            <div className="font-mono text-5xl font-bold text-red-500 tracking-[0.15em] tabular-nums" data-testid={`counter-${m.slot}`}>
+              {String(m.count).padStart(6, '0')}
+            </div>
+          </div>
+          {/* HMI screen */}
+          <div className="bg-slate-950 border-4 border-neutral-600 rounded-lg w-64 h-28 p-3 font-mono flex flex-col justify-center" data-testid={`hmi-${m.slot}`}>
+            {m.state === 'stopped' && m.alarm ? (
+              <>
+                <div className="text-xs text-red-400 font-bold">ALARM</div>
+                <div className="text-xl text-red-300 font-bold leading-tight">{m.alarm}</div>
+              </>
+            ) : m.state === 'idle' ? (
+              <div className="text-2xl text-amber-300 font-bold">IDLE</div>
+            ) : m.state === 'stopped' ? (
+              <div className="text-2xl text-red-300 font-bold">STOPPED</div>
+            ) : (
+              <div className="text-2xl text-green-300 font-bold">RUNNING</div>
+            )}
+          </div>
+        </div>
+      </div>
+      {showControls && (
+        <div className="flex flex-wrap justify-center gap-2 w-full">
+          <button type="button" onClick={() => onSet(m.slot, 'running', null)} className="min-h-[48px] px-4 rounded-xl bg-green-700 font-bold">
+            Run
+          </button>
+          <button type="button" onClick={() => onSet(m.slot, 'idle', null)} className="min-h-[48px] px-4 rounded-xl bg-amber-700 font-bold">
+            Idle
+          </button>
+          <select
+            value={alarmPick}
+            onChange={(e) => setAlarmPick(e.target.value)}
+            aria-label={`Alarm for ${m.name}`}
+            className="min-h-[48px] rounded-xl bg-neutral-800 border border-neutral-700 px-2 text-sm"
+          >
+            {BENCH_ALARMS.map((a) => (
+              <option key={a}>{a}</option>
+            ))}
+          </select>
+          <button type="button" onClick={() => onSet(m.slot, 'stopped', alarmPick)} className="min-h-[48px] px-4 rounded-xl bg-red-700 font-bold">
+            Stop + alarm
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const VirtualMachineScreen: React.FC = () => {
   const navigate = useNavigate();
+  const [machineCount, setMachineCount] = useState(3);
+  const [machines, setMachines] = useState<BenchMachine[]>(() =>
+    BENCH.map((b) => ({ ...b, state: 'running', alarm: null, count: 0, nextPartAt: Date.now() + nextCycleMs(b.idealCycleS) }))
+  );
+  const machinesRef = useRef(machines);
 
-  const [selectedMachineId, setSelectedMachineId] = useState<string>(MACHINES[0].id);
-  const currentMachine = MACHINES.find((m) => m.id === selectedMachineId) || MACHINES[0];
-
-  const [light, setLight] = useState<'red' | 'yellow' | 'green' | 'off'>('green');
-  const [state, setState] = useState<'running' | 'idle' | 'stopped' | 'unknown'>('running');
-  const [count, setCount] = useState<number>(42);
-  const [alarmCode, setAlarmCode] = useState<string | null>(null);
-  const [cycleProgress, setCycleProgress] = useState<number>(0);
-
-  // Soak Test State
-  const [isSoakActive, setIsSoakActive] = useState<boolean>(false);
-  const [soakRunId, setSoakRunId] = useState<string | null>(null);
-  const [soakSeed, setSoakSeed] = useState<number>(42);
-  const [soakDurationMin, setSoakDurationMin] = useState<number>(15);
-  const [runSeconds, setRunSeconds] = useState<number>(0);
-  const [recentEvents, setRecentEvents] = useState<Array<{ text: string; time: string; type: string }>>([]);
-
-  // Hardware controls
-  const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [showControls, setShowControls] = useState(true);
+  const [duration, setDuration] = useState(60);
+  const [seed, setSeed] = useState(42);
+  const [pace, setPace] = useState<BenchPace>('realistic');
+  const [autoSchedule, setAutoSchedule] = useState(true);
+  const [run, setRun] = useState<{ id: string; localStart: number; durationS: number; auto: boolean } | null>(null);
+  const runRef = useRef(run);
+  const schedulesRef = useRef<Record<number, BenchPhase[]>>({});
+  const [clockS, setClockS] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [truthFailures, setTruthFailures] = useState(0);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
-  // Wake Lock Integration
-  const requestWakeLock = useCallback(async () => {
-    if ('wakeLock' in navigator) {
-      try {
-        const lock = await navigator.wakeLock.request('screen');
-        wakeLockRef.current = lock;
-        setWakeLockActive(true);
-        lock.addEventListener('release', () => {
-          setWakeLockActive(false);
-          wakeLockRef.current = null;
-        });
-      } catch (err) {
-        console.warn('Wake Lock request failed:', err);
-        setWakeLockActive(false);
-      }
-    }
+  const updateMachines = useCallback((next: BenchMachine[]) => {
+    machinesRef.current = next;
+    setMachines(next);
   }, []);
 
-  const releaseWakeLock = useCallback(async () => {
-    if (wakeLockRef.current) {
-      try {
-        await wakeLockRef.current.release();
-      } catch {
-        // ignore
-      }
-      wakeLockRef.current = null;
-      setWakeLockActive(false);
-    }
+  const updateRun = useCallback((next: typeof run) => {
+    runRef.current = next;
+    setRun(next);
   }, []);
 
+  // Keep the screen awake while the bench is open (a sleeping screen would look like a stoppage).
   useEffect(() => {
-    requestWakeLock();
-    return () => {
-      releaseWakeLock();
-    };
-  }, [requestWakeLock, releaseWakeLock]);
-
-  // Fullscreen Toggle
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-      setIsFullscreen(true);
-    } else {
-      document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
-    }
-  };
-
-  // Log truth event helper
-  const emitTruthEvent = useCallback(
-    async (
-      eventType: 'state_change' | 'alarm' | 'alarm_cleared' | 'count',
-      newState: string | null,
-      newLight: string | null,
-      newCount: number | null,
-      newAlarm: string | null
-    ) => {
-      const nowStr = new Date().toLocaleTimeString();
-      const eventDesc =
-        eventType === 'state_change'
-          ? `State -> ${newState?.toUpperCase()} (${newLight?.toUpperCase()})`
-          : eventType === 'alarm'
-          ? `Alarm -> ${newAlarm}`
-          : eventType === 'alarm_cleared'
-          ? 'Alarm cleared'
-          : `Parts Count -> ${newCount}`;
-
-      setRecentEvents((prev) => [
-        { text: eventDesc, time: nowStr, type: eventType },
-        ...prev.slice(0, 9),
-      ]);
-
-      if (soakRunId) {
-        try {
-          await postSoakTruth(soakRunId, {
-            machine_id: currentMachine.id,
-            event_type: eventType,
-            state: newState,
-            count: newCount,
-            alarm_code: newAlarm,
-          });
-        } catch (err) {
-          console.warn('Failed to stream truth event:', err);
-        }
+    let released = false;
+    const request = async () => {
+      try {
+        if ('wakeLock' in navigator && !released) wakeLockRef.current = await navigator.wakeLock.request('screen');
+      } catch {
+        // Not fatal: the bench still works, the screen may just dim.
       }
+    };
+    request();
+    const onVisible = () => document.visibilityState === 'visible' && request();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      released = true;
+      document.removeEventListener('visibilitychange', onVisible);
+      wakeLockRef.current?.release().catch(() => {});
+    };
+  }, []);
+
+  const logTruth = useCallback((slot: number, type: TruthType, m: Partial<BenchMachine>) => {
+    const r = runRef.current;
+    if (!r) return;
+    postSoakTruth(r.id, {
+      machine_id: `bench_${slot}`,
+      event_type: type,
+      state: m.state ?? null,
+      count: m.count ?? null,
+      alarm_code: m.alarm ?? null,
+    }).catch(() => setTruthFailures((n) => n + 1));
+  }, []);
+
+  /** Applies a new state/alarm to one machine and logs the truth events it implies. */
+  const applyState = useCallback(
+    (slot: number, state: BenchState, alarm: string | null) => {
+      const prev = machinesRef.current.find((m) => m.slot === slot);
+      if (!prev) return;
+      const next = { ...prev, state, alarm: state === 'stopped' ? alarm : null };
+      if (prev.state === next.state && prev.alarm === next.alarm) return;
+      if (prev.alarm && prev.alarm !== next.alarm) logTruth(slot, 'alarm_cleared', next);
+      if (prev.state !== next.state) logTruth(slot, 'state_change', next);
+      if (next.alarm && next.alarm !== prev.alarm) logTruth(slot, 'alarm', next);
+      updateMachines(machinesRef.current.map((m) => (m.slot === slot ? next : m)));
     },
-    [soakRunId, currentMachine.id]
+    [logTruth, updateMachines]
   );
 
-  // Manual Controls
-  const setMachineLight = (color: 'red' | 'yellow' | 'green' | 'off') => {
-    setLight(color);
-    let st: 'running' | 'idle' | 'stopped' | 'unknown' = 'unknown';
-    if (color === 'green') st = 'running';
-    else if (color === 'yellow') st = 'idle';
-    else if (color === 'red') st = 'stopped';
-    else st = 'stopped';
-    setState(st);
-
-    if (color !== 'red') {
-      setAlarmCode(null);
-    }
-    emitTruthEvent('state_change', st, color, count, color === 'red' ? alarmCode : null);
-  };
-
-  const handleManualAlarm = (text: string | null) => {
-    setAlarmCode(text);
-    if (text) {
-      setLight('red');
-      setState('stopped');
-      emitTruthEvent('alarm', 'stopped', 'red', count, text);
-    } else if (alarmCode) {
-      emitTruthEvent('alarm_cleared', state, light, count, null);
-    }
-  };
-
-  const handleIncrementCount = (delta: number) => {
-    setCount((prev) => {
-      const next = Math.max(0, prev + delta);
-      emitTruthEvent('count', state, light, next, alarmCode);
-      return next;
-    });
-  };
-
-  const handleResetCount = () => {
-    setCount(0);
-    emitTruthEvent('count', state, light, 0, alarmCode);
-  };
-
-  // Start / End Soak Runs
-  const handleStartSoak = async () => {
-    try {
-      const run = await startSoakRun({
-        duration_min: soakDurationMin,
-        schedule_seed: soakSeed,
-        machines: [currentMachine.id],
-      });
-      setSoakRunId(run.id);
-      setIsSoakActive(true);
-      setRunSeconds(0);
-      emitTruthEvent('state_change', state, light, count, alarmCode);
-    } catch (err) {
-      console.error('Failed to start soak run:', err);
-      alert('Failed to start soak run. Check permissions or network.');
-    }
-  };
-
-  const handleStopSoak = useCallback(async () => {
-    if (soakRunId) {
-      try {
-        await endSoakRun(soakRunId);
-      } catch (err) {
-        console.warn('Failed to end soak run:', err);
-      }
-    }
-    setIsSoakActive(false);
-    setSoakRunId(null);
-  }, [soakRunId]);
-
-  // Deterministic Soak Schedule & Clock Engine
+  // Engine: parts counting and the soak schedule, ticking 4x per second.
   useEffect(() => {
     const timer = setInterval(() => {
-      if (isSoakActive) {
-        setRunSeconds((s) => {
-          const nextSec = s + 1;
-          if (nextSec >= soakDurationMin * 60) {
-            handleStopSoak();
-            return nextSec;
+      const now = Date.now();
+      const r = runRef.current;
+      if (r) {
+        const s = (now - r.localStart) / 1000;
+        setClockS(s);
+        if (r.auto) {
+          for (const m of machinesRef.current.slice(0, machineCount)) {
+            const phases = schedulesRef.current[m.slot];
+            if (!phases?.length) continue;
+            const phase = phaseAt(phases, s);
+            if (phase.state !== m.state || phase.alarm !== m.alarm) applyState(m.slot, phase.state, phase.alarm);
           }
-
-          // Deterministic phase generation based on seed and elapsed seconds
-          const phasePeriod = 120;
-          const cycleSec = (nextSec + soakSeed * 7) % phasePeriod;
-
-          if (cycleSec === 0) {
-            // Transition: Green / Running
-            setLight('green');
-            setState('running');
-            setAlarmCode(null);
-            emitTruthEvent('state_change', 'running', 'green', count, null);
-          } else if (cycleSec === 45) {
-            // Transition: Yellow / Idle
-            setLight('yellow');
-            setState('idle');
-            setAlarmCode(null);
-            emitTruthEvent('state_change', 'idle', 'yellow', count, null);
-          } else if (cycleSec === 65) {
-            // Transition: Green / Running
-            setLight('green');
-            setState('running');
-            setAlarmCode(null);
-            emitTruthEvent('state_change', 'running', 'green', count, null);
-          } else if (cycleSec === 95) {
-            // Transition: Red / Stopped with Alarm
-            setLight('red');
-            setState('stopped');
-            const alarmMsg = PRESET_ALARMS[soakSeed % PRESET_ALARMS.length].text;
-            setAlarmCode(alarmMsg);
-            emitTruthEvent('alarm', 'stopped', 'red', count, alarmMsg);
-          }
-
-          // Counter increment during running state
-          if (state === 'running' && nextSec % currentMachine.idealCycleS === 0) {
-            setCount((c) => {
-              const nc = c + 1;
-              emitTruthEvent('count', 'running', 'green', nc, null);
-              return nc;
-            });
-          }
-
-          return nextSec;
-        });
+        }
+        if (s >= r.durationS) {
+          endSoakRun(r.id).catch(() => {});
+          updateRun(null);
+        }
       }
-
-      // Live cycle progress animation
-      if (state === 'running') {
-        setCycleProgress((prev) => (prev >= 100 ? 0 : prev + 100 / currentMachine.idealCycleS));
-      } else {
-        setCycleProgress(0);
-      }
-    }, 1000);
-
+      let changed = false;
+      const updated = machinesRef.current.map((m) => {
+        if (m.state !== 'running') return m.nextPartAt > now ? m : { ...m, nextPartAt: now + nextCycleMs(m.idealCycleS) };
+        if (now < m.nextPartAt) return m;
+        changed = true;
+        const next = { ...m, count: m.count + 1, nextPartAt: now + nextCycleMs(m.idealCycleS) };
+        if (m.slot <= machineCount) logTruth(m.slot, 'count', next);
+        return next;
+      });
+      if (changed) updateMachines(updated);
+    }, 250);
     return () => clearInterval(timer);
-  }, [
-    isSoakActive,
-    soakDurationMin,
-    soakSeed,
-    state,
-    count,
-    currentMachine.idealCycleS,
-    emitTruthEvent,
-    handleStopSoak,
-  ]);
+  }, [applyState, logTruth, machineCount, updateMachines, updateRun]);
 
-  // Format Run Clock HH:MM:SS
-  const formatRunClock = (totalSec: number) => {
-    const hrs = String(Math.floor(totalSec / 3600)).padStart(2, '0');
-    const mins = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
-    const secs = String(totalSec % 60).padStart(2, '0');
-    return `${hrs}:${mins}:${secs}`;
+  const startRun = async () => {
+    setError(null);
+    try {
+      const slots = BENCH.slice(0, machineCount).map((b) => b.slot);
+      const created = await startSoakRun({
+        duration_min: duration,
+        schedule_seed: seed,
+        machines: slots.map((s) => `bench_${s}`),
+      });
+      const durationS = duration * 60;
+      schedulesRef.current = Object.fromEntries(slots.map((s) => [s, buildBenchSchedule(seed, s, durationS, pace)]));
+      updateRun({ id: created.id, localStart: Date.now(), durationS, auto: autoSchedule });
+      setClockS(0);
+      setTruthFailures(0);
+      // Truth starts from a known state: every machine running with no alarm.
+      for (const s of slots) {
+        const m = machinesRef.current.find((x) => x.slot === s);
+        if (m?.state === 'running' && !m.alarm) logTruth(s, 'state_change', m);
+        else applyState(s, 'running', null);
+      }
+    } catch {
+      setError('Could not start the run. Check that you are signed in and online.');
+    }
   };
+
+  const stopRun = async () => {
+    const r = runRef.current;
+    updateRun(null);
+    if (r) await endSoakRun(r.id).catch(() => {});
+  };
+
+  const visible = machines.slice(0, machineCount);
 
   return (
     <div className="bg-neutral-950 text-neutral-100 min-h-screen flex flex-col font-sans select-none antialiased">
-      {/* Top Bar */}
-      <header className="bg-neutral-900 border-b border-neutral-800 px-4 py-3 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => navigate('/')}
-              className="text-neutral-400 hover:text-white transition-colors"
-              title="Return to Home"
-            >
-              <span className="material-symbols-outlined text-[24px]">arrow_back</span>
-            </button>
-            <img src={logoSvg} alt="TAKUMI" className="w-7 h-7 object-contain" />
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[17px] font-bold tracking-wide text-white">
-                  TAKUMI VIRTUAL RIG
-                </span>
-                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
-                  PILLAR 3
-                </span>
+      {showControls && (
+        <header className="bg-neutral-900 border-b border-neutral-800 px-4 py-3">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-3 justify-between">
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={() => navigate('/')} className="text-neutral-400 hover:text-white" aria-label="Back to home">
+                <span className="material-symbols-outlined text-[24px]">arrow_back</span>
+              </button>
+              <img src={logoSvg} alt="TAKUMI" className="w-7 h-7" />
+              <div>
+                <div className="font-bold tracking-wide">Machine test bench</div>
+                <div className="text-xs text-neutral-400">Point a camera at this screen and open Machine Watch on it</div>
               </div>
-              <p className="text-xs text-neutral-400">
-                Deterministic Edge & Vision Test Bench
-              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <label className="flex items-center gap-1">
+                Machines
+                <select value={machineCount} onChange={(e) => setMachineCount(Number(e.target.value))} disabled={!!run} className="bg-neutral-800 rounded px-2 py-1">
+                  {[1, 2, 3].map((n) => (
+                    <option key={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
+                Minutes
+                <select value={duration} onChange={(e) => setDuration(Number(e.target.value))} disabled={!!run} className="bg-neutral-800 rounded px-2 py-1">
+                  {DURATIONS.map((d) => (
+                    <option key={d}>{d}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
+                Seed
+                <input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value) || 0)} disabled={!!run} className="bg-neutral-800 rounded px-2 py-1 w-20" />
+              </label>
+              <label className="flex items-center gap-1">
+                Pace
+                <select value={pace} onChange={(e) => setPace(e.target.value as BenchPace)} disabled={!!run} className="bg-neutral-800 rounded px-2 py-1">
+                  <option value="realistic">Realistic</option>
+                  <option value="fast">Fast (x10)</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1">
+                <input type="checkbox" checked={autoSchedule} onChange={(e) => setAutoSchedule(e.target.checked)} disabled={!!run} />
+                Automatic faults
+              </label>
+              {run ? (
+                <button type="button" onClick={stopRun} className="min-h-[44px] px-4 rounded-xl bg-red-700 font-bold">
+                  End run
+                </button>
+              ) : (
+                <button type="button" onClick={startRun} className="min-h-[44px] px-4 rounded-xl bg-emerald-700 font-bold">
+                  Start soak run
+                </button>
+              )}
+              <button type="button" onClick={() => setShowControls(false)} className="min-h-[44px] px-3 rounded-xl bg-neutral-800">
+                Camera view
+              </button>
             </div>
           </div>
-
-          <div className="flex items-center gap-3">
-            {/* Screen Wake Status */}
-            <div
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-medium border ${
-                wakeLockActive
-                  ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
-                  : 'bg-neutral-800 border-neutral-700 text-neutral-400'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">
-                {wakeLockActive ? 'screen_lock_portrait' : 'screen_lock_rotation'}
-              </span>
-              <span>{wakeLockActive ? 'Screen Awake' : 'No Wake Lock'}</span>
+          {error && <div className="max-w-7xl mx-auto mt-2 text-red-300 text-sm">{error}</div>}
+          {truthFailures > 0 && (
+            <div className="max-w-7xl mx-auto mt-2 text-amber-300 text-sm">
+              {truthFailures} ground-truth events failed to save; this run's score will be incomplete.
             </div>
+          )}
+        </header>
+      )}
 
-            {/* Fullscreen Toggle */}
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              className="w-9 h-9 rounded-lg bg-neutral-800 border border-neutral-700 text-neutral-300 hover:text-white flex items-center justify-center transition-colors"
-              title="Toggle Fullscreen for Rig Monitor"
-            >
-              <span className="material-symbols-outlined text-[20px]">
-                {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
-              </span>
-            </button>
+      <main className="flex-1 relative flex items-center justify-center p-4" onDoubleClick={() => setShowControls(true)}>
+        {/* Run clock: used to line up a recorded video with the ground truth */}
+        <div className="absolute top-3 right-3 bg-black border border-neutral-700 rounded-xl px-4 py-2 text-right">
+          <div className="text-[11px] font-mono text-neutral-400">{run ? `RUN ${run.id.slice(-6).toUpperCase()}` : 'NO RUN'}</div>
+          <div className="font-mono text-3xl font-bold tabular-nums text-emerald-400" data-testid="run-clock">
+            {run ? formatRunClock(clockS) : '--:--:--'}
           </div>
         </div>
-      </header>
-
-      {/* Main Machine Rig Interface */}
-      <main className="flex-1 max-w-7xl mx-auto w-full p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Visual Rig (Stack Light + HMI + Counter) */}
-        <section className="lg:col-span-8 flex flex-col gap-6">
-          {/* Machine Header & Selector */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <span className="text-xs font-mono text-neutral-400 uppercase tracking-wider">
-                Active Cell
-              </span>
-              <h1 className="text-xl font-bold text-white flex items-center gap-2">
-                {currentMachine.name}
-                <span className="text-xs font-mono px-2 py-0.5 rounded bg-neutral-800 text-neutral-400 font-normal">
-                  {currentMachine.id}
-                </span>
-              </h1>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {MACHINES.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setSelectedMachineId(m.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    selectedMachineId === m.id
-                      ? 'bg-neutral-100 text-neutral-900 shadow'
-                      : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
-                  }`}
-                >
-                  {m.name.split(' ')[0]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Industrial RIG Display Box */}
-          <div className="relative bg-gradient-to-b from-neutral-900 to-neutral-950 border-2 border-neutral-800 rounded-3xl p-6 sm:p-8 shadow-2xl flex flex-col md:flex-row items-center justify-around gap-8 min-h-[440px]">
-            {/* Prominent Soak Run Clock (Corner Overlay) */}
-            <div className="absolute top-4 right-4 bg-neutral-950/90 border border-neutral-700/80 rounded-xl px-4 py-2 flex flex-col items-end shadow-lg backdrop-blur-md">
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
-                {isSoakActive ? `RUN CLOCK (${soakRunId?.slice(0, 8)}...)` : 'TEST CLOCK'}
-              </span>
-              <span
-                data-testid="virtual-run-clock"
-                className={`font-mono text-2xl sm:text-3xl font-extrabold tracking-widest ${
-                  isSoakActive ? 'text-emerald-400 animate-pulse' : 'text-neutral-500'
-                }`}
-              >
-                {formatRunClock(runSeconds)}
-              </span>
-            </div>
-
-            {/* Stack Light Segment */}
-            <div className="flex flex-col items-center">
-              <span className="text-xs font-mono text-neutral-400 mb-2 font-bold">
-                PATLITE STACK
-              </span>
-              {/* Stack housing */}
-              <div className="w-24 sm:w-28 bg-neutral-900 rounded-2xl p-2.5 border-4 border-neutral-800 shadow-2xl flex flex-col gap-2">
-                {/* Red Light */}
-                <div
-                  data-testid="stack-light-red"
-                  className={`w-full h-20 rounded-xl transition-all duration-300 flex items-center justify-center border ${
-                    light === 'red'
-                      ? 'bg-red-500 border-red-300 shadow-[0_0_35px_rgba(239,68,68,0.95)] animate-pulse'
-                      : 'bg-red-950/30 border-red-950/40'
-                  }`}
-                >
-                  {light === 'red' && (
-                    <span className="w-8 h-8 rounded-full bg-red-200/40 blur-xs" />
-                  )}
-                </div>
-
-                {/* Yellow Light */}
-                <div
-                  data-testid="stack-light-yellow"
-                  className={`w-full h-20 rounded-xl transition-all duration-300 flex items-center justify-center border ${
-                    light === 'yellow'
-                      ? 'bg-amber-400 border-amber-200 shadow-[0_0_35px_rgba(251,191,36,0.95)]'
-                      : 'bg-amber-950/30 border-amber-950/40'
-                  }`}
-                >
-                  {light === 'yellow' && (
-                    <span className="w-8 h-8 rounded-full bg-amber-100/40 blur-xs" />
-                  )}
-                </div>
-
-                {/* Green Light */}
-                <div
-                  data-testid="stack-light-green"
-                  className={`w-full h-20 rounded-xl transition-all duration-300 flex items-center justify-center border ${
-                    light === 'green'
-                      ? 'bg-emerald-400 border-emerald-200 shadow-[0_0_35px_rgba(52,211,153,0.95)]'
-                      : 'bg-emerald-950/30 border-emerald-950/40'
-                  }`}
-                >
-                  {light === 'green' && (
-                    <span className="w-8 h-8 rounded-full bg-emerald-100/40 blur-xs" />
-                  )}
-                </div>
-              </div>
-              {/* Mounting Pole */}
-              <div className="w-5 h-20 bg-gradient-to-r from-neutral-700 via-neutral-600 to-neutral-800 border-x border-neutral-700" />
-              {/* Base */}
-              <div className="w-20 h-4 bg-neutral-800 rounded-b-xl border border-neutral-700" />
-            </div>
-
-            {/* Industrial HMI Screen & Counter */}
-            <div className="flex-1 max-w-md w-full flex flex-col gap-5">
-              {/* Monospace 7-Segment Digital Parts Counter */}
-              <div className="bg-neutral-950 border-2 border-neutral-800 rounded-2xl p-4 shadow-inner flex flex-col items-center">
-                <div className="w-full flex items-center justify-between text-xs font-mono text-neutral-400 mb-1">
-                  <span>OMRON PARTS COUNTER</span>
-                  <span className="text-amber-500 font-bold">DIGITAL PULSE</span>
-                </div>
-                <div
-                  data-testid="virtual-counter-display"
-                  className="font-mono text-5xl sm:text-6xl font-black tracking-widest text-amber-400 drop-shadow-[0_0_12px_rgba(251,191,36,0.6)] py-2 select-all"
-                >
-                  {String(count).padStart(5, '0')}
-                </div>
-                {/* Cycle Timer Progress Bar */}
-                <div className="w-full bg-neutral-900 h-2 rounded-full overflow-hidden mt-1 border border-neutral-800">
-                  <div
-                    className="h-full bg-amber-400 transition-all duration-200"
-                    style={{ width: `${Math.min(100, cycleProgress)}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* HMI Message Terminal */}
-              <div className="bg-neutral-950 border-2 border-neutral-800 rounded-2xl p-5 shadow-inner flex flex-col gap-3 font-mono">
-                <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
-                  <span className="text-xs text-neutral-400">PRO-FACE HMI TERMINAL</span>
-                  <span
-                    className={`text-xs font-bold px-2 py-0.5 rounded ${
-                      state === 'running'
-                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/40'
-                        : state === 'idle'
-                        ? 'bg-amber-950 text-amber-400 border border-amber-500/40'
-                        : 'bg-red-950 text-red-400 border border-red-500/40'
-                    }`}
-                  >
-                    STATUS: {state.toUpperCase()}
-                  </span>
-                </div>
-
-                {/* Alarm Line */}
-                <div className="p-3 bg-neutral-900 rounded-xl border border-neutral-800 min-h-[58px] flex items-center">
-                  {alarmCode ? (
-                    <div className="text-red-400 font-bold flex items-center gap-2 animate-pulse">
-                      <span className="material-symbols-outlined text-[20px]">warning</span>
-                      <span data-testid="virtual-alarm-text">{alarmCode}</span>
-                    </div>
-                  ) : (
-                    <div className="text-neutral-400 flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[18px] text-emerald-400">
-                        check_circle
-                      </span>
-                      <span>SYSTEM NORMAL (NO ACTIVE ALARM)</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs text-neutral-400 pt-1">
-                  <div>
-                    CYCLE TIME:{' '}
-                    <span className="text-neutral-200 font-bold">
-                      {currentMachine.idealCycleS.toFixed(1)}s
-                    </span>
-                  </div>
-                  <div>
-                    STATE: <span className="text-neutral-200 font-bold">{state.toUpperCase()}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Right Column: Controls, Soak Scheduler & Event Stream */}
-        <section className="lg:col-span-4 flex flex-col gap-6">
-          {/* Mode Tabs: Manual vs Soak */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-300">
-                Rig Simulator Controls
-              </h2>
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-neutral-800 text-neutral-400">
-                {isSoakActive ? 'SOAK ACTIVE' : 'MANUAL'}
-              </span>
-            </div>
-
-            {/* Manual Light Toggles */}
-            <div className="space-y-2">
-              <span className="text-xs font-mono text-neutral-400">Stack Light Override</span>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setMachineLight('green')}
-                  className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                    light === 'green'
-                      ? 'bg-emerald-500 text-neutral-950 font-black shadow-lg shadow-emerald-500/20'
-                      : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                  }`}
-                >
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-                  <span>Green (Run)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMachineLight('yellow')}
-                  className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                    light === 'yellow'
-                      ? 'bg-amber-400 text-neutral-950 font-black shadow-lg shadow-amber-400/20'
-                      : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                  }`}
-                >
-                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-                  <span>Yellow (Idle)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMachineLight('red')}
-                  className={`py-2 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all ${
-                    light === 'red'
-                      ? 'bg-red-500 text-neutral-950 font-black shadow-lg shadow-red-500/20'
-                      : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                  }`}
-                >
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-400" />
-                  <span>Red (Stop)</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Counter Controls */}
-            <div className="space-y-2">
-              <span className="text-xs font-mono text-neutral-400">Parts Counter Override</span>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleIncrementCount(1)}
-                  className="py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold rounded-xl transition-all"
-                >
-                  +1 Part
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleIncrementCount(10)}
-                  className="py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-bold rounded-xl transition-all"
-                >
-                  +10 Parts
-                </button>
-                <button
-                  type="button"
-                  onClick={handleResetCount}
-                  className="py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-red-400 text-xs font-bold rounded-xl transition-all"
-                >
-                  Reset (0)
-                </button>
-              </div>
-            </div>
-
-            {/* Manual Alarms Trigger */}
-            <div className="space-y-2">
-              <span className="text-xs font-mono text-neutral-400">Trigger HMI Alarms</span>
-              <div className="grid grid-cols-2 gap-2">
-                {PRESET_ALARMS.map((alarm) => (
-                  <button
-                    key={alarm.code}
-                    type="button"
-                    onClick={() => handleManualAlarm(alarm.text)}
-                    className="py-2 px-2.5 bg-neutral-800 hover:bg-red-950/60 hover:text-red-300 text-neutral-300 text-[11px] font-bold rounded-xl truncate text-left border border-neutral-700/60 transition-all"
-                  >
-                    {alarm.code}: {alarm.text.split(' ')[0]}
-                  </button>
-                ))}
-              </div>
-              {alarmCode && (
-                <button
-                  type="button"
-                  onClick={() => handleManualAlarm(null)}
-                  className="w-full py-2 bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5"
-                >
-                  <span className="material-symbols-outlined text-[16px]">check</span>
-                  <span>Clear Active Alarm</span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Soak Test Runner Card */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-300">
-                Deterministic Soak Test
-              </h2>
-              <span className="material-symbols-outlined text-neutral-400 text-[18px]">
-                science
-              </span>
-            </div>
-
-            {!isSoakActive ? (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-mono text-neutral-400 block mb-1">
-                      Duration
-                    </label>
-                    <select
-                      value={soakDurationMin}
-                      onChange={(e) => setSoakDurationMin(Number(e.target.value))}
-                      className="w-full bg-neutral-950 border border-neutral-800 text-neutral-200 text-xs rounded-xl p-2 font-mono"
-                    >
-                      <option value={5}>5 min</option>
-                      <option value={15}>15 min</option>
-                      <option value={30}>30 min</option>
-                      <option value={60}>60 min</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-mono text-neutral-400 block mb-1">
-                      Seed
-                    </label>
-                    <input
-                      type="number"
-                      value={soakSeed}
-                      onChange={(e) => setSoakSeed(Number(e.target.value))}
-                      className="w-full bg-neutral-950 border border-neutral-800 text-neutral-200 text-xs rounded-xl p-2 font-mono"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleStartSoak}
-                  className="w-full py-3 bg-emerald-500 text-neutral-950 font-extrabold text-sm rounded-xl hover:brightness-110 active:scale-[0.99] transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
-                >
-                  <span className="material-symbols-outlined text-[18px]">play_arrow</span>
-                  <span>Start Soak Run</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="p-3 bg-neutral-950 border border-emerald-500/40 rounded-xl font-mono text-xs text-neutral-300 space-y-1">
-                  <div>
-                    RUN ID: <span className="text-emerald-400 font-bold">{soakRunId}</span>
-                  </div>
-                  <div>
-                    ELAPSED:{' '}
-                    <span className="text-white font-bold">{formatRunClock(runSeconds)}</span> /{' '}
-                    {soakDurationMin}m
-                  </div>
-                  <div>
-                    SEED: <span className="text-neutral-200 font-bold">{soakSeed}</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleStopSoak}
-                  className="w-full py-3 bg-red-500 text-neutral-950 font-extrabold text-sm rounded-xl hover:brightness-110 active:scale-[0.99] transition-all shadow-lg shadow-red-500/20 flex items-center justify-center gap-2"
-                >
-                  <span className="material-symbols-outlined text-[18px]">stop</span>
-                  <span>Stop Soak Run</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Truth Event Stream Log */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-5 flex flex-col gap-3 flex-1 min-h-[180px]">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono font-bold text-neutral-400 uppercase tracking-wider">
-                Ground Truth Stream
-              </span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            </div>
-
-            <div className="space-y-1.5 overflow-y-auto max-h-[220px] font-mono text-xs">
-              {recentEvents.length === 0 ? (
-                <p className="text-neutral-500 italic py-2">No state events recorded yet.</p>
-              ) : (
-                recentEvents.map((ev, idx) => (
-                  <div
-                    key={idx}
-                    className="p-2 rounded-lg bg-neutral-950/80 border border-neutral-800 flex items-center justify-between gap-2"
-                  >
-                    <span className="text-neutral-200 truncate">{ev.text}</span>
-                    <span className="text-[10px] text-neutral-500 shrink-0">{ev.time}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </section>
+        <div className={`grid gap-4 w-full max-w-7xl ${machineCount === 1 ? 'grid-cols-1' : machineCount === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 lg:grid-cols-3'}`}>
+          {visible.map((m) => (
+            <MachinePanel key={m.slot} m={m} showControls={showControls && !run?.auto} onSet={applyState} />
+          ))}
+        </div>
+        {!showControls && <div className="absolute bottom-3 left-3 text-[11px] text-neutral-600">Double-click to show controls</div>}
       </main>
+
+      <footer className="text-center text-xs text-neutral-500 py-2">HOME RIG test bench, simulated machines</footer>
     </div>
   );
 };

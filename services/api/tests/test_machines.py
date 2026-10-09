@@ -673,3 +673,15 @@ def test_soak_truth_uses_server_time_and_accepts_alarm_cleared(mock_firestore):
     assert row["event_type"] == "alarm_cleared"
     assert not row["ts"].startswith("1999")
     assert 89.0 <= row["run_s"] <= 100.0
+
+
+def test_read_in_soak_run_counts_reads_and_tokens(mock_firestore):
+    mock_db, machines_db, soak_db = mock_firestore
+    crop = _make_dummy_image_b64(200, 200)
+    _seed_machine(machines_db, "mach_s", source="LIVE")
+    soak_db["soak_2"] = {"id": "soak_2", "started_at": datetime.now(timezone.utc).isoformat(), "status": "running"}
+
+    _read(mock_db, "mach_s", _gemini("green"), {"stack_light_b64": crop}, soak_run_id="soak_2")
+
+    assert "reads.mach_s" in soak_db["soak_2"]
+    assert "tokens_in" in soak_db["soak_2"]

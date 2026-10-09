@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, confloat
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, confloat, conint
 
 
 class Status(Enum):
@@ -61,4 +61,14 @@ class SoakRun(BaseModel):
     status: Status = Field(..., description='Current status of the soak run')
     truth: list[SoakTruth] | None = Field(
         None, description='Optional embedded truth entries or subcollection documents'
+    )
+    reads: dict[str, conint(ge=0)] | None = Field(
+        None, description='Gemini machine reads during this run, per machine id'
+    )
+    tokens_in: conint(ge=0) | None = Field(
+        None, description='Gemini input tokens used by machine reads in this run'
+    )
+    tokens_out: conint(ge=0) | None = Field(
+        None,
+        description='Gemini output tokens (incl. thinking) used by machine reads in this run',
     )

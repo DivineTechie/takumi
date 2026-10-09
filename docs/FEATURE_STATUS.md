@@ -5,6 +5,7 @@ This inventory records the deployment status and ownership for all Google AI mod
 ## Status Definitions
 - **Live**: Implemented, tested, deployed, and serving traffic in production on `https://takumi-cup-2026.web.app` and Cloud Run.
 - **In Progress (Member B)**: Implemented in code on branch `forge` or deployed in staging; pipeline integration active.
+- **In progress**: Built and tested (unit tests, local browser checks) but not yet proven end to end on the deployed site or scored by an evaluation.
 - **Planned**: Defined in architectural specifications and configuration files; planned for future milestones.
 
 ---
@@ -17,6 +18,8 @@ This inventory records the deployment status and ownership for all Google AI mod
 | `gemini-3.5-flash-lite` | High-frequency (1 FPS) visual step watcher detecting task progression, common mistakes, and safety rule hazards; deep health pings; initial screening stage in dual-stage End-of-Line Quality Inspection (comparing candidate unit against 3 golden references). | [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) (`call_watch`, `check_deep_health`), [`services/api/inspection.py`](file:///c:/takumi/services/api/inspection.py) (`run_screen`) | **Live** | Member A |
 | `gemini-3.8-flash` | Strict objective step verification against visible success criteria and safety rules; supervisor insight aggregation; second confirmation stage in End-of-Line Quality Inspection validating flaws with full defect taxonomy context. | [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) (`call_verify`), [`services/api/inspection.py`](file:///c:/takumi/services/api/inspection.py) (`run_confirm`), [`services/api/main.py`](file:///c:/takumi/services/api/main.py) | **Live** | Member A |
 | `gemini-robotics-er-2-preview` | Spatial coordinate extraction and workbench reticle pointing (`[y, x]` normalized coordinates). | [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) (`call_point`) | **Live** | Member A |
+| `gemini-robotics-er-2-preview` (Machine Watch setup) | Finds each machine's stack light, parts counter and HMI screen in one camera frame (boxes the supervisor can adjust). Called once per setup, never while watching. | [`services/api/machines.py`](services/api/machines.py) (`call_robotics_er_setup`) | **In progress** | Member A |
+| `gemini-3.5-flash-lite` (Machine Watch reads) | Reads the light colour, counter value and alarm text from small region crops, only when the browser's edge check sees a stable change (plus a 5-minute heartbeat; max 6 reads per machine per minute). | [`services/api/machines.py`](services/api/machines.py) (`call_flash_lite_read`) | **In progress** | Member A |
 | `gemini-omni-1.1-flash` | Multimodal analysis of raw master craftsman video recordings into structured assembly steps. | `services/forge/graph/nodes/segmenter.py` (branch `forge`) | **In progress** | Member B |
 | `gemini-3.8-flash` (Forge) | Extraction of underlying rationale ("why" explanations) and multilingual localization across JAPAC target languages. | `services/forge/graph/nodes/why_extractor.py`, `localizer.py` (branch `forge`) | **In progress** | Member B |
 | `gemini-robotics-er-2-preview` (Forge) | Spatial coordinate keyframe annotation and technical manual alignment in master captures. | `services/forge/graph/nodes/spatial_annotator.py` (branch `forge`) | **In progress** | Member B |
@@ -35,9 +38,9 @@ This inventory records the deployment status and ownership for all Google AI mod
 | **Cloud Run (`takumi-forge`)** | Google ADK 2.0 graph workflow container for processing master capture videos. | Region: `asia-southeast1`<br>URL: `https://takumi-forge-692366725458.asia-southeast1.run.app` | **In progress** | Member B |
 | **Firebase Hosting** | Global CDN hosting for React 19 + TypeScript + Vite Progressive Web Application with security headers and API rewrites. | Project: `takumi-cup-2026`<br>URL: `https://takumi-cup-2026.web.app` | **Live** | Member A |
 | **Firebase Authentication** | Identity management supporting Google Sign-In and email authentication with custom role claims (`role: trainee \| master \| supervisor`). | Project: `takumi-cup-2026` | **Live** | Member A |
-| **Cloud Firestore (Native)** | Document database storing sessions, real-time session events, skills, review requests, skill passports, product inspection profiles (`products`), inspection results (`inspections`), unit tracking (`units`), and gallery items (`gallery`) with role-based security rules. | Database: `(default)`, Region: `asia-southeast1` | **Live** | Both |
+| **Cloud Firestore (Native)** | Document database storing sessions, real-time session events, skills, review requests, skill passports, product inspection profiles (`products`), inspection results (`inspections`), unit tracking (`units`), gallery items (`gallery`), Machine Watch machines, events and soak runs (`machines`, `machine_events`, `soak_runs`) with role-based security rules. | Database: `(default)`, Region: `asia-southeast1` | **Live** | Both |
 | **Cloud Storage** | Object storage bucket for workbench video frames, badge media, master capture assets, product reference units (`products/{id}/ref_{1,2,3}.jpg`), uploaded candidate inspection images (`units/{product_id}/{unit_id}.jpg`), and VisA benchmark test images (`gallery/{category}/{file}`) with strict access rules. | Bucket: `takumi-cup-2026.firebasestorage.app` | **Live** | Both |
-| **BigQuery** | Analytics data warehouse holding partitioned tables `takumi.session_events`, `takumi.api_calls`, and `takumi.inspection_events` for latency metrics, supervisor insights, and inspection telemetry. | Dataset: `takumi`, Region: `asia-southeast1` | **Live** | Member A |
+| **BigQuery** | Analytics data warehouse holding partitioned tables `takumi.session_events`, `takumi.api_calls`, `takumi.inspection_events` and `takumi.machine_events` for latency metrics, supervisor insights, inspection and machine telemetry. | Dataset: `takumi`, Region: `asia-southeast1` | **Live** | Member A |
 | **Secret Manager** | Centralized credential vault holding `GEMINI_API_KEY` and Firebase configurations; keys never exposed to browsers. | Project: `takumi-cup-2026` | **Live** | Member A |
 | **Model Armor** | Security screening engine filtering prompt injection, jailbreaks, and toxicity on user inputs before model ingestion. | Template in `asia-southeast1` | **Live** | Member A |
 | **Cloud Monitoring & Logging** | Structured JSON logging with trace context, log-based metrics for availability, and automated alert policies. | Project: `takumi-cup-2026` | **Live** | Member A |
@@ -45,7 +48,14 @@ This inventory records the deployment status and ownership for all Google AI mod
 
 ---
 
-## 3. Factory Governance & Access Control
+## 3. Machine Watch (pillar 3): **In progress**
+
+- Test bench `/machines/virtual` (HOME RIG): 1-3 simulated machines (stack light, counter, HMI) with a seeded fault schedule (realistic: a stop every 10-40 min lasting 1-8 min; fast: x10) and a run clock. Ground truth is logged with server timestamps.
+- Watch page `/machines/watch`: one Gemini Robotics-ER call per setup, then the browser checks the regions every 500 ms and calls Gemini Flash-Lite only on a stable change. Only region crops (max 512 px) leave the device; the setup frame is never stored. A recorded video can replace the camera with `?debug=1` (labelled "Simulated input").
+- Dashboard "Machines" tab: today's state timeline, availability, stops, downtime, top alarms, parts and availability x performance, labelled LIVE or HOME RIG.
+- Scoring: `python -m evals.machine_watch.score_soak <run_id>` writes detection rate, delays, false alarms and cost per machine. No soak run has been scored yet, so no Machine Watch numbers are published.
+
+## 4. Factory Governance & Access Control
 
 - **End-of-Line Quality Inspection Decisions**: Inspection verification and override decisions ([`POST /api/inspections/{id}/decision`](file:///c:/takumi/services/api/main.py)) stay strictly **supervisor-only** (`role: supervisor`). The worker/trainee who captured or submitted the inspection photo cannot approve or override their own flagged unit.
 - **Unit & Inspection Read Access**: Inspection reports and unit tracking records are restricted to the supervisor or the creating trainee/operator (`inspector_uid` / `created_by`); other trainees receive `403 Forbidden`.

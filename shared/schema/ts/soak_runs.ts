@@ -41,6 +41,20 @@ export interface SoakRun {
    * Optional embedded truth entries or subcollection documents
    */
   truth?: SoakTruth[];
+  /**
+   * Gemini machine reads during this run, per machine id
+   */
+  reads?: {
+    [k: string]: number;
+  };
+  /**
+   * Gemini input tokens used by machine reads in this run
+   */
+  tokens_in?: number;
+  /**
+   * Gemini output tokens (incl. thinking) used by machine reads in this run
+   */
+  tokens_out?: number;
 }
 export interface SoakTruth {
   id?: string;

@@ -13,7 +13,7 @@ Implements:
 
 import asyncio
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import logging
@@ -42,6 +42,7 @@ from services.api.config import (
     TIMEOUT_MACHINE_SETUP_S,
 )
 from services.api.gemini import _parse_thinking_config, get_genai_client
+from services.api.machine_stats import compute_machine_day
 from services.api.storage_client import upload_machine_evidence_jpeg
 from services.api.telemetry import trace_gemini_call
 
@@ -95,6 +96,7 @@ class CreateMachineRequest(BaseModel):
     rois: RoisModel
     ideal_cycle_s: float = Field(10.0, ge=0.1)
     source: Literal["LIVE", "VIRTUAL"] = "LIVE"
+    bench_slot: int | None = Field(None, ge=1, le=6)
 
 
 class MachineCrops(BaseModel):
@@ -296,8 +298,12 @@ async def call_flash_lite_read(
     prompt: str,
     labeled_crops: list[tuple[str, bytes]],
     client: genai.Client | None = None,
+    usage_out: dict[str, int] | None = None,
 ) -> MachineReadGeminiResponse:
-    """Invokes gemini-3.5-flash-lite on machine crops to read stack light, counter, and alarms."""
+    """Invokes gemini-3.5-flash-lite on machine crops to read stack light, counter, and alarms.
+
+    When usage_out is given it receives the call's token counts (for soak-run cost reporting).
+    """
     if client is None:
         client = get_genai_client()
 
@@ -323,6 +329,10 @@ async def call_flash_lite_read(
         asyncio.to_thread(_sync),
         timeout=TIMEOUT_MACHINE_READ_S,
     )
+    if usage_out is not None and res.usage_metadata is not None:
+        u = res.usage_metadata
+        usage_out["tokens_in"] = u.prompt_token_count or 0
+        usage_out["tokens_out"] = (u.candidates_token_count or 0) + (u.thoughts_token_count or 0)
     data = json.loads(res.text)
     return MachineReadGeminiResponse.model_validate(data)
 
@@ -442,6 +452,7 @@ def create_machine(
         "rois": req.rois.model_dump(),
         "ideal_cycle_s": req.ideal_cycle_s,
         "source": req.source,
+        "bench_slot": req.bench_slot,
         "created_by": user.uid,
         "created_at": now_iso,
         "updated_at": None,
@@ -463,6 +474,55 @@ def list_machines(
     db = get_firestore_client()
     docs = db.collection("machines").stream()
     return [doc.to_dict() for doc in docs]
+
+
+@router.get("/machines/summary")
+def machines_summary(
+    day: str | None = None,
+    user: AuthUser = Depends(require_role("supervisor")),
+) -> dict[str, Any]:
+    """Per-machine day summary for the dashboard: state timeline, availability, stops, alarms, parts, OEE parts.
+
+    day is YYYY-MM-DD in UTC (default: today). Only real machine_events are used; empty days return zeros/None.
+    """
+    now = datetime.now(timezone.utc)
+    try:
+        day_start = (
+            datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            if day
+            else now.replace(hour=0, minute=0, second=0, microsecond=0)
+        )
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="day must be YYYY-MM-DD")
+    day_end = min(day_start + timedelta(days=1), now)
+
+    db = get_firestore_client()
+    machines = [d.to_dict() or {} for d in db.collection("machines").stream()]
+    events_by_machine: dict[str, list[dict[str, Any]]] = {}
+    for d in db.collection("machine_events").where("ts", ">=", day_start.isoformat()).stream():
+        ev = d.to_dict() or {}
+        events_by_machine.setdefault(ev.get("machine_id", ""), []).append(ev)
+
+    out = []
+    for m in machines:
+        stats = compute_machine_day(
+            events_by_machine.get(m.get("id", ""), []),
+            float(m.get("ideal_cycle_s") or 10.0),
+            day_start,
+            day_end,
+        )
+        out.append({
+            "id": m.get("id"),
+            "name": m.get("name"),
+            "bench_slot": m.get("bench_slot"),
+            "state": m.get("state"),
+            "last_alarm": m.get("last_alarm"),
+            "last_count": m.get("last_count"),
+            "last_seen_at": m.get("last_seen_at"),
+            **stats,
+        })
+    out.sort(key=lambda r: (r.get("name") or "", r.get("id") or ""))
+    return {"day": day_start.date().isoformat(), "window_end": day_end.isoformat(), "machines": out}
 
 
 @router.get("/machines/{machine_id}")
@@ -543,9 +603,10 @@ async def read_machine(
         light_order_str=light_order_str,
     )
 
+    usage: dict[str, int] = {}
     t0 = time.time()
     try:
-        parsed = await call_flash_lite_read(prompt, labeled_crops)
+        parsed = await call_flash_lite_read(prompt, labeled_crops, usage_out=usage)
     except (asyncio.TimeoutError, TimeoutError):
         logger.warning(f"Machine read timed out for machine {machine_id}")
         raise HTTPException(
@@ -682,20 +743,29 @@ async def read_machine(
             "count": last_count,
         })
 
-    # Compute run_s for video/live soak runs
+    # Compute run_s for video/live soak runs, and count this read against the run (cost per machine)
     run_s: float | None = None
     if req.video_run_s is not None:
         run_s = req.video_run_s
-    elif req.soak_run_id:
-        soak_doc = db.collection("soak_runs").document(req.soak_run_id).get()
+    if req.soak_run_id:
+        soak_ref = db.collection("soak_runs").document(req.soak_run_id)
+        soak_doc = soak_ref.get()
         if soak_doc.exists:
-            soak_started = soak_doc.to_dict().get("started_at")
-            if soak_started:
+            soak_started = (soak_doc.to_dict() or {}).get("started_at")
+            if run_s is None and soak_started:
                 try:
                     s_dt = datetime.fromisoformat(soak_started.replace("Z", "+00:00"))
                     run_s = max(0.0, (now - s_dt).total_seconds())
-                except Exception:
+                except ValueError:
                     pass
+            try:
+                soak_ref.update({
+                    f"reads.{machine_id}": firestore.Increment(1),
+                    "tokens_in": firestore.Increment(usage.get("tokens_in", 0)),
+                    "tokens_out": firestore.Increment(usage.get("tokens_out", 0)),
+                })
+            except Exception as e:
+                logger.warning("Failed to count soak read: %s", e)
 
     now_iso = now.isoformat()
     changed = len(events_to_write) > 0
@@ -774,6 +844,17 @@ def start_soak_run(
 
     db.collection("soak_runs").document(soak_id).set(soak_data)
     return soak_data
+
+
+@router.get("/soak/mine")
+def list_my_soak_runs(
+    user: AuthUser = Depends(verify_auth_token),
+) -> list[dict[str, Any]]:
+    """The caller's 20 most recent soak runs (newest first), for picking a run on the watch page."""
+    db = get_firestore_client()
+    runs = [d.to_dict() or {} for d in db.collection("soak_runs").where("created_by", "==", user.uid).stream()]
+    runs.sort(key=lambda r: str(r.get("started_at") or ""), reverse=True)
+    return runs[:20]
 
 
 @router.post("/soak/{soak_id}/end")

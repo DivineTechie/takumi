@@ -67,6 +67,14 @@ export interface Machine {
    * Last update timestamp
    */
   updated_at?: string | null;
+  /**
+   * Position (1 = leftmost) of this machine on the HOME RIG test bench, used to match soak-run truth; null for real machines
+   */
+  bench_slot?: number | null;
+  /**
+   * Last counter reading rejected as a misread (a lower value confirmed twice is a reset)
+   */
+  last_misread_count?: number | null;
 }
 export interface NormalizedRoi {
   x: number;
