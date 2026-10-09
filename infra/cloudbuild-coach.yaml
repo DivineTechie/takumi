@@ -1,23 +1,48 @@
 steps:
-  # 1. Run Python tests (healthz, model armor, hardening, schema validation) + non-blocking audit
+  # Stage 1: all tests run in parallel ('-' = start at build begin).
+  # Every build step waits for all four, so any failing test stops all deploys.
+  # Each bash step starts with `set -eo pipefail` so a failing command fails the step
+  # (only the audits are non-blocking, via `|| true`).
+
+  # 1a. Run Python tests (healthz, model armor, hardening, schema validation) + non-blocking audit
   - name: 'python:3.12-slim'
     id: 'test-python'
+    waitFor: ['-']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        set -eo pipefail
+        export PYTHONDONTWRITEBYTECODE=1
         pip install --no-cache-dir -r requirements-dev.txt -r services/api/requirements.txt pip-audit
-        pytest
+        pytest -p no:cacheprovider
         echo "=== Running Python pip-audit (non-blocking) ==="
         pip-audit -r services/api/requirements.txt || true
 
-  # 2. Run Web lint, Vitest unit tests + non-blocking audit
-  - name: 'node:24-slim'
-    id: 'test-web'
+  # 1b. Run Forge tests (own container so Forge and API dependencies never clash) + non-blocking audit
+  - name: 'python:3.12-slim'
+    id: 'test-forge'
+    waitFor: ['-']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        set -eo pipefail
+        export PYTHONDONTWRITEBYTECODE=1
+        pip install --no-cache-dir -r requirements-dev.txt -r services/forge/requirements.txt pip-audit
+        pytest -p no:cacheprovider services/forge
+        echo "=== Running Forge pip-audit (non-blocking) ==="
+        pip-audit -r services/forge/requirements.txt || true
+
+  # 1c. Run Web lint, Vitest unit tests + non-blocking audit
+  - name: 'node:24-slim'
+    id: 'test-web'
+    waitFor: ['-']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -eo pipefail
         cd apps/web
         npm ci
         npm run lint
@@ -25,13 +50,15 @@ steps:
         echo "=== Running Web npm audit (non-blocking) ==="
         npm audit --omit=dev --audit-level=high || true
 
-  # 3. Verify Firebase Firestore & Storage security rules using emulators
+  # 1d. Verify Firebase Firestore & Storage security rules using emulators
   - name: 'node:24-slim'
     id: 'test-rules'
+    waitFor: ['-']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        set -eo pipefail
         echo "=== Installing OpenJDK 21 for Firebase Emulators ==="
         apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates
         mkdir -p /opt/java
@@ -47,9 +74,12 @@ steps:
         echo "=== Running Security Rule Tests against Firestore & Storage Emulators ==="
         npx --yes firebase-tools@15.32.1 emulators:exec --only firestore,storage --project takumi-rules-test "npm test --prefix infra/rules-tests"
 
-  # 4. Build API Docker image
+  # Stage 2: build both images in parallel once every test has passed.
+
+  # 2a. Build API Docker image
   - name: 'gcr.io/cloud-builders/docker'
     id: 'build-api'
+    waitFor: ['test-python', 'test-forge', 'test-web', 'test-rules']
     args:
       - 'build'
       - '-f'
@@ -60,16 +90,42 @@ steps:
       - '-t'
       - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:latest'
 
-  # 5. Push API Docker image to Artifact Registry
+  # 2b. Build Forge Docker image (repo root as context for shared/)
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-forge'
+    waitFor: ['test-python', 'test-forge', 'test-web', 'test-rules']
+    args:
+      - 'build'
+      - '-f'
+      - 'services/forge/Dockerfile'
+      - '.'
+      - '-t'
+      - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-forge:$COMMIT_SHA'
+
+  # Stage 3: push images to Artifact Registry.
+
+  # 3a. Push API Docker image
   - name: 'gcr.io/cloud-builders/docker'
     id: 'push-api'
+    waitFor: ['build-api']
     args:
       - 'push'
       - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-api:$COMMIT_SHA'
 
-  # 6. Deploy Cloud Run takumi-api
+  # 3b. Push Forge Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-forge'
+    waitFor: ['build-forge']
+    args:
+      - 'push'
+      - 'asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-forge:$COMMIT_SHA'
+
+  # Stage 4: deploy both Cloud Run services in parallel, only after both images are pushed.
+
+  # 4a. Deploy Cloud Run takumi-api
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy-api'
+    waitFor: ['push-api', 'push-forge']
     args:
       - 'gcloud'
       - 'run'
@@ -88,26 +144,51 @@ steps:
       - '--project=takumi-cup-2026'
       - '--quiet'
 
-  # 7. Deploy Firebase security rules
+  # 4b. Deploy Cloud Run takumi-forge
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-forge'
+    waitFor: ['push-api', 'push-forge']
+    args:
+      - 'gcloud'
+      - 'run'
+      - 'deploy'
+      - 'takumi-forge'
+      - '--image=asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi/takumi-forge:$COMMIT_SHA'
+      - '--region=asia-southeast1'
+      - '--service-account=takumi-forge@takumi-cup-2026.iam.gserviceaccount.com'
+      - '--no-cpu-throttling'
+      - '--timeout=900s'
+      - '--max-instances=3'
+      - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
+      - '--allow-unauthenticated'
+      - '--project=takumi-cup-2026'
+      - '--quiet'
+
+  # Stage 5: deploy Firebase security rules
   - name: 'node:24-slim'
     id: 'deploy-rules'
+    waitFor: ['deploy-api', 'deploy-forge']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        set -eo pipefail
         npx --yes firebase-tools@15.32.1 deploy --only firestore:rules,firestore:indexes,storage --project takumi-cup-2026 --non-interactive
 
-  # 8. Write web config and build apps/web
+  # Stage 6: write web config and build apps/web
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'fetch-web-config'
+    waitFor: ['deploy-rules']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        set -eo pipefail
         gcloud secrets versions access latest --secret=FIREBASE_WEB_CONFIG --project=takumi-cup-2026 > apps/web/.env.production
 
   - name: 'node:24-slim'
     id: 'build-web'
+    waitFor: ['fetch-web-config']
     env:
       - 'COMMIT_SHA=$COMMIT_SHA'
       - 'SHORT_SHA=$SHORT_SHA'
@@ -115,21 +196,24 @@ steps:
     args:
       - '-c'
       - |
+        set -eo pipefail
         cd apps/web
         mkdir -p public
         echo "{\"version\":\"1.0.0\",\"commit\":\"$SHORT_SHA\",\"builtAt\":\"$$(date -u +'%Y-%m-%dT%H:%M:%SZ')\"}" > public/version.json
         npm ci
         npm run build
 
-  # 9. Deploy to Firebase Hosting live channel
+  # Stage 7: deploy to Firebase Hosting live channel
   - name: 'node:24-slim'
     id: 'deploy-hosting'
+    waitFor: ['build-web']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
+        set -eo pipefail
         npx --yes firebase-tools@15.32.1 deploy --only hosting --project takumi-cup-2026 --non-interactive
 
-timeout: '1200s'
+timeout: '1800s'
 options:
   logging: CLOUD_LOGGING_ONLY

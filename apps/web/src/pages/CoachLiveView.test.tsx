@@ -122,7 +122,10 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(GeminiLiveClient).mockImplementation(createDefaultMockClient as unknown as any);
+    const mockedLiveClient = vi.mocked(GeminiLiveClient);
+    mockedLiveClient.mockImplementation(
+      createDefaultMockClient as unknown as Parameters<typeof mockedLiveClient.mockImplementation>[0]
+    );
     window.history.pushState({}, '', '?debug=1');
 
     HTMLMediaElement.prototype.play = vi.fn().mockImplementation(() => Promise.resolve());
@@ -857,7 +860,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
       why: 'Insert straight into terminal 1',
       why_lang: 'en',
       translated: true,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof apiModule.fetchSkillMedia>>);
 
     render(
       <MemoryRouter>
@@ -1048,7 +1051,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
       why: 'Key master demonstration',
       why_lang: 'en',
       translated: true,
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof apiModule.fetchSkillMedia>>);
 
     const { unmount } = render(
       <MemoryRouter>

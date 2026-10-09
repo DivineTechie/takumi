@@ -7,8 +7,8 @@ to any worker in their language (Live Coach). Google Cloud AI Builder Cup 2026, 
 ## Stack (Google only)
 - Web: React 19 + Vite + TypeScript in /apps/web, Firebase Hosting, Firebase Auth (Google sign-in),
   roles in custom claim `role`: master | trainee | supervisor.
-- API: Python 3.12 FastAPI in /services/api on Cloud Run (owner: Member A).
-- Forge: Python 3.12 Google ADK 2.0 graph workflow in /services/forge on Cloud Run (owner: Member B).
+- API: Python 3.12 FastAPI in /services/api on Cloud Run.
+- Forge: Python 3.12 Google ADK 2.0 graph workflow in /services/forge on Cloud Run.
 - Data: Firestore (Native), Cloud Storage (one bucket), BigQuery dataset `takumi`.
 - AI: google-genai SDK. Model IDs live ONLY in services/*/config.py and apps/web/src/config.ts:
   gemini-3.8-flash, gemini-3.5-flash-lite, gemini-3.8-live, gemini-robotics-er-2-preview,
@@ -20,11 +20,8 @@ to any worker in their language (Live Coach). Google Cloud AI Builder Cup 2026, 
   rules enforce roles.
 
 ## Ownership
-- A: /apps/web (shell, auth, /coach, /dashboard, /passport, /evals), /services/api, /evals/coach,
-  /infra, CI, README, deck.
-- B: /apps/web/src/features/{capture,review,library}, /services/forge, /evals/forge.
-- Both: /shared/schema. Change it only via a PR approved by the other member.
-- Never edit another owner's folders without asking in the PR description.
+- Single working branch: coach (deploys API, Forge, rules and Hosting). main receives the final merge only.
+- /shared/schema changes: regenerate both TS and Pydantic and update both services in the same commit.
 
 ## Contracts
 /shared/schema holds JSON Schema + generated TS types + Pydantic models for captures, skills,
@@ -42,7 +39,7 @@ forge_jobs, review_requests, sessions, session events. Read them before any data
 - Accessibility: large touch targets, captions for all speech, works with gloves, WCAG AA contrast.
 
 ## Repo workflow
-- Branches: main (pull requests only, never push directly; CI deploys every merge), coach (Member A), forge (Member B).
+- Branches: coach (working branch, deploys everything), main (final merge only), forge (frozen).
 - The repo stays private until submission. Never print, commit or log anything that would be unsafe once it is public.
-  Rebase on main daily; one feature per PR; conventional commits, e.g. feat(coach): ..., feat(forge): ...
+  Never rebase or force-push shared branches; small focused commits on coach; conventional commits, e.g. feat(coach): ..., feat(forge): ...
 - Regenerate /shared/schema/ts and /shared/schema/py with `npm run schema` from the repo root.

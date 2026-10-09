@@ -1,3 +1,4 @@
+# Disabled: coach deploys everything since Oct 9
 steps:
   # 1. Conditionally build and push takumi-forge image
   - name: 'gcr.io/cloud-builders/docker'
