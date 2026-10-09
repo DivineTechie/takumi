@@ -120,5 +120,28 @@ service cloud.firestore {
     match /gallery/{galleryId} {
       allow read, write: if false;
     }
+
+    // machines: readable by any signed-in user, server-written only.
+    match /machines/{machineId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // machine_events: readable by supervisors only (no created_by on events).
+    match /machine_events/{eventId} {
+      allow read: if isSupervisor();
+      allow write: if false;
+    }
+
+    // soak_runs and soak_runs/{id}/truth: readable by supervisors or the run's creator (created_by).
+    match /soak_runs/{runId} {
+      allow read: if isSupervisor() || (isSignedIn() && resource.data.created_by == request.auth.uid);
+      allow write: if false;
+
+      match /truth/{truthId} {
+        allow read: if isSupervisor() || (isSignedIn() && get(/databases/$(database)/documents/soak_runs/$(runId)).data.created_by == request.auth.uid);
+        allow write: if false;
+      }
+    }
   }
 }

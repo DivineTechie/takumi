@@ -68,5 +68,11 @@ service firebase.storage {
     match /gallery/{allPaths=**} {
       allow read, write: if false;
     }
+
+    // evidence/** readable by supervisors; written only by the server
+    match /evidence/{allPaths=**} {
+      allow read: if isSupervisor();
+      allow write: if false;
+    }
   }
 }

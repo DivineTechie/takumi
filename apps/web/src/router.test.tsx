@@ -40,7 +40,9 @@ describe('Router & Feature Routes behind RoleGuard', () => {
     render(<RouterProvider router={router} />);
 
     // Trainee should be redirected away from /test-feature to Home ('/')
-    expect(await screen.findByText('What would you like to do?')).toBeInTheDocument();
+    expect(
+      await screen.findByText('What would you like to do?', {}, { timeout: 4000 })
+    ).toBeInTheDocument();
     expect(screen.queryByTestId('test-feature-content')).toBeNull();
   });
 

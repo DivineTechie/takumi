@@ -12,3 +12,6 @@ from shared.schema.py import passports
 from shared.schema.py import products
 from shared.schema.py import units
 from shared.schema.py import inspections
+from shared.schema.py import machines
+from shared.schema.py import machine_events
+from shared.schema.py import soak_runs

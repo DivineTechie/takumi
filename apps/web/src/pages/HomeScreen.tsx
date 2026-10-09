@@ -317,6 +317,34 @@ export const HomeScreen: React.FC = () => {
               </button>
             </div>
           </section>
+
+          {/* CARD 5: Machine Watch (Pillar 3) */}
+          <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-colors">
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-[24px] leading-[32px] font-bold text-on-surface">
+                  Machine Watch
+                </h2>
+                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  PILLAR 3
+                </span>
+              </div>
+              <p className="text-[16px] sm:text-[18px] leading-[24px] sm:leading-[26px] text-on-surface-variant">
+                Gemini configures, the edge watches, Gemini reasons. Simulate factory cells or run deterministic soak benchmarks.
+              </p>
+            </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => navigate('/machines/virtual')}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">precision_manufacturing</span>
+                <span>Virtual Machine Rig</span>
+              </button>
+            </div>
+          </section>
         </div>
       </main>
     </div>

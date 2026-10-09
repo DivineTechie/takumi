@@ -1,6 +1,10 @@
 import { auth } from './firebase';
 import type { Session } from '../../../../shared/schema/ts/sessions';
 import type { SessionEvent } from '../../../../shared/schema/ts/session_events';
+import type { Machine, NormalizedRoi } from '../../../../shared/schema/ts/machines';
+import type { SoakRun, SoakTruth } from '../../../../shared/schema/ts/soak_runs';
+
+export type { Machine, NormalizedRoi, SoakRun, SoakTruth };
 
 export class NotSignedInError extends Error {
   constructor(message = 'User is not signed in') {
@@ -643,6 +647,106 @@ export async function submitInspectionDecision(
 export async function fetchInspectionInsights(): Promise<InspectionInsightsResponse> {
   return await apiFetch<InspectionInsightsResponse>('/api/insights/inspections');
 }
+
+export async function startSoakRun(params: {
+  duration_min: number;
+  schedule_seed: number | string;
+  machines: string[];
+}): Promise<SoakRun> {
+  return await apiFetch<SoakRun>('/api/soak', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export async function endSoakRun(id: string): Promise<SoakRun> {
+  return await apiFetch<SoakRun>(`/api/soak/${encodeURIComponent(id)}/end`, {
+    method: 'POST',
+  });
+}
+
+export async function postSoakTruth(
+  id: string,
+  truth: {
+    machine_id: string;
+    ts: string;
+    run_s: number;
+    event_type: 'state_change' | 'alarm' | 'count';
+    state?: string | null;
+    count?: number | null;
+    alarm_code?: string | null;
+  }
+): Promise<{ status: string }> {
+  return await apiFetch<{ status: string }>(`/api/soak/${encodeURIComponent(id)}/truth`, {
+    method: 'POST',
+    body: JSON.stringify(truth),
+  });
+}
+
+export async function fetchMachines(): Promise<Machine[]> {
+  return await apiFetch<Machine[]>('/api/machines');
+}
+
+export async function fetchMachine(id: string): Promise<Machine> {
+  return await apiFetch<Machine>(`/api/machines/${encodeURIComponent(id)}`);
+}
+
+export async function setupMachine(image_b64: string): Promise<{
+  rois: {
+    stack_light: NormalizedRoi;
+    counter?: NormalizedRoi | null;
+    hmi?: NormalizedRoi | null;
+  };
+}> {
+  return await apiFetch('/api/machines/setup', {
+    method: 'POST',
+    body: JSON.stringify({ image_b64 }),
+  });
+}
+
+export async function createMachine(machine: {
+  name: string;
+  light_order?: string[];
+  state_map?: Record<string, string>;
+  rois: {
+    stack_light: NormalizedRoi;
+    counter?: NormalizedRoi | null;
+    hmi?: NormalizedRoi | null;
+  };
+  ideal_cycle_s?: number;
+  source?: 'LIVE' | 'VIRTUAL';
+}): Promise<Machine> {
+  return await apiFetch<Machine>('/api/machines', {
+    method: 'POST',
+    body: JSON.stringify(machine),
+  });
+}
+
+export async function readMachine(
+  id: string,
+  params: {
+    crops: {
+      stack_light_b64?: string;
+      counter_b64?: string;
+      hmi_b64?: string;
+    };
+    video_run_s?: number;
+    soak_run_id?: string;
+    detected_by?: 'edge' | 'gemini';
+  }
+): Promise<{
+  state: string;
+  light: string;
+  count: number | null;
+  alarm_code: string | null;
+  ms: number;
+}> {
+  return await apiFetch(`/api/machines/${encodeURIComponent(id)}/read`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
 
 
 

@@ -1,0 +1,86 @@
+[
+  {
+    "name": "ts",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Event timestamp"
+  },
+  {
+    "name": "id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Event identifier"
+  },
+  {
+    "name": "machine_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Machine identifier"
+  },
+  {
+    "name": "event_type",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Event type (state_change, alarm, count, heartbeat)"
+  },
+  {
+    "name": "state",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Machine state (running, idle, stopped, unknown)"
+  },
+  {
+    "name": "light",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Observed stack light color"
+  },
+  {
+    "name": "count",
+    "type": "INT64",
+    "mode": "NULLABLE",
+    "description": "Parts count"
+  },
+  {
+    "name": "alarm_code",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "HMI alarm message text"
+  },
+  {
+    "name": "evidence_path",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Cloud Storage path to alarm crop evidence"
+  },
+  {
+    "name": "run_s",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "Elapsed seconds since run started"
+  },
+  {
+    "name": "soak_run_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Soak run identifier"
+  },
+  {
+    "name": "detected_by",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Detector subsystem (edge, gemini)"
+  },
+  {
+    "name": "flag",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Sanity check flag (e.g. rejected_misread)"
+  },
+  {
+    "name": "ms",
+    "type": "INT64",
+    "mode": "NULLABLE",
+    "description": "Processing latency in milliseconds"
+  }
+]

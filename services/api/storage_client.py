@@ -108,3 +108,14 @@ def download_blob_bytes(path_or_uri: str, use_cache: bool = True) -> bytes:
         _blob_bytes_cache[path_or_uri] = data
     return data
 
+
+def upload_machine_evidence_jpeg(machine_id: str, event_id: str, jpeg_bytes: bytes) -> str:
+    """Uploads an HMI alarm evidence crop to Cloud Storage and returns path evidence/machines/{machine_id}/{event_id}.jpg."""
+    client = get_storage_client()
+    bucket = client.bucket(STORAGE_BUCKET)
+    blob_path = f"evidence/machines/{machine_id}/{event_id}.jpg"
+    blob = bucket.blob(blob_path)
+    blob.upload_from_string(jpeg_bytes, content_type="image/jpeg")
+    return blob_path
+
+

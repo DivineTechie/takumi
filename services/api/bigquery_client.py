@@ -86,3 +86,27 @@ def stream_inspection_event(row: dict[str, Any]) -> None:
         )
 
 
+def stream_machine_event(row: dict[str, Any]) -> None:
+    """Streams a single machine event row into BigQuery table takumi.machine_events.
+    Fire-and-forget: logs warning/error on failure but never raises.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+
+    try:
+        client = get_bigquery_client()
+        table_id = f"{GCP_PROJECT}.takumi.machine_events"
+        errors = client.insert_rows_json(table_id, [row])
+        if errors:
+            logger.error(
+                "BigQuery machine_events streaming insert failed",
+                extra={"props": {"errors": str(errors), "machine_id": row.get("machine_id")}},
+            )
+    except Exception as e:
+        logger.error(
+            "BigQuery machine_events streaming insert exception",
+            extra={"props": {"error": str(e), "machine_id": row.get("machine_id")}},
+        )
+
+
+

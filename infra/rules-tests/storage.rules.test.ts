@@ -203,4 +203,23 @@ describe('Storage Security Rules', () => {
     await assertFails(getBytes(ref(supStorage, 'gallery/candle/normal_001.jpg')));
     await assertFails(uploadBytes(ref(supStorage, 'gallery/candle/normal_001.jpg'), new Uint8Array([1])));
   });
+
+  it('evidence path is readable by supervisor only, client writes fail', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const storage = context.storage();
+      const evRef = ref(storage, 'evidence/machines/mach_1/alarm_1.jpg');
+      await uploadBytes(evRef, new Uint8Array([1, 2, 3]));
+    });
+
+    const unauthStorage = testEnv.unauthenticatedContext().storage();
+    const traineeStorage = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).storage();
+    const supStorage = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).storage();
+
+    await assertFails(getBytes(ref(unauthStorage, 'evidence/machines/mach_1/alarm_1.jpg')));
+    await assertFails(getBytes(ref(traineeStorage, 'evidence/machines/mach_1/alarm_1.jpg')));
+    await assertSucceeds(getBytes(ref(supStorage, 'evidence/machines/mach_1/alarm_1.jpg')));
+
+    await assertFails(uploadBytes(ref(supStorage, 'evidence/machines/mach_1/alarm_2.jpg'), new Uint8Array([1])));
+    await assertFails(uploadBytes(ref(traineeStorage, 'evidence/machines/mach_1/alarm_2.jpg'), new Uint8Array([1])));
+  });
 });

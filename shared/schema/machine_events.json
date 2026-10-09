@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/machine_events.json",
+  "title": "MachineEvent",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique event identifier"
+    },
+    "machine_id": {
+      "type": "string",
+      "description": "Machine identifier"
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Event timestamp"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["state_change", "alarm", "count", "heartbeat"],
+      "description": "Type of event"
+    },
+    "state": {
+      "type": ["string", "null"],
+      "description": "Machine state (running, idle, stopped, unknown)"
+    },
+    "light": {
+      "type": ["string", "null"],
+      "description": "Observed stack light color"
+    },
+    "count": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Parts count value"
+    },
+    "alarm_code": {
+      "type": ["string", "null"],
+      "description": "HMI alarm message text if triggered"
+    },
+    "evidence_path": {
+      "type": ["string", "null"],
+      "description": "Cloud Storage path to alarm crop evidence"
+    },
+    "run_s": {
+      "type": ["number", "null"],
+      "description": "Elapsed seconds since run started"
+    },
+    "soak_run_id": {
+      "type": ["string", "null"],
+      "description": "Associated soak run ID if running in soak test"
+    },
+    "detected_by": {
+      "type": "string",
+      "enum": ["edge", "gemini"],
+      "description": "Detector subsystem"
+    },
+    "flag": {
+      "type": ["string", "null"],
+      "enum": ["rejected_misread", null],
+      "description": "Sanity check flag"
+    },
+    "ms": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Processing latency in milliseconds"
+    }
+  },
+  "required": [
+    "id",
+    "machine_id",
+    "ts",
+    "event_type",
+    "detected_by"
+  ],
+  "additionalProperties": false
+}

@@ -74,7 +74,10 @@ from services.api.telemetry import elapsed_ms, init_telemetry, setup_logging
 logger = setup_logging()
 init_telemetry()
 
+from services.api.machines import router as machines_router
+
 app = FastAPI(title="TAKUMI API", version="0.1.0")
+app.include_router(machines_router, prefix="/api")
 
 
 # --- Middlewares ---

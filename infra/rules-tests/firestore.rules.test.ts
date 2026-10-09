@@ -296,4 +296,76 @@ describe('Firestore Security Rules', () => {
     await assertFails(setDoc(doc(traineeDb, 'gallery', 'item_2'), { label: 'normal' }));
     await assertFails(setDoc(doc(supervisorDb, 'gallery', 'item_2'), { label: 'normal' }));
   });
+
+  it('machines are readable by signed-in users, direct writes fail', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'machines', 'mach_1'), {
+        id: 'mach_1',
+        name: 'Packaging Cell 1',
+        created_by: 'user-1',
+      });
+    });
+
+    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
+    const unauthedDb = testEnv.unauthenticatedContext().firestore();
+
+    await assertSucceeds(getDoc(doc(traineeDb, 'machines', 'mach_1')));
+    await assertSucceeds(getDoc(doc(supervisorDb, 'machines', 'mach_1')));
+    await assertFails(getDoc(doc(unauthedDb, 'machines', 'mach_1')));
+
+    await assertFails(setDoc(doc(traineeDb, 'machines', 'mach_2'), { name: 'Cell 2' }));
+    await assertFails(setDoc(doc(supervisorDb, 'machines', 'mach_2'), { name: 'Cell 2' }));
+  });
+
+  it('machine_events are readable by supervisors only, direct writes fail', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'machine_events', 'ev_1'), {
+        id: 'ev_1',
+        machine_id: 'mach_1',
+        event_type: 'state_change',
+        state: 'running',
+      });
+    });
+
+    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
+    const unauthedDb = testEnv.unauthenticatedContext().firestore();
+
+    await assertSucceeds(getDoc(doc(supervisorDb, 'machine_events', 'ev_1')));
+    await assertFails(getDoc(doc(traineeDb, 'machine_events', 'ev_1')));
+    await assertFails(getDoc(doc(unauthedDb, 'machine_events', 'ev_1')));
+
+    await assertFails(setDoc(doc(supervisorDb, 'machine_events', 'ev_2'), { state: 'stopped' }));
+  });
+
+  it('soak_runs and soak_runs/{id}/truth are readable by creator or supervisor, direct writes fail', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'soak_runs', 'soak_1'), {
+        id: 'soak_1',
+        created_by: 'trainee-1',
+        status: 'running',
+      });
+      await setDoc(doc(context.firestore(), 'soak_runs', 'soak_1', 'truth', 't_1'), {
+        id: 't_1',
+        state: 'running',
+      });
+    });
+
+    const creatorDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    const otherDb = testEnv.authenticatedContext('trainee-2', { role: 'trainee' }).firestore();
+    const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
+
+    await assertSucceeds(getDoc(doc(creatorDb, 'soak_runs', 'soak_1')));
+    await assertSucceeds(getDoc(doc(creatorDb, 'soak_runs', 'soak_1', 'truth', 't_1')));
+
+    await assertSucceeds(getDoc(doc(supervisorDb, 'soak_runs', 'soak_1')));
+    await assertSucceeds(getDoc(doc(supervisorDb, 'soak_runs', 'soak_1', 'truth', 't_1')));
+
+    await assertFails(getDoc(doc(otherDb, 'soak_runs', 'soak_1')));
+    await assertFails(getDoc(doc(otherDb, 'soak_runs', 'soak_1', 'truth', 't_1')));
+
+    await assertFails(setDoc(doc(creatorDb, 'soak_runs', 'soak_2'), { status: 'running' }));
+    await assertFails(setDoc(doc(creatorDb, 'soak_runs', 'soak_1', 'truth', 't_2'), { state: 'idle' }));
+  });
 });

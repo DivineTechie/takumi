@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
-const KNOWN_FEATURE_PATHS = ['/capture', '/forge', '/review', '/library'];
+const KNOWN_FEATURE_PATHS = ['/capture', '/forge', '/review', '/library', '/machines'];
 
 export const NotFoundScreen: React.FC = () => {
   const location = useLocation();

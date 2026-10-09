@@ -13,3 +13,6 @@ export * from './passports.js';
 export * from './products.js';
 export * from './units.js';
 export * from './inspections.js';
+export * from './machines.js';
+export * from './machine_events.js';
+export * from './soak_runs.js';

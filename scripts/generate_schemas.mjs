@@ -24,6 +24,9 @@ const schemas = [
   'products',
   'units',
   'inspections',
+  'machines',
+  'machine_events',
+  'soak_runs',
 ];
 
 // Ensure target directories exist
