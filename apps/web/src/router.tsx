@@ -14,6 +14,8 @@ const PassportScreen = lazy(() => import('./pages/PassportScreen'));
 const StatusScreen = lazy(() => import('./pages/StatusScreen'));
 const DashboardScreen = lazy(() => import('./pages/DashboardScreen'));
 const EvalsScreen = lazy(() => import('./pages/EvalsScreen'));
+const InspectScreen = lazy(() => import('./pages/InspectScreen'));
+const GalleryScreen = lazy(() => import('./pages/GalleryScreen'));
 const NotFoundScreen = lazy(() => import('./pages/NotFoundScreen'));
 
 export const LoadingFallback: React.FC = () => (
@@ -122,6 +124,28 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
         <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
           <Suspense fallback={<LoadingFallback />}>
             <EvalsScreen />
+          </Suspense>
+        </RoleGuard>
+      ),
+    },
+
+    // Quality Inspection (Pillar 2)
+    {
+      path: '/inspect',
+      element: (
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
+          <Suspense fallback={<LoadingFallback />}>
+            <InspectScreen />
+          </Suspense>
+        </RoleGuard>
+      ),
+    },
+    {
+      path: '/inspect/gallery',
+      element: (
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
+          <Suspense fallback={<LoadingFallback />}>
+            <GalleryScreen />
           </Suspense>
         </RoleGuard>
       ),

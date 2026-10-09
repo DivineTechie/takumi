@@ -63,5 +63,10 @@ service firebase.storage {
     match /inspections/{allPaths=**} {
       allow read, write: if false;
     }
+
+    // gallery/** has no client access; served exclusively via server signed URLs
+    match /gallery/{allPaths=**} {
+      allow read, write: if false;
+    }
   }
 }

@@ -281,6 +281,42 @@ export const HomeScreen: React.FC = () => {
               </div>
             )}
           </section>
+
+          {/* CARD 4: Quality Inspection (Pillar 2) */}
+          <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-colors">
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-[24px] leading-[32px] font-bold text-on-surface">
+                  Quality Inspection
+                </h2>
+                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  LIVE RIG
+                </span>
+              </div>
+              <p className="text-[16px] sm:text-[18px] leading-[24px] sm:leading-[26px] text-on-surface-variant">
+                Inspect finished units using dual-stage Gemini vision, or try the real Amazon VisA benchmark gallery.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/inspect')}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">photo_camera</span>
+                <span>Inspect Station</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/inspect/gallery')}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-surface border border-outline-variant hover:bg-surface-container text-on-surface rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">photo_library</span>
+                <span>Try VisA Gallery</span>
+              </button>
+            </div>
+          </section>
         </div>
       </main>
     </div>

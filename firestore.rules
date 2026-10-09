@@ -115,5 +115,10 @@ service cloud.firestore {
       allow read: if isSupervisor() || (isSignedIn() && resource.data.inspector_uid == request.auth.uid);
       allow write: if false;
     }
+
+    // gallery: NO client access (dataset labels kept hidden from browser until inspection). Served via takumi-api.
+    match /gallery/{galleryId} {
+      allow read, write: if false;
+    }
   }
 }

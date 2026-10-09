@@ -9,6 +9,8 @@ import re
 import secrets
 import statistics
 import time
+import uuid
+from pathlib import Path
 from typing import Any, Literal
 
 from PIL import Image
@@ -1884,5 +1886,283 @@ async def get_inspection(
     if "image_path" in data and data["image_path"]:
         data["image_url"] = get_signed_url_for_gs_uri(f"gs://{STORAGE_BUCKET}/{data['image_path']}")
     return data
+
+
+class InspectGalleryRequest(BaseModel):
+    gallery_id: str = Field(..., min_length=1, max_length=128)
+    mode: Literal["few_false_alarms", "catch_everything"] = "few_false_alarms"
+
+
+@app.get("/api/inspect/gallery")
+async def get_inspect_gallery(
+    category: str | None = None,
+    user: AuthUser = Depends(require_role("trainee", "supervisor", "master")),
+) -> list[dict[str, Any]]:
+    """Lists VisA benchmark gallery items with signed image URLs.
+    Labels are omitted to prevent cheating before inspection.
+    """
+    db = get_firestore_client()
+    query = db.collection("gallery")
+    if category:
+        query = query.where("product_id", "==", category)
+    docs = query.stream()
+    items = []
+    for d in docs:
+        data = d.to_dict() or {}
+        img_path = data.get("image_path", "")
+        img_url = get_signed_url_for_gs_uri(f"gs://{STORAGE_BUCKET}/{img_path}") if img_path else ""
+        items.append({
+            "id": d.id,
+            "product_id": data.get("product_id"),
+            "category": data.get("product_id"),
+            "image_url": img_url,
+            "filename": Path(img_path).name if img_path else d.id,
+        })
+    items.sort(key=lambda x: (x.get("product_id", ""), x.get("id", "")))
+    return items
+
+
+@app.post("/api/inspect/gallery")
+async def post_inspect_gallery(
+    req: InspectGalleryRequest,
+    user: AuthUser = Depends(require_role("trainee", "supervisor", "master")),
+) -> dict[str, Any]:
+    """Inspects a public VisA gallery image on demand.
+    Server loads image from Cloud Storage, runs dual-stage inspection,
+    stores record with source 'PUBLIC DATA: VisA (CC BY 4.0)', and reveals dataset label.
+    """
+    t_api_start = time.perf_counter()
+
+    db = get_firestore_client()
+    gal_doc = db.collection("gallery").document(req.gallery_id).get()
+    if not gal_doc.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Gallery item '{req.gallery_id}' not found",
+        )
+    gal_data = gal_doc.to_dict() or {}
+
+    product_id = gal_data.get("product_id")
+    prod_snap = db.collection("products").document(product_id).get()
+    if not prod_snap.exists:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Product '{product_id}' not found",
+        )
+    prod_data = prod_snap.to_dict() or {}
+
+    # Quota check (2 checks per inspection call)
+    check_rate_limit(user.uid, "checks", cost=2)
+
+    ref_paths = prod_data.get("reference_image_paths") or []
+    if len(ref_paths) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Product '{product_id}' does not have 3 reference images configured",
+        )
+
+    # 1. Download candidate image bytes from Cloud Storage
+    try:
+        cand_bytes = download_blob_bytes(gal_data["image_path"])
+    except Exception as e:
+        logger.error(f"Failed to download gallery image {gal_data.get('image_path')}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve gallery candidate image from storage",
+        ) from e
+
+    # 2. Get cached references
+    try:
+        ref_bytes_list = get_or_load_references(product_id, ref_paths[:3])
+    except Exception as e:
+        logger.error(f"Failed to load references for product {product_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download reference images for product '{product_id}'",
+        ) from e
+
+    # 3. Run dual-stage pipeline
+    pipeline_result = await run_inspection_pipeline(
+        cand_bytes=cand_bytes,
+        ref_bytes_list=ref_bytes_list,
+        product_desc=prod_data.get("description", product_id),
+        defect_types=prod_data.get("defect_types", []),
+        mode=req.mode,
+    )
+
+    t_api_end = time.perf_counter()
+    total_ms = elapsed_ms(t_api_start, t_api_end)
+
+    inspection_id = f"insp_{uuid.uuid4().hex[:12]}"
+    screen_dict = pipeline_result.get("screen")
+    confirm_dict = pipeline_result.get("confirm")
+    ai_verdict = pipeline_result.get("ai_verdict", "ok")
+    defect = pipeline_result.get("defect")
+    where = pipeline_result.get("where")
+    confidence = pipeline_result.get("confidence", 0.0)
+    created_at_iso = datetime.now(timezone.utc).isoformat()
+    dataset_label = gal_data.get("label", "unknown")
+
+    insp_data = {
+        "id": inspection_id,
+        "product_id": product_id,
+        "image_path": gal_data["image_path"],
+        "unit_id": None,
+        "mode": req.mode,
+        "source": "PUBLIC DATA: VisA (CC BY 4.0)",
+        "dataset_label": dataset_label,
+        "screen": screen_dict,
+        "confirm": confirm_dict,
+        "ai_verdict": ai_verdict,
+        "defect": defect,
+        "where": where,
+        "confidence": confidence,
+        "human_decision": None,
+        "decided_by_uid": None,
+        "decided_at": None,
+        "inspector_uid": user.uid,
+        "created_at": created_at_iso,
+        "total_ms": total_ms,
+    }
+
+    db.collection("inspections").document(inspection_id).set(insp_data)
+
+    stream_inspection_event({
+        "ts": created_at_iso,
+        "inspection_id": inspection_id,
+        "product_id": product_id,
+        "unit_id": None,
+        "mode": req.mode,
+        "ai_verdict": ai_verdict,
+        "defect": (confirm_dict or {}).get("defect") or (screen_dict or {}).get("defect"),
+        "screen_ms": (screen_dict or {}).get("ms"),
+        "confirm_ms": (confirm_dict or {}).get("ms"),
+        "total_ms": total_ms,
+        "human_decision": None,
+        "source": "PUBLIC DATA: VisA (CC BY 4.0)",
+    })
+
+    model_ms = ((screen_dict or {}).get("ms", 0)) + ((confirm_dict or {}).get("ms", 0))
+    stream_api_call({
+        "ts": created_at_iso,
+        "endpoint": "inspect_gallery",
+        "status": 200,
+        "model_ms": model_ms,
+        "total_ms": total_ms,
+    })
+
+    stages = [s for s in (screen_dict, confirm_dict) if s is not None]
+
+    return {
+        "inspection_id": inspection_id,
+        "product_id": product_id,
+        "ai_verdict": ai_verdict,
+        "defect": defect,
+        "where": where,
+        "confidence": confidence,
+        "mode": req.mode,
+        "stages": stages,
+        "total_ms": total_ms,
+        "dataset_label": dataset_label,
+        "source": "PUBLIC DATA: VisA (CC BY 4.0)",
+    }
+
+
+@app.get("/api/insights/inspections")
+async def get_insights_inspections(
+    user: AuthUser = Depends(require_role("supervisor")),
+) -> dict[str, Any]:
+    """Retrieves supervisor inspection analytics.
+    LIVE inspections and PUBLIC DATA VisA gallery trials are strictly separated.
+    """
+    db = get_firestore_client()
+    today_utc_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    insp_docs = (
+        db.collection("inspections")
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .limit(200)
+        .stream()
+    )
+
+    live_inspections = []
+    gallery_inspections = []
+
+    for d in insp_docs:
+        data = d.to_dict() or {}
+        data["id"] = d.id
+        source = data.get("source", "LIVE")
+        if source.startswith("PUBLIC DATA"):
+            gallery_inspections.append(data)
+        else:
+            live_inspections.append(data)
+
+    today_live = [
+        item for item in live_inspections
+        if (item.get("created_at") or "").startswith(today_utc_date)
+    ]
+    today_count = len(today_live)
+    today_ok_count = sum(1 for item in today_live if item.get("ai_verdict") == "ok")
+    first_pass_rate = round((today_ok_count / today_count) * 100, 1) if today_count > 0 else None
+
+    defect_counts: dict[str, int] = {}
+    for item in live_inspections:
+        def_name = item.get("defect")
+        if def_name and item.get("ai_verdict") == "defective":
+            defect_counts[def_name] = defect_counts.get(def_name, 0) + 1
+    top_defect_types = sorted(
+        [{"defect": k, "count": v} for k, v in defect_counts.items()],
+        key=lambda x: x["count"],
+        reverse=True,
+    )[:5]
+
+    flagged_awaiting_count = sum(
+        1 for item in live_inspections
+        if item.get("ai_verdict") == "defective" and not item.get("human_decision")
+    )
+
+    recent_live = []
+    for item in live_inspections[:10]:
+        img_path = item.get("image_path")
+        img_url = get_signed_url_for_gs_uri(f"gs://{STORAGE_BUCKET}/{img_path}") if img_path else None
+        recent_live.append({
+            "id": item.get("id"),
+            "unit_id": item.get("unit_id"),
+            "product_id": item.get("product_id"),
+            "ai_verdict": item.get("ai_verdict"),
+            "defect": item.get("defect"),
+            "where": item.get("where"),
+            "confidence": item.get("confidence"),
+            "human_decision": item.get("human_decision"),
+            "created_at": item.get("created_at"),
+            "image_url": img_url,
+        })
+
+    gallery_count = len(gallery_inspections)
+    gallery_hits = 0
+    for item in gallery_inspections:
+        ds_label = (item.get("dataset_label") or "").lower()
+        verdict = item.get("ai_verdict")
+        is_normal = ds_label == "normal"
+        if (is_normal and verdict == "ok") or (not is_normal and verdict == "defective"):
+            gallery_hits += 1
+
+    gallery_hit_rate = round((gallery_hits / gallery_count) * 100, 1) if gallery_count > 0 else None
+
+    return {
+        "live": {
+            "today_count": today_count,
+            "first_pass_rate": first_pass_rate,
+            "top_defect_types": top_defect_types,
+            "flagged_awaiting_count": flagged_awaiting_count,
+            "recent": recent_live,
+        },
+        "gallery": {
+            "trials_count": gallery_count,
+            "hits_count": gallery_hits,
+            "hit_rate": gallery_hit_rate,
+            "dataset": "VisA (Amazon), CC BY 4.0",
+        },
+    }
 
 

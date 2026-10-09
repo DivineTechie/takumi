@@ -276,4 +276,24 @@ describe('Firestore Security Rules', () => {
     await assertFails(setDoc(doc(inspectorDb, 'inspections', 'insp_2'), { ai_verdict: 'ok' }));
     await assertFails(setDoc(doc(supervisorDb, 'inspections', 'insp_2'), { ai_verdict: 'ok' }));
   });
+
+  it('gallery collection is completely locked from direct client reads and writes', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'gallery', 'item_1'), {
+        id: 'item_1',
+        label: 'normal',
+      });
+    });
+
+    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
+    const unauthedDb = testEnv.unauthenticatedContext().firestore();
+
+    await assertFails(getDoc(doc(traineeDb, 'gallery', 'item_1')));
+    await assertFails(getDoc(doc(supervisorDb, 'gallery', 'item_1')));
+    await assertFails(getDoc(doc(unauthedDb, 'gallery', 'item_1')));
+
+    await assertFails(setDoc(doc(traineeDb, 'gallery', 'item_2'), { label: 'normal' }));
+    await assertFails(setDoc(doc(supervisorDb, 'gallery', 'item_2'), { label: 'normal' }));
+  });
 });

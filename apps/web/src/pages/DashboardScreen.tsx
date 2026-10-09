@@ -9,10 +9,13 @@ import {
   fetchInsightsMatrix,
   fetchSkillInsights,
   fetchSessionReplay,
+  fetchInspectionInsights,
+  submitInspectionDecision,
   type InsightsMatrixResponse,
   type SkillInsightsResponse,
   type SessionReplayResponse,
   type MatrixSkill,
+  type InspectionInsightsResponse,
 } from '../lib/api';
 import { LiveNowStrip } from '../components/dashboard/LiveNowStrip';
 import { SkillMatrixTable } from '../components/dashboard/SkillMatrixTable';
@@ -22,7 +25,7 @@ import {
   type RecentSessionItem,
 } from '../components/dashboard/SessionReplayViewer';
 
-type DashboardTab = 'matrix' | 'heatmap' | 'replay';
+type DashboardTab = 'matrix' | 'heatmap' | 'replay' | 'inspections';
 
 export const DashboardScreen: React.FC = () => {
   const { t, language, setLanguage } = useTranslation();
@@ -42,6 +45,9 @@ export const DashboardScreen: React.FC = () => {
   const [replayData, setReplayData] = useState<SessionReplayResponse | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
   const [firestoreSessions, setFirestoreSessions] = useState<RecentSessionItem[]>([]);
+
+  const [inspectionInsights, setInspectionInsights] = useState<InspectionInsightsResponse | null>(null);
+  const [inspectionLoading, setInspectionLoading] = useState(false);
 
   // Real-time recent sessions from Firestore
   useEffect(() => {
@@ -97,6 +103,33 @@ export const DashboardScreen: React.FC = () => {
   useEffect(() => {
     loadMatrix();
   }, [loadMatrix]);
+
+  const loadInspectionInsights = useCallback(async () => {
+    setInspectionLoading(true);
+    try {
+      const data = await fetchInspectionInsights();
+      setInspectionInsights(data);
+    } catch (err) {
+      console.warn('Failed to load inspection insights:', err);
+    } finally {
+      setInspectionLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'inspections') {
+      loadInspectionInsights();
+    }
+  }, [activeTab, loadInspectionInsights]);
+
+  const handleDecision = async (inspectionId: string, decision: 'confirmed_defect' | 'overridden_ok') => {
+    try {
+      await submitInspectionDecision(inspectionId, decision);
+      await loadInspectionInsights();
+    } catch (err) {
+      console.error('Failed to submit inspection decision:', err);
+    }
+  };
 
   // Load skill insights when selected skill changes
   useEffect(() => {
@@ -341,6 +374,26 @@ export const DashboardScreen: React.FC = () => {
               <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
             )}
           </button>
+
+          <button
+            role="tab"
+            aria-selected={activeTab === 'inspections'}
+            onClick={() => setActiveTab('inspections')}
+            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'inspections'
+                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">verified</span>
+            <span className="hidden sm:inline">End-of-Line Quality</span>
+            <span className="sm:hidden">Inspect</span>
+            {inspectionInsights && inspectionInsights.live.flagged_awaiting_count > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-red-600 text-white shrink-0">
+                {inspectionInsights.live.flagged_awaiting_count}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Tab 1: Team Skill Matrix */}
@@ -387,6 +440,237 @@ export const DashboardScreen: React.FC = () => {
               setReplayData(null);
             }}
           />
+        )}
+
+        {/* Tab 4: End-of-Line Quality Inspection */}
+        {activeTab === 'inspections' && (
+          <div className="space-y-6">
+            {/* Top Metrics Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-xs uppercase font-bold text-on-surface-variant">Today's Units (LIVE)</span>
+                <span className="text-[28px] font-bold font-mono text-on-surface mt-2">
+                  {inspectionInsights ? inspectionInsights.live.today_count : '—'}
+                </span>
+                <span className="text-[11px] text-on-surface-variant mt-1">Live Factory Station</span>
+              </div>
+
+              <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-xs uppercase font-bold text-on-surface-variant">First-Pass Rate (LIVE)</span>
+                <span className="text-[28px] font-bold font-mono text-on-surface mt-2">
+                  {inspectionInsights && inspectionInsights.live.first_pass_rate !== null
+                    ? `${inspectionInsights.live.first_pass_rate}%`
+                    : '—'}
+                </span>
+                <span className="text-[11px] text-on-surface-variant mt-1">Passed on First Check</span>
+              </div>
+
+              <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-xs uppercase font-bold text-on-surface-variant">Awaiting Review</span>
+                <span className="text-[28px] font-bold font-mono text-amber-600 dark:text-amber-400 mt-2">
+                  {inspectionInsights ? inspectionInsights.live.flagged_awaiting_count : '—'}
+                </span>
+                <span className="text-[11px] text-on-surface-variant mt-1">Supervisor Decision Gate</span>
+              </div>
+
+              <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-xs uppercase font-bold text-on-surface-variant">Judge Benchmark Trials</span>
+                <span className="text-[28px] font-bold font-mono text-primary-container mt-2">
+                  {inspectionInsights && inspectionInsights.gallery.trials_count > 0
+                    ? `${inspectionInsights.gallery.trials_count}`
+                    : '—'}
+                </span>
+                <span className="text-[11px] text-on-surface-variant mt-1">
+                  {inspectionInsights && inspectionInsights.gallery.hit_rate !== null
+                    ? `${inspectionInsights.gallery.hit_rate}% hit rate (VisA CC BY 4.0)`
+                    : 'PUBLIC DATA: VisA'}
+                </span>
+              </div>
+            </div>
+
+            {/* Section 1: Live Factory Operations */}
+            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-[18px] font-bold text-on-surface flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary-container text-[22px]">factory</span>
+                    Live End-of-Line Inspections
+                  </h3>
+                  <p className="text-xs text-on-surface-variant mt-0.5">
+                    Multimodal inspections recorded at factory stations. Supervisors confirm or override flagged units.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    LIVE
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/inspect')}
+                    className="min-h-[40px] px-3 rounded-lg bg-primary-container text-on-primary-container font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">add_a_photo</span>
+                    <span>Open Station</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Top Defect Types Strip */}
+              {inspectionInsights && inspectionInsights.live.top_defect_types.length > 0 && (
+                <div className="p-3 bg-surface rounded-xl border border-outline-variant flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-bold text-on-surface">Top Defects:</span>
+                  {inspectionInsights.live.top_defect_types.map((d, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 font-medium">
+                      {d.defect} ({d.count})
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Recent Live Inspections List */}
+              {inspectionLoading ? (
+                <div className="p-8 flex justify-center">
+                  <div className="w-6 h-6 border-2 border-primary-container border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : inspectionInsights && inspectionInsights.live.recent.length > 0 ? (
+                <div className="space-y-3">
+                  {inspectionInsights.live.recent.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-4 bg-surface rounded-xl border border-outline-variant flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        {item.image_url ? (
+                          <img
+                            src={item.image_url}
+                            alt={item.unit_id || item.id}
+                            className="w-14 h-14 rounded-lg object-cover border border-outline-variant bg-black"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant">
+                            <span className="material-symbols-outlined text-[24px]">image</span>
+                          </div>
+                        )}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-[14px] text-on-surface">
+                              {item.unit_id || item.id}
+                            </span>
+                            <span className="text-xs text-on-surface-variant font-medium">
+                              • {item.product_id}
+                            </span>
+                          </div>
+                          <p className="text-xs text-on-surface-variant mt-0.5">
+                            {item.defect ? `Defect: ${item.defect}` : 'Clean unit'}
+                            {item.where ? ` (${item.where})` : ''} • {(item.confidence * 100).toFixed(0)}% conf
+                          </p>
+                          <span className="text-[11px] text-on-surface-variant/80">
+                            {new Date(item.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-center">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
+                            item.ai_verdict === 'ok'
+                              ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                              : item.ai_verdict === 'defective'
+                              ? 'bg-red-500/20 text-red-700 dark:text-red-300'
+                              : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                          }`}
+                        >
+                          {item.ai_verdict}
+                        </span>
+
+                        {item.human_decision ? (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded bg-surface-container text-on-surface">
+                            {item.human_decision}
+                          </span>
+                        ) : item.ai_verdict === 'defective' ? (
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleDecision(item.id, 'confirmed_defect')}
+                              className="min-h-[36px] px-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              title="Confirm Defect (Sets unit to Failed)"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">thumb_down</span>
+                              <span>Confirm</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDecision(item.id, 'overridden_ok')}
+                              className="min-h-[36px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              title="Override OK (Sets unit to Passed)"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">thumb_up</span>
+                              <span>Override</span>
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-center text-xs text-on-surface-variant bg-surface rounded-xl border border-outline-variant">
+                  No live factory units inspected yet today.
+                </div>
+              )}
+            </div>
+
+            {/* Section 2: Judges Benchmark Trials (PUBLIC DATA) */}
+            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-[18px] font-bold text-on-surface flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary-container text-[22px]">science</span>
+                    Judge Benchmark Trials on PUBLIC DATA
+                  </h3>
+                  <p className="text-xs text-on-surface-variant mt-0.5">
+                    Judges and evaluators testing the model against the public Amazon VisA test benchmark.
+                  </p>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  PUBLIC DATA: VisA (CC BY 4.0)
+                </span>
+              </div>
+
+              <div className="p-4 bg-surface rounded-xl border border-outline-variant flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-on-surface-variant">
+                    Total Public Benchmark Trials:{' '}
+                    <strong className="text-on-surface">
+                      {inspectionInsights ? inspectionInsights.gallery.trials_count : '—'}
+                    </strong>{' '}
+                    • Hits:{' '}
+                    <strong className="text-on-surface">
+                      {inspectionInsights ? inspectionInsights.gallery.hits_count : '—'}
+                    </strong>{' '}
+                    • Hit Rate:{' '}
+                    <strong className="text-emerald-600 dark:text-emerald-400">
+                      {inspectionInsights && inspectionInsights.gallery.hit_rate !== null
+                        ? `${inspectionInsights.gallery.hit_rate}%`
+                        : '—'}
+                    </strong>
+                  </p>
+                  <p className="text-[11px] text-on-surface-variant/80 mt-1">
+                    Dataset: Amazon VisA (Visual Anomaly Benchmark), CC BY 4.0
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/inspect/gallery')}
+                  className="min-h-[44px] px-4 rounded-xl border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">photo_library</span>
+                  <span>Try VisA Gallery</span>
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
 

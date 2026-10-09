@@ -515,4 +515,128 @@ export async function askMaster(
   });
 }
 
+// ---------------------------------------------------------------------------
+// End-of-Line Quality Inspection API (P15)
+// ---------------------------------------------------------------------------
+
+export interface InspectionStage {
+  stage: string;
+  model: string;
+  defective: boolean;
+  confidence: number;
+  defect?: string | null;
+  where?: string | null;
+  ms: number;
+}
+
+export interface InspectResponse {
+  inspection_id: string;
+  product_id?: string;
+  ai_verdict: 'ok' | 'defective' | 'needs_review';
+  defect: string | null;
+  where: string | null;
+  confidence: number;
+  mode: string;
+  stages: InspectionStage[];
+  total_ms: number;
+  dataset_label?: string;
+  source?: string;
+}
+
+export interface ProductItem {
+  id: string;
+  name: string;
+  description: string;
+  defect_types: string[];
+  reference_image_paths: string[];
+  default_mode: 'few_false_alarms' | 'catch_everything';
+  source: string;
+  created_at: string;
+}
+
+export interface GalleryItem {
+  id: string;
+  product_id: string;
+  category: string;
+  image_url: string;
+  filename: string;
+}
+
+export interface InspectionInsightsResponse {
+  live: {
+    today_count: number;
+    first_pass_rate: number | null;
+    top_defect_types: { defect: string; count: number }[];
+    flagged_awaiting_count: number;
+    recent: Array<{
+      id: string;
+      unit_id: string | null;
+      product_id: string;
+      ai_verdict: string;
+      defect: string | null;
+      where: string | null;
+      confidence: number;
+      human_decision: string | null;
+      created_at: string;
+      image_url: string | null;
+    }>;
+  };
+  gallery: {
+    trials_count: number;
+    hits_count: number;
+    hit_rate: number | null;
+    dataset: string;
+  };
+}
+
+export async function fetchProducts(): Promise<ProductItem[]> {
+  return await apiFetch<ProductItem[]>('/api/products');
+}
+
+export async function fetchProduct(productId: string): Promise<ProductItem> {
+  return await apiFetch<ProductItem>(`/api/products/${encodeURIComponent(productId)}`);
+}
+
+export async function fetchGallery(category?: string): Promise<GalleryItem[]> {
+  const query = category ? `?category=${encodeURIComponent(category)}` : '';
+  return await apiFetch<GalleryItem[]>(`/api/inspect/gallery${query}`);
+}
+
+export async function inspectUnit(params: {
+  product_id: string;
+  image_b64: string;
+  unit_id?: string;
+  mode?: 'few_false_alarms' | 'catch_everything';
+}): Promise<InspectResponse> {
+  return await apiFetch<InspectResponse>('/api/inspect', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export async function inspectGallery(params: {
+  gallery_id: string;
+  mode?: 'few_false_alarms' | 'catch_everything';
+}): Promise<InspectResponse> {
+  return await apiFetch<InspectResponse>('/api/inspect/gallery', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
+export async function submitInspectionDecision(
+  inspectionId: string,
+  decision: 'confirmed_defect' | 'overridden_ok' | 'confirmed_ok'
+): Promise<{ status: string; human_decision: string; unit_status?: string }> {
+  return await apiFetch(`/api/inspections/${encodeURIComponent(inspectionId)}/decision`, {
+    method: 'POST',
+    body: JSON.stringify({ decision }),
+  });
+}
+
+export async function fetchInspectionInsights(): Promise<InspectionInsightsResponse> {
+  return await apiFetch<InspectionInsightsResponse>('/api/insights/inspections');
+}
+
+
 

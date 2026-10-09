@@ -64,7 +64,28 @@ You do **not** need physical industrial wiring hardware to evaluate TAKUMI's con
 3. **Lesson Preview**:
    - Masters can preview trainee coaching modules directly at `/coach` and `/coach/:skillId` without polluting factory line analytics (master sessions are excluded from supervisor metrics by default).
 
-### Walkthrough D: Reference Photos (Coming Oct 14)
+### Walkthrough D: End-of-Line Quality Inspection & VisA Benchmark Gallery
+1. **Try the VisA Benchmark Gallery (`/inspect/gallery`)**:
+   - Access the gallery directly from the Home screen ("Try VisA Gallery") or via `/inspect/gallery`.
+   - Browse across 12 industrial part categories (`candle`, `capsules`, `cashew`, `chewinggum`, `fryum`, `macaroni1`, `macaroni2`, `pcb1`, `pcb2`, `pcb3`, `pcb4`, `pipe_fryum`) containing authentic public benchmark units from the **VisA dataset (Amazon, CC BY 4.0)**.
+   - **Unbiased Blind Evaluation**: Ground truth anomaly labels are strictly concealed on the server until you click **"Inspect Unit"**.
+   - Watch the dual-stage engine evaluate the part: fast visual screening with `gemini-3.5-flash-lite` comparing against 3 golden reference parts, followed by confirmation with `gemini-3.8-flash`.
+   - View the honest evaluation badge: `HIT — Clean unit verified`, `HIT — Defect caught`, `MISS — Anomaly missed`, or `FALSE ALARM`.
+   - Inspect the pipeline latency telemetry breakdown (`Screen ms`, `Confirm ms`, `Total API ms`).
+2. **Quality Inspection Station (`/inspect`)**:
+   - Navigate to `/inspect`.
+   - Select a product profile (e.g. `pcb1` with 3 golden reference images).
+   - Enter a serial number or scan a QR barcode.
+   - Capture a photo or upload an image (automatically resized client-side to $\le 1600$ px for low bandwidth).
+   - Click **"Inspect Unit"** to see instant pass/defect banner and defect localization.
+   - **Human Decision Gate**: If a defect is flagged, supervisors have authority to **"Confirm Defect"** or **"It's OK (Override)"**; trainee accounts are restricted to view-only.
+3. **Supervisor Inspection Analytics (`/dashboard`)**:
+   - On the Supervisor Dashboard, switch to the **"Quality Inspection"** tab.
+   - Review live factory metrics (Today's Inspections, First-Pass Yield %, Units Awaiting Review).
+   - Inspect recent units with signed thumbnail previews and one-click disposition buttons.
+   - Review the isolated **Judge Benchmark Trials on PUBLIC DATA** metrics card tracking benchmark hits and trials separately from factory line statistics.
+
+### Walkthrough E: Reference Photos (Coming Oct 14)
 > [!NOTE]
 > During final physical test-rig validation on **October 14**, high-resolution interactive workbench photos will be provided directly in this section so evaluators can point their phone camera at an on-screen monitor to trigger live visual step transitions.
 

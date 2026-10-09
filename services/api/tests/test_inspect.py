@@ -14,6 +14,7 @@ Tests:
 import base64
 import io
 import json
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
@@ -45,10 +46,11 @@ SAMPLE_PRODUCT = {
 
 @pytest.fixture
 def mock_firestore():
-    """Mock Firestore client providing products, inspections, and units collections."""
+    """Mock Firestore client providing products, inspections, units, and gallery collections."""
     products_db = {"test_candle": dict(SAMPLE_PRODUCT)}
     inspections_db = {}
     units_db = {}
+    gallery_db = {}
 
     mock_db = MagicMock()
 
@@ -72,6 +74,10 @@ def mock_firestore():
                     exists = doc_id in units_db
                     snap.exists = exists
                     snap.to_dict.return_value = units_db.get(doc_id)
+                elif col_name == "gallery":
+                    exists = doc_id in gallery_db
+                    snap.exists = exists
+                    snap.to_dict.return_value = gallery_db.get(doc_id)
                 else:
                     snap.exists = False
                     snap.to_dict.return_value = {}
@@ -86,6 +92,8 @@ def mock_firestore():
                     inspections_db[doc_id] = data
                 elif col_name == "units":
                     units_db[doc_id] = data
+                elif col_name == "gallery":
+                    gallery_db[doc_id] = data
 
             mock_doc.set.side_effect = doc_set
 
@@ -93,6 +101,7 @@ def mock_firestore():
                 target = (
                     products_db if col_name == "products"
                     else inspections_db if col_name == "inspections"
+                    else gallery_db if col_name == "gallery"
                     else units_db
                 )
                 if doc_id in target:
@@ -110,15 +119,20 @@ def mock_firestore():
             target = (
                 products_db if col_name == "products"
                 else inspections_db if col_name == "inspections"
+                else gallery_db if col_name == "gallery"
                 else units_db
             )
             for k, v in target.items():
                 d = MagicMock()
+                d.id = k
                 d.to_dict.return_value = v
                 docs.append(d)
             return docs
 
         mock_col.stream.side_effect = col_stream
+        mock_col.order_by.return_value = mock_col
+        mock_col.limit.return_value = mock_col
+        mock_col.where.return_value = mock_col
         return mock_col
 
     mock_db.collection.side_effect = get_collection
@@ -574,3 +588,118 @@ def test_product_and_unit_endpoints(mock_firestore):
             headers={"Authorization": "Bearer token"},
         )
         assert res_post_forbidden.status_code == 403
+
+
+def test_gallery_endpoints(mock_firestore, mock_storage):
+    """GET /api/inspect/gallery and POST /api/inspect/gallery."""
+    # Seed gallery item
+    gal_id = "candle_test_001"
+    mock_firestore.collection("gallery").document(gal_id).set({
+        "id": gal_id,
+        "product_id": "test_candle",
+        "image_path": "gallery/candle/normal_001.jpg",
+        "label": "normal",
+        "split": "test",
+        "source": "PUBLIC DATA: VisA (CC BY 4.0)",
+        "created_at": "2026-10-09T00:00:00Z",
+    })
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_firestore), \
+         patch("services.api.main.stream_inspection_event") as mock_stream, \
+         patch("services.api.main.check_rate_limit") as mock_rate_limit, \
+         patch("services.api.main.run_inspection_pipeline") as mock_pipe:
+
+        mock_pipe.return_value = {
+            "ai_verdict": "ok",
+            "defect": None,
+            "where": None,
+            "confidence": 0.98,
+            "screen": {
+                "stage": "screen",
+                "model": "gemini-3.5-flash-lite",
+                "defective": False,
+                "confidence": 0.98,
+                "defect": None,
+                "where": None,
+                "ms": 400,
+            },
+            "confirm": None,
+            "total_ms": 450,
+        }
+
+        # 1. GET gallery list (labels must NOT be exposed)
+        res_list = client.get("/api/inspect/gallery", headers={"Authorization": "Bearer token"})
+        assert res_list.status_code == 200
+        items = res_list.json()
+        assert len(items) >= 1
+        gal_item = next(i for i in items if i["id"] == gal_id)
+        assert "label" not in gal_item
+        assert "dataset_label" not in gal_item
+        assert gal_item["product_id"] == "test_candle"
+        assert "image_url" in gal_item
+
+        # 2. POST inspect gallery
+        res_insp = client.post(
+            "/api/inspect/gallery",
+            json={"gallery_id": gal_id, "mode": "few_false_alarms"},
+            headers={"Authorization": "Bearer token"},
+        )
+        assert res_insp.status_code == 200
+        data = res_insp.json()
+        assert data["ai_verdict"] == "ok"
+        assert data["source"] == "PUBLIC DATA: VisA (CC BY 4.0)"
+        # Revealed only after inspection
+        assert data["dataset_label"] == "normal"
+        mock_rate_limit.assert_called_once()
+        mock_stream.assert_called_once()
+
+        # Check firestore inspection saved without unit
+        insp_id = data["inspection_id"]
+        saved = mock_firestore.collection("inspections").document(insp_id).get().to_dict()
+        assert saved["unit_id"] is None
+        assert saved["source"] == "PUBLIC DATA: VisA (CC BY 4.0)"
+
+
+def test_supervisor_insights_inspections(mock_firestore):
+    """GET /api/insights/inspections: supervisor only, separates LIVE from PUBLIC DATA."""
+    # Seed 1 LIVE inspection and 1 PUBLIC DATA gallery inspection
+    mock_firestore.collection("inspections").document("insp_live_1").set({
+        "id": "insp_live_1",
+        "product_id": "test_candle",
+        "unit_id": "UNIT-100",
+        "source": "LIVE",
+        "ai_verdict": "defective",
+        "defect": "scratch",
+        "human_decision": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    mock_firestore.collection("inspections").document("insp_gal_1").set({
+        "id": "insp_gal_1",
+        "product_id": "test_candle",
+        "unit_id": None,
+        "source": "PUBLIC DATA: VisA (CC BY 4.0)",
+        "dataset_label": "scratch",
+        "ai_verdict": "defective",
+        "defect": "scratch",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    # Trainee denied (403)
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_firestore):
+        res_trainee = client.get("/api/insights/inspections", headers={"Authorization": "Bearer token"})
+        assert res_trainee.status_code == 403
+
+    # Supervisor allowed (200)
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_firestore):
+        res_sup = client.get("/api/insights/inspections", headers={"Authorization": "Bearer token"})
+        assert res_sup.status_code == 200
+        insights = res_sup.json()
+        assert insights["live"]["today_count"] == 1
+        assert insights["live"]["flagged_awaiting_count"] == 1
+        assert len(insights["live"]["recent"]) == 1
+        assert insights["gallery"]["trials_count"] == 1
+        assert insights["gallery"]["hits_count"] == 1
+        assert insights["gallery"]["hit_rate"] == 100.0
