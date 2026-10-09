@@ -46,8 +46,8 @@ export interface SoakTruth {
   id?: string;
   machine_id: string;
   ts: string;
-  run_s: number;
-  event_type: "state_change" | "alarm" | "count";
+  run_s: number | null;
+  event_type: "state_change" | "alarm" | "alarm_cleared" | "count";
   state?: string | null;
   count?: number | null;
   alarm_code?: string | null;

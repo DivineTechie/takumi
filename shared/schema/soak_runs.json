@@ -66,8 +66,8 @@
         "id": { "type": "string" },
         "machine_id": { "type": "string" },
         "ts": { "type": "string", "format": "date-time" },
-        "run_s": { "type": "number", "minimum": 0 },
-        "event_type": { "type": "string", "enum": ["state_change", "alarm", "count"] },
+        "run_s": { "type": ["number", "null"], "minimum": 0 },
+        "event_type": { "type": "string", "enum": ["state_change", "alarm", "alarm_cleared", "count"] },
         "state": { "type": ["string", "null"] },
         "count": { "type": ["integer", "null"] },
         "alarm_code": { "type": ["string", "null"] }

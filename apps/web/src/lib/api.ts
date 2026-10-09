@@ -566,10 +566,8 @@ export interface ProductItem {
 
 export interface GalleryItem {
   id: string;
-  product_id: string;
   category: string;
   image_url: string;
-  filename: string;
 }
 
 export interface InspectionInsightsResponse {
@@ -669,9 +667,7 @@ export async function postSoakTruth(
   id: string,
   truth: {
     machine_id: string;
-    ts: string;
-    run_s: number;
-    event_type: 'state_change' | 'alarm' | 'count';
+    event_type: 'state_change' | 'alarm' | 'alarm_cleared' | 'count';
     state?: string | null;
     count?: number | null;
     alarm_code?: string | null;
@@ -691,7 +687,10 @@ export async function fetchMachine(id: string): Promise<Machine> {
   return await apiFetch<Machine>(`/api/machines/${encodeURIComponent(id)}`);
 }
 
-export async function setupMachine(image_b64: string): Promise<{
+export async function setupMachine(
+  image_b64: string,
+  position: { machine_count: number; machine_index: number } = { machine_count: 1, machine_index: 1 }
+): Promise<{
   rois: {
     stack_light: NormalizedRoi;
     counter?: NormalizedRoi | null;
@@ -700,7 +699,7 @@ export async function setupMachine(image_b64: string): Promise<{
 }> {
   return await apiFetch('/api/machines/setup', {
     method: 'POST',
-    body: JSON.stringify({ image_b64 }),
+    body: JSON.stringify({ image_b64, ...position }),
   });
 }
 
@@ -733,12 +732,15 @@ export async function readMachine(
     video_run_s?: number;
     soak_run_id?: string;
     detected_by?: 'edge' | 'gemini';
+    reason?: 'change' | 'heartbeat';
   }
 ): Promise<{
-  state: string;
-  light: string;
+  state: string | null;
+  light: string | null;
   count: number | null;
+  alarm_text: string | null;
   alarm_code: string | null;
+  changed: boolean;
   ms: number;
 }> {
   return await apiFetch(`/api/machines/${encodeURIComponent(id)}/read`, {

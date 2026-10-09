@@ -36,9 +36,13 @@ export interface Machine {
    */
   ideal_cycle_s: number;
   /**
-   * Latest detected machine state (running, idle, stopped, unknown)
+   * Current machine state (running, idle, stopped, unknown)
    */
-  last_state?: string | null;
+  state?: string | null;
+  /**
+   * Latest detected active alarm text, or null if clear
+   */
+  last_alarm?: string | null;
   /**
    * Latest verified parts counter reading
    */

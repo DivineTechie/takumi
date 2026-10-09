@@ -212,7 +212,7 @@ export const GalleryScreen: React.FC = () => {
                   <div className="relative aspect-square bg-black/90 flex items-center justify-center overflow-hidden">
                     <img
                       src={item.image_url}
-                      alt={item.id}
+                      alt={`VisA ${item.category} test part`}
                       className="w-full h-full object-contain"
                       loading="lazy"
                     />
@@ -225,7 +225,7 @@ export const GalleryScreen: React.FC = () => {
                     <div>
                       <div className="flex items-center justify-between text-xs mb-1">
                         <span className="font-mono font-bold text-on-surface truncate">
-                          {item.id}
+                          {resp ? item.id : 'Test part'}
                         </span>
                         <span className="text-[10px] uppercase font-semibold text-on-surface-variant">
                           {item.category}

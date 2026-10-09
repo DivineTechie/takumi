@@ -44,9 +44,13 @@
       "minimum": 0.1,
       "description": "Ideal cycle time in seconds for count validation"
     },
-    "last_state": {
+    "state": {
       "type": ["string", "null"],
-      "description": "Latest detected machine state (running, idle, stopped, unknown)"
+      "description": "Current machine state (running, idle, stopped, unknown)"
+    },
+    "last_alarm": {
+      "type": ["string", "null"],
+      "description": "Latest detected active alarm text, or null if clear"
     },
     "last_count": {
       "type": ["integer", "null"],

@@ -20,7 +20,15 @@ export interface MachineEvent {
   /**
    * Type of event
    */
-  event_type: "state_change" | "alarm" | "count" | "heartbeat";
+  event_type: "state_change" | "alarm" | "alarm_cleared" | "count" | "heartbeat";
+  /**
+   * Prior machine state before transition
+   */
+  from_state?: string | null;
+  /**
+   * New machine state after transition
+   */
+  to_state?: string | null;
   /**
    * Machine state (running, idle, stopped, unknown)
    */
@@ -33,6 +41,10 @@ export interface MachineEvent {
    * Parts count value
    */
   count?: number | null;
+  /**
+   * HMI alarm message text if triggered
+   */
+  alarm_text?: string | null;
   /**
    * HMI alarm message text if triggered
    */
@@ -49,6 +61,10 @@ export interface MachineEvent {
    * Associated soak run ID if running in soak test
    */
   soak_run_id?: string | null;
+  /**
+   * HOME RIG or LIVE data source
+   */
+  source?: "HOME RIG" | "LIVE";
   /**
    * Detector subsystem
    */

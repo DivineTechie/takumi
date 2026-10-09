@@ -1,17 +1,19 @@
 """Unit and integration tests for Machine Watch (Pillar 3)."""
 
+import asyncio
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from services.api.main import app
 from services.api.machines import (
+    MachineReadGeminiResponse,
     _machine_read_history,
     check_machine_rate_limit,
     normalize_box,
@@ -174,6 +176,8 @@ def mock_firestore():
         return mock_col
 
     mock_db.collection.side_effect = get_collection
+    mock_db.events_db = events_db
+    mock_db.truth_db = truth_db
     return mock_db, machines_db, soak_db
 
 
@@ -265,119 +269,262 @@ def test_read_machine_missing_crops(mock_firestore):
             assert "At least one crop" in resp.json()["detail"]
 
 
-def test_read_machine_happy_path_and_count_sanity(mock_firestore):
-    mock_db, machines_db, _ = mock_firestore
-    mach_id = "mach_bench_01"
-    machines_db[mach_id] = {
+def _gemini(light="green", count=None, alarm_text=None, alarm_active=None):
+    if alarm_active is None:
+        alarm_active = alarm_text is not None
+    return MachineReadGeminiResponse(light=light, count=count, alarm_text=alarm_text, alarm_active=alarm_active)
+
+
+def _read(mock_db, mach_id, gemini, crops, reason="change", soak_run_id=None, upload_path="evidence/x.jpg"):
+    """POSTs one /read with call_flash_lite_read mocked to return `gemini` (or raise it if it is an exception)."""
+    if isinstance(gemini, BaseException):
+        fake = AsyncMock(side_effect=gemini)
+    else:
+        fake = AsyncMock(return_value=gemini)
+    body = {"crops": crops, "reason": reason}
+    if soak_run_id:
+        body["soak_run_id"] = soak_run_id
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}), \
+         patch("services.api.machines.get_firestore_client", return_value=mock_db), \
+         patch("services.api.machines.check_machine_rate_limit"), \
+         patch("services.api.machines.check_rate_limit"), \
+         patch("services.api.machines.call_flash_lite_read", new=fake), \
+         patch("services.api.machines.upload_machine_evidence_jpeg", return_value=upload_path):
+        return client.post(
+            f"/api/machines/{mach_id}/read",
+            json=body,
+            headers={"Authorization": "Bearer fake_token"},
+        )
+
+
+def _seed_machine(machines_db, mach_id, **overrides):
+    doc = {
         "id": mach_id,
-        "name": "Bench 1",
+        "name": "Bench",
         "light_order": ["red", "yellow", "green"],
-        "state_map": {"red": "stopped", "yellow": "idle", "green": "running", "off": "stopped"},
+        "state_map": {"red": "stopped", "yellow": "idle", "green": "running"},
         "ideal_cycle_s": 10.0,
-        "last_count": 50,
+        "source": "LIVE",
+        "state": "running",
+        "last_alarm": None,
+        "last_count": None,
         "last_seen_at": datetime.now(timezone.utc).isoformat(),
         "last_misread_count": None,
     }
-
-    crop_b64 = _make_dummy_image_b64(200, 200)
-
-    # 1. Normal read: green light, count 51 -> state running, count 51 accepted
-    mock_resp_1 = {"light": "green", "count": 51, "alarm_text": None}
-
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}):
-        with patch("services.api.machines.get_firestore_client", return_value=mock_db):
-            with patch("services.api.machines.check_machine_rate_limit"):
-                with patch("services.api.machines.check_rate_limit"):
-                    with patch("services.api.machines.call_flash_lite_read", return_value=mock_resp_1):
-                        resp = client.post(
-                            f"/api/machines/{mach_id}/read",
-                            json={"crops": {"stack_light_b64": crop_b64, "counter_b64": crop_b64}},
-                            headers={"Authorization": "Bearer fake_token"},
-                        )
-                        assert resp.status_code == 200
-                        data = resp.json()
-                        assert data["state"] == "running"
-                        assert data["light"] == "green"
-                        assert data["count"] == 51
-
-    # 2. Impossible jump: count reads 500 (delta +449 when max allowed is ~3) -> rejected_misread, retains 51
-    mock_resp_2 = {"light": "green", "count": 500, "alarm_text": None}
-
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}):
-        with patch("services.api.machines.get_firestore_client", return_value=mock_db):
-            with patch("services.api.machines.check_machine_rate_limit"):
-                with patch("services.api.machines.check_rate_limit"):
-                    with patch("services.api.machines.call_flash_lite_read", return_value=mock_resp_2):
-                        resp = client.post(
-                            f"/api/machines/{mach_id}/read",
-                            json={"crops": {"counter_b64": crop_b64}},
-                            headers={"Authorization": "Bearer fake_token"},
-                        )
-                        assert resp.status_code == 200
-                        data = resp.json()
-                        assert data["count"] == 51  # retained!
-
-    # 3. Counter reset check:
-    # First lower read (e.g. 0): rejected_misread, holds 51
-    mock_resp_3 = {"light": "green", "count": 0, "alarm_text": None}
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}):
-        with patch("services.api.machines.get_firestore_client", return_value=mock_db):
-            with patch("services.api.machines.check_machine_rate_limit"):
-                with patch("services.api.machines.check_rate_limit"):
-                    with patch("services.api.machines.call_flash_lite_read", return_value=mock_resp_3):
-                        resp = client.post(
-                            f"/api/machines/{mach_id}/read",
-                            json={"crops": {"counter_b64": crop_b64}},
-                            headers={"Authorization": "Bearer fake_token"},
-                        )
-                        assert resp.status_code == 200
-                        assert resp.json()["count"] == 51
-
-    # Second lower read with SAME value (0): consecutive reads agree -> accepted reset to 0!
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}):
-        with patch("services.api.machines.get_firestore_client", return_value=mock_db):
-            with patch("services.api.machines.check_machine_rate_limit"):
-                with patch("services.api.machines.check_rate_limit"):
-                    with patch("services.api.machines.call_flash_lite_read", return_value=mock_resp_3):
-                        resp = client.post(
-                            f"/api/machines/{mach_id}/read",
-                            json={"crops": {"counter_b64": crop_b64}},
-                            headers={"Authorization": "Bearer fake_token"},
-                        )
-                        assert resp.status_code == 200
-                        assert resp.json()["count"] == 0  # reset accepted!
+    doc.update(overrides)
+    machines_db[mach_id] = doc
+    return doc
 
 
-def test_read_machine_alarm_evidence_upload(mock_firestore):
+def test_read_five_read_sequence_emits_only_transitions(mock_firestore):
+    """green, green, red+alarm, red+alarm, green -> exactly 4 events, no duplicates."""
     mock_db, machines_db, _ = mock_firestore
-    mach_id = "mach_alarm_01"
-    machines_db[mach_id] = {
-        "id": mach_id,
-        "name": "Cell Alarm Test",
-        "state_map": {"red": "stopped", "yellow": "idle", "green": "running", "off": "stopped"},
-        "last_count": 10,
-    }
+    mach_id = "mach_seq"
+    _seed_machine(machines_db, mach_id)
+    crop = _make_dummy_image_b64(200, 200)
+    crops = {"stack_light_b64": crop, "hmi_b64": crop}
 
-    crop_b64 = _make_dummy_image_b64(200, 200)
+    sequence = [
+        _gemini("green"),
+        _gemini("green"),
+        _gemini("red", alarm_text="E-STOP PRESSED"),
+        _gemini("red", alarm_text="E-STOP PRESSED"),
+        _gemini("green"),
+    ]
+    changed_flags = []
+    for g in sequence:
+        resp = _read(mock_db, mach_id, g, crops)
+        assert resp.status_code == 200
+        changed_flags.append(resp.json()["changed"])
 
-    mock_resp = {"light": "red", "count": 10, "alarm_text": "E-STOP PRESSED [E-101]"}
+    events = list(mock_db.events_db.values())
+    summary = [
+        (e["event_type"], e.get("from_state"), e.get("to_state"), e.get("alarm_text"))
+        for e in events
+    ]
+    assert summary == [
+        ("state_change", "running", "stopped", None),
+        ("alarm", None, None, "E-STOP PRESSED"),
+        ("state_change", "stopped", "running", None),
+        ("alarm_cleared", None, None, None),
+    ]
+    assert changed_flags == [False, False, True, False, True]
+    assert all(e["source"] == "LIVE" for e in events)
+    alarm_ev = next(e for e in events if e["event_type"] == "alarm")
+    assert alarm_ev["evidence_path"] == "evidence/x.jpg"
+    # Machine doc stores state + last_alarm (no last_state)
+    assert machines_db[mach_id]["state"] == "running"
+    assert machines_db[mach_id]["last_alarm"] is None
+    assert "last_state" not in machines_db[mach_id]
 
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}):
-        with patch("services.api.machines.get_firestore_client", return_value=mock_db):
-            with patch("services.api.machines.check_machine_rate_limit"):
-                with patch("services.api.machines.check_rate_limit"):
-                    with patch("services.api.machines.call_flash_lite_read", return_value=mock_resp):
-                        with patch("services.api.machines.upload_machine_evidence_jpeg", return_value="evidence/machines/mach_alarm_01/mev_123.jpg") as mock_upload:
-                            resp = client.post(
-                                f"/api/machines/{mach_id}/read",
-                                json={"crops": {"stack_light_b64": crop_b64, "hmi_b64": crop_b64}},
-                                headers={"Authorization": "Bearer fake_token"},
-                            )
-                            assert resp.status_code == 200
-                            data = resp.json()
-                            assert data["state"] == "stopped"
-                            assert data["alarm_code"] == "E-STOP PRESSED [E-101]"
-                            assert mock_upload.called
+
+def test_read_gemini_timeout_writes_nothing(mock_firestore):
+    mock_db, machines_db, _ = mock_firestore
+    mach_id = "mach_timeout"
+    _seed_machine(machines_db, mach_id)
+    before = dict(machines_db[mach_id])
+    crop = _make_dummy_image_b64(200, 200)
+
+    resp = _read(mock_db, mach_id, asyncio.TimeoutError(), {"stack_light_b64": crop})
+    assert resp.status_code == 504
+    assert "timed out" in resp.json()["detail"]
+    assert mock_db.events_db == {}
+    assert machines_db[mach_id] == before
+
+    resp_err = _read(mock_db, mach_id, RuntimeError("backend unavailable"), {"stack_light_b64": crop})
+    assert resp_err.status_code == 502
+    assert "backend unavailable" not in resp_err.json()["detail"]
+    assert mock_db.events_db == {}
+    assert machines_db[mach_id] == before
+
+
+def test_read_unclear_multiple_and_unmapped_off_write_nothing(mock_firestore):
+    mock_db, machines_db, _ = mock_firestore
+    mach_id = "mach_unclear"
+    _seed_machine(machines_db, mach_id)
+    crop = _make_dummy_image_b64(200, 200)
+
+    for light in ("unclear", "multiple", "off"):
+        resp = _read(mock_db, mach_id, _gemini(light), {"stack_light_b64": crop})
+        assert resp.status_code == 200
+        assert resp.json()["changed"] is False
+        assert resp.json()["state"] == "running"
+    assert mock_db.events_db == {}
+    assert machines_db[mach_id]["state"] == "running"
+
+
+def test_read_off_maps_only_when_state_map_says_so(mock_firestore):
+    mock_db, machines_db, _ = mock_firestore
+    mach_id = "mach_off"
+    _seed_machine(
+        machines_db, mach_id,
+        state_map={"red": "stopped", "yellow": "idle", "green": "running", "off": "stopped"},
+    )
+    crop = _make_dummy_image_b64(200, 200)
+    resp = _read(mock_db, mach_id, _gemini("off"), {"stack_light_b64": crop})
+    assert resp.status_code == 200
+    events = list(mock_db.events_db.values())
+    assert [(e["event_type"], e["from_state"], e["to_state"]) for e in events] == [
+        ("state_change", "running", "stopped")
+    ]
+
+
+def test_read_heartbeat_only_when_nothing_changed(mock_firestore):
+    mock_db, machines_db, _ = mock_firestore
+    mach_id = "mach_hb"
+    _seed_machine(machines_db, mach_id)
+    crop = _make_dummy_image_b64(200, 200)
+
+    # reason=change, nothing changed -> no event
+    resp = _read(mock_db, mach_id, _gemini("green"), {"stack_light_b64": crop}, reason="change")
+    assert resp.json()["changed"] is False
+    assert mock_db.events_db == {}
+
+    # reason=heartbeat, nothing changed -> exactly one heartbeat
+    resp = _read(mock_db, mach_id, _gemini("green"), {"stack_light_b64": crop}, reason="heartbeat")
+    assert resp.status_code == 200
+    events = list(mock_db.events_db.values())
+    assert [e["event_type"] for e in events] == ["heartbeat"]
+
+    # reason=heartbeat but the state changed -> state_change only, no heartbeat
+    mock_db.events_db.clear()
+    _read(mock_db, mach_id, _gemini("yellow"), {"stack_light_b64": crop}, reason="heartbeat")
+    assert [e["event_type"] for e in mock_db.events_db.values()] == ["state_change"]
+
+
+def test_read_source_label_home_rig(mock_firestore):
+    mock_db, machines_db, soak_db = mock_firestore
+    crop = _make_dummy_image_b64(200, 200)
+
+    # Virtual machine -> HOME RIG
+    _seed_machine(machines_db, "mach_virtual", source="VIRTUAL")
+    _read(mock_db, "mach_virtual", _gemini("red"), {"stack_light_b64": crop})
+    # Live machine read inside a soak run -> HOME RIG
+    _seed_machine(machines_db, "mach_live_soak", source="LIVE")
+    soak_db["soak_1"] = {"id": "soak_1", "started_at": datetime.now(timezone.utc).isoformat(), "status": "running"}
+    _read(mock_db, "mach_live_soak", _gemini("red"), {"stack_light_b64": crop}, soak_run_id="soak_1")
+
+    events = list(mock_db.events_db.values())
+    assert len(events) == 2
+    assert all(e["source"] == "HOME RIG" for e in events)
+
+
+def test_read_count_sanity(mock_firestore):
+    mock_db, machines_db, _ = mock_firestore
+    mach_id = "mach_count"
+    _seed_machine(machines_db, mach_id, last_count=50)
+    crop = _make_dummy_image_b64(200, 200)
+    counter = {"counter_b64": crop}
+
+    # 51 accepted -> one count event
+    resp = _read(mock_db, mach_id, _gemini("unclear", count=51), counter)
+    assert resp.json()["count"] == 51
+    assert [(e["event_type"], e["count"], e["flag"]) for e in mock_db.events_db.values()] == [("count", 51, None)]
+
+    # Same count again -> nothing
+    mock_db.events_db.clear()
+    resp = _read(mock_db, mach_id, _gemini("unclear", count=51), counter)
+    assert resp.json()["changed"] is False
+    assert mock_db.events_db == {}
+
+    # Impossible jump -> count event flagged rejected_misread, last_count kept
+    resp = _read(mock_db, mach_id, _gemini("unclear", count=500), counter)
+    assert resp.json()["count"] == 51
+    assert [(e["event_type"], e["count"], e["flag"]) for e in mock_db.events_db.values()] == [
+        ("count", 500, "rejected_misread")
+    ]
+    assert machines_db[mach_id]["last_count"] == 51
+
+    # Reset needs two consecutive agreeing lower reads
+    mock_db.events_db.clear()
+    resp = _read(mock_db, mach_id, _gemini("unclear", count=0), counter)
+    assert resp.json()["count"] == 51
+    resp = _read(mock_db, mach_id, _gemini("unclear", count=0), counter)
+    assert resp.json()["count"] == 0
+    assert machines_db[mach_id]["last_count"] == 0
+
+
+def test_read_prompt_labels_included_crops(mock_firestore):
+    """Each crop is labelled in contents and the prompt names which crops are present."""
+    from services.api import machines as machines_mod
+
+    mock_db, machines_db, _ = mock_firestore
+    mach_id = "mach_prompt"
+    _seed_machine(machines_db, mach_id, light_order=["green", "yellow", "red"])
+    crop = _make_dummy_image_b64(200, 200)
+
+    captured = {}
+
+    class FakeModels:
+        def generate_content(self, model, contents, config):
+            captured["contents"] = contents
+            captured["config"] = config
+            res = MagicMock()
+            res.text = json.dumps({"light": "green", "count": None, "alarm_text": None, "alarm_active": False})
+            return res
+
+    fake_client = MagicMock()
+    fake_client.models = FakeModels()
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}), \
+         patch("services.api.machines.get_firestore_client", return_value=mock_db), \
+         patch("services.api.machines.check_machine_rate_limit"), \
+         patch("services.api.machines.check_rate_limit"), \
+         patch("services.api.machines.get_genai_client", return_value=fake_client):
+        resp = client.post(
+            f"/api/machines/{mach_id}/read",
+            json={"crops": {"stack_light_b64": crop, "hmi_b64": crop}},
+            headers={"Authorization": "Bearer fake_token"},
+        )
+    assert resp.status_code == 200
+    contents = captured["contents"]
+    prompt = contents[0]
+    assert "This inspection includes the following crops: stack light, HMI screen." in prompt
+    assert "top to bottom: green, yellow, red" in prompt
+    text_parts = [c for c in contents[1:] if isinstance(c, str)]
+    assert text_parts == ["Stack light crop:", "HMI screen crop:"]
+    assert "Counter crop:" not in contents
+    assert captured["config"].response_schema is machines_mod.MachineReadGeminiResponse
 
 
 def test_soak_run_lifecycle_and_truth_permissions(mock_firestore):
@@ -444,3 +591,85 @@ def test_soak_run_lifecycle_and_truth_permissions(mock_firestore):
             )
             assert post_completed_resp.status_code == 409
             assert "not running" in post_completed_resp.json()["detail"]
+
+
+def test_machine_setup_failure_returns_error_not_invented_boxes():
+    img_b64 = _make_dummy_image_b64(400, 300)
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}):
+        with patch("services.api.machines.check_rate_limit"):
+            with patch("services.api.machines.call_robotics_er_setup", side_effect=RuntimeError("model down")):
+                resp = client.post(
+                    "/api/machines/setup",
+                    json={"image_b64": img_b64},
+                    headers={"Authorization": "Bearer fake_token"},
+                )
+            assert resp.status_code == 502
+            assert "rois" not in resp.json()
+            assert "model down" not in resp.json()["detail"]
+
+            with patch("services.api.machines.call_robotics_er_setup", return_value={"stack_light": None}):
+                resp = client.post(
+                    "/api/machines/setup",
+                    json={"image_b64": img_b64},
+                    headers={"Authorization": "Bearer fake_token"},
+                )
+            assert resp.status_code == 422
+
+
+def test_machine_setup_passes_machine_position_to_model():
+    img_b64 = _make_dummy_image_b64(400, 300)
+    boxes = {"stack_light": [100, 200, 500, 350], "counter": None, "hmi": None}
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}):
+        with patch("services.api.machines.check_rate_limit"):
+            with patch("services.api.machines.call_robotics_er_setup", return_value=boxes) as er:
+                resp = client.post(
+                    "/api/machines/setup",
+                    json={"image_b64": img_b64, "machine_count": 3, "machine_index": 2},
+                    headers={"Authorization": "Bearer fake_token"},
+                )
+                assert resp.status_code == 200
+                assert er.call_args.args[1:] == (3, 2)
+
+                bad = client.post(
+                    "/api/machines/setup",
+                    json={"image_b64": img_b64, "machine_count": 2, "machine_index": 3},
+                    headers={"Authorization": "Bearer fake_token"},
+                )
+                assert bad.status_code == 400
+
+    from services.api import machines as machines_mod
+
+    prompt = machines_mod.build_setup_prompt(3, 2)
+    assert "3 machines side by side" in prompt
+    assert "machine number 2, counting from the left" in prompt
+
+
+def test_soak_truth_uses_server_time_and_accepts_alarm_cleared(mock_firestore):
+    mock_db, _, soak_db = mock_firestore
+    started = datetime.now(timezone.utc) - timedelta(seconds=90)
+    soak_db["soak_t"] = {
+        "id": "soak_t",
+        "created_by": "user_alice",
+        "started_at": started.isoformat(),
+        "status": "running",
+    }
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "user_alice", "role": "trainee"}):
+        with patch("services.api.machines.get_firestore_client", return_value=mock_db):
+            resp = client.post(
+                "/api/soak/soak_t/truth",
+                json={
+                    "machine_id": "mach_1",
+                    "ts": "1999-01-01T00:00:00+00:00",
+                    "run_s": 5.0,
+                    "event_type": "alarm_cleared",
+                },
+                headers={"Authorization": "Bearer fake_token"},
+            )
+    assert resp.status_code == 200
+    (row,) = mock_db.truth_db.values()
+    assert row["event_type"] == "alarm_cleared"
+    assert not row["ts"].startswith("1999")
+    assert 89.0 <= row["run_s"] <= 100.0

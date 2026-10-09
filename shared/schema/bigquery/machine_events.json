@@ -78,6 +78,30 @@
     "description": "Sanity check flag (e.g. rejected_misread)"
   },
   {
+    "name": "from_state",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Prior machine state before transition"
+  },
+  {
+    "name": "to_state",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "New machine state after transition"
+  },
+  {
+    "name": "alarm_text",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Active alarm text"
+  },
+  {
+    "name": "source",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "HOME RIG or LIVE data source"
+  },
+  {
     "name": "ms",
     "type": "INT64",
     "mode": "NULLABLE",

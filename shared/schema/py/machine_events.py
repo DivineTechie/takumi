@@ -11,8 +11,14 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, conint
 class EventType(Enum):
     state_change = 'state_change'
     alarm = 'alarm'
+    alarm_cleared = 'alarm_cleared'
     count = 'count'
     heartbeat = 'heartbeat'
+
+
+class Source(Enum):
+    HOME_RIG = 'HOME RIG'
+    LIVE = 'LIVE'
 
 
 class DetectedBy(Enum):
@@ -33,11 +39,18 @@ class MachineEvent(BaseModel):
     machine_id: str = Field(..., description='Machine identifier')
     ts: AwareDatetime = Field(..., description='Event timestamp')
     event_type: EventType = Field(..., description='Type of event')
+    from_state: str | None = Field(
+        None, description='Prior machine state before transition'
+    )
+    to_state: str | None = Field(None, description='New machine state after transition')
     state: str | None = Field(
         None, description='Machine state (running, idle, stopped, unknown)'
     )
     light: str | None = Field(None, description='Observed stack light color')
     count: conint(ge=0) | None = Field(None, description='Parts count value')
+    alarm_text: str | None = Field(
+        None, description='HMI alarm message text if triggered'
+    )
     alarm_code: str | None = Field(
         None, description='HMI alarm message text if triggered'
     )
@@ -48,6 +61,7 @@ class MachineEvent(BaseModel):
     soak_run_id: str | None = Field(
         None, description='Associated soak run ID if running in soak test'
     )
+    source: Source | None = Field(None, description='HOME RIG or LIVE data source')
     detected_by: DetectedBy = Field(..., description='Detector subsystem')
     flag: Flag | None = Field(None, description='Sanity check flag')
     ms: conint(ge=0) | None = Field(

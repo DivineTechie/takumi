@@ -11,18 +11,14 @@ vi.mock('../lib/api', () => ({
 
 const mockItems: apiModule.GalleryItem[] = [
   {
-    id: 'candle_001',
-    product_id: 'candle',
+    id: 'gal_3f9a1c2b7d4e',
     category: 'candle',
-    filename: '001.JPG',
-    image_url: 'https://storage.googleapis.com/test-bucket/candle_001.JPG',
+    image_url: 'https://storage.googleapis.com/test-bucket/gallery/9c1e0a7b44d2.jpg',
   },
   {
-    id: 'candle_002',
-    product_id: 'candle',
+    id: 'gal_a81d55e0c9f3',
     category: 'candle',
-    filename: '002.JPG',
-    image_url: 'https://storage.googleapis.com/test-bucket/candle_002.JPG',
+    image_url: 'https://storage.googleapis.com/test-bucket/gallery/0b7f3e9a12c6.jpg',
   },
 ];
 
@@ -46,8 +42,10 @@ describe('GalleryScreen', () => {
     // Verify tiles render with concealed labels
     const concealedBadges = await screen.findAllByText(/Ground truth concealed until inspected/i);
     expect(concealedBadges.length).toBe(2);
-    expect(screen.getByText('candle_001')).toBeInTheDocument();
-    expect(screen.getByText('candle_002')).toBeInTheDocument();
+    // No id is shown before inspection; alt text is neutral
+    expect(screen.queryByText('gal_3f9a1c2b7d4e')).not.toBeInTheDocument();
+    expect(screen.queryByText('gal_a81d55e0c9f3')).not.toBeInTheDocument();
+    expect(screen.getAllByAltText('VisA candle test part').length).toBe(2);
   });
 
   it('inspects a tile and reveals ground truth alongside hit evaluation', async () => {

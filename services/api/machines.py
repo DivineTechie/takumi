@@ -11,6 +11,7 @@ Implements:
 - POST /api/soak/{id}/truth (Stream ground truth events)
 """
 
+import asyncio
 import base64
 from datetime import datetime, timezone
 import io
@@ -36,10 +37,11 @@ from services.api.config import (
     MAX_REQUEST_SIZE_BYTES,
     MODEL_FLASH_LITE,
     MODEL_ROBOTICS_ER,
+    POINT_THINKING,
     TIMEOUT_MACHINE_READ_S,
     TIMEOUT_MACHINE_SETUP_S,
 )
-from services.api.gemini import get_genai_client
+from services.api.gemini import _parse_thinking_config, get_genai_client
 from services.api.storage_client import upload_machine_evidence_jpeg
 from services.api.telemetry import trace_gemini_call
 
@@ -68,6 +70,16 @@ class RoisModel(BaseModel):
 class MachineSetupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     image_b64: str
+    machine_count: int = Field(1, ge=1, le=6)
+    machine_index: int = Field(1, ge=1, le=6)
+
+
+class SetupBoxesGeminiResponse(BaseModel):
+    """Robotics-ER output: [ymin, xmin, ymax, xmax] boxes on a 0-1000 scale."""
+
+    stack_light: list[int] | None = None
+    counter: list[int] | None = None
+    hmi: list[int] | None = None
 
 
 class MachineSetupResponse(BaseModel):
@@ -92,20 +104,31 @@ class MachineCrops(BaseModel):
     hmi_b64: str | None = None
 
 
+class MachineReadGeminiResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    light: Literal["red", "yellow", "green", "off", "multiple", "unclear"]
+    count: int | None = None
+    alarm_text: str | None = None
+    alarm_active: bool = False
+
+
 class MachineReadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     crops: MachineCrops
     video_run_s: float | None = None
     soak_run_id: str | None = None
     detected_by: Literal["edge", "gemini"] = "gemini"
+    reason: Literal["change", "heartbeat"] = "change"
 
 
 class MachineReadResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    state: str
-    light: str
-    count: int | None
-    alarm_code: str | None
+    state: str | None = None
+    light: str | None = None
+    count: int | None = None
+    alarm_text: str | None = None
+    alarm_code: str | None = None
+    changed: bool = False
     ms: int
 
 
@@ -117,11 +140,13 @@ class StartSoakRequest(BaseModel):
 
 
 class SoakTruthRequest(BaseModel):
+    """Truth event from the test bench. ts and run_s are set by the server; client values are ignored."""
+
     model_config = ConfigDict(extra="forbid")
-    machine_id: str
-    ts: str
-    run_s: float = Field(..., ge=0.0)
-    event_type: Literal["state_change", "alarm", "count"]
+    machine_id: str = Field(..., min_length=1, max_length=64)
+    ts: str | None = None
+    run_s: float | None = None
+    event_type: Literal["state_change", "alarm", "alarm_cleared", "count"]
     state: str | None = None
     count: int | None = None
     alarm_code: str | None = None
@@ -206,25 +231,45 @@ def check_machine_rate_limit(machine_id: str) -> None:
     _machine_read_history[machine_id] = history
 
 
-def call_robotics_er_setup(raw_bytes: bytes, client: genai.Client | None = None) -> dict[str, Any]:
+def build_setup_prompt(machine_count: int, machine_index: int) -> str:
+    """Builds the Robotics-ER setup prompt for one machine in the frame."""
+    if machine_count > 1:
+        target = (
+            f"The image shows {machine_count} machines side by side. "
+            f"Only locate the parts of machine number {machine_index}, counting from the left."
+        )
+    else:
+        target = "The image shows one machine."
+    return (
+        f"{target}\n"
+        "Locate these parts of that machine:\n"
+        "- stack_light: the signal light tower (stacked coloured lights).\n"
+        "- counter: the numeric parts/cycle counter display.\n"
+        "- hmi: the operator screen that shows status or alarm text.\n"
+        'Return JSON: {"stack_light": [ymin, xmin, ymax, xmax], "counter": [ymin, xmin, ymax, xmax] or null, '
+        '"hmi": [ymin, xmin, ymax, xmax] or null}, with coordinates normalised to 0-1000. '
+        "Use null for a part that is not visible."
+    )
+
+
+def call_robotics_er_setup(
+    raw_bytes: bytes,
+    machine_count: int = 1,
+    machine_index: int = 1,
+    client: genai.Client | None = None,
+) -> dict[str, Any]:
     """Invokes gemini-robotics-er-2-preview to detect machine component regions of interest."""
     if client is None:
         client = get_genai_client()
 
-    prompt = (
-        "You are an industrial robotics vision model. Locate the following components on this machine:\n"
-        "1. stack_light: The multi-segment indicator tower / signal light (patlite).\n"
-        "2. counter: The digital pulse/cycle parts counter display.\n"
-        "3. hmi: The human-machine interface terminal screen.\n\n"
-        "Return bounding boxes in JSON format for each detected element with coordinates as [ymin, xmin, ymax, xmax] on a 0-1000 scale."
-    )
-
     contents = [
-        prompt,
         types.Part.from_bytes(data=raw_bytes, mime_type="image/jpeg"),
+        build_setup_prompt(machine_count, machine_index),
     ]
     cfg = types.GenerateContentConfig(
         response_mime_type="application/json",
+        response_schema=SetupBoxesGeminiResponse,
+        thinking_config=_parse_thinking_config(POINT_THINKING),
     )
     with trace_gemini_call("machines.setup", MODEL_ROBOTICS_ER):
         res = client.models.generate_content(
@@ -235,46 +280,74 @@ def call_robotics_er_setup(raw_bytes: bytes, client: genai.Client | None = None)
     return json.loads(res.text)
 
 
-def call_flash_lite_read(
+READ_PROMPT_TEMPLATE = """You are an industrial vision monitor inspecting cropped regions of a factory machine.
+This inspection includes the following crops: {included_crops_str}.
+The machine's physical stack light has lights ordered from top to bottom: {light_order_str}.
+
+Task instructions:
+- Stack light: identify which light is illuminated ('red', 'yellow', 'green', 'off', 'multiple' if more than one is illuminated, or 'unclear' if not legible).
+- Parts counter: read the numeric integer value displayed on the counter, or null if unreadable or absent.
+- HMI screen: return the active alarm message text exactly as shown on the screen, or null if no alarm or screen is clear/normal/absent. Set alarm_active to true if an active alarm is present, else false.
+
+Answer in JSON conforming to the schema."""
+
+
+async def call_flash_lite_read(
     prompt: str,
-    crops: list[bytes],
+    labeled_crops: list[tuple[str, bytes]],
     client: genai.Client | None = None,
-) -> dict[str, Any]:
+) -> MachineReadGeminiResponse:
     """Invokes gemini-3.5-flash-lite on machine crops to read stack light, counter, and alarms."""
     if client is None:
         client = get_genai_client()
 
     contents: list[Any] = [prompt]
-    for b in crops:
+    for label, b in labeled_crops:
+        contents.append(f"{label}:")
         contents.append(types.Part.from_bytes(data=b, mime_type="image/jpeg"))
 
     cfg = types.GenerateContentConfig(
+        response_schema=MachineReadGeminiResponse,
         response_mime_type="application/json",
     )
-    with trace_gemini_call("machines.read", MODEL_FLASH_LITE):
-        res = client.models.generate_content(
-            model=MODEL_FLASH_LITE,
-            contents=contents,
-            config=cfg,
-        )
-    return json.loads(res.text)
+
+    def _sync():
+        with trace_gemini_call("machines.read", MODEL_FLASH_LITE):
+            return client.models.generate_content(
+                model=MODEL_FLASH_LITE,
+                contents=contents,
+                config=cfg,
+            )
+
+    res = await asyncio.wait_for(
+        asyncio.to_thread(_sync),
+        timeout=TIMEOUT_MACHINE_READ_S,
+    )
+    data = json.loads(res.text)
+    return MachineReadGeminiResponse.model_validate(data)
 
 
 # --- Endpoints ---
 
 @router.post("/machines/setup", response_model=MachineSetupResponse)
-def setup_machine(
+async def setup_machine(
     req: MachineSetupRequest,
     user: AuthUser = Depends(require_role("trainee", "supervisor", "master")),
 ) -> MachineSetupResponse:
     """Runs Gemini Robotics-ER to detect ROIs (stack_light, counter, hmi) on an un-cropped setup image.
 
-    The setup frame itself is never stored to disk or Cloud Storage.
+    The setup frame itself is never stored to disk or Cloud Storage. If the model call fails, no
+    boxes are invented: the caller gets an error and can retry or draw the boxes by hand.
     """
     if not req.image_b64:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="image_b64 is required",
+        )
+    if req.machine_index > req.machine_count:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="machine_index must be between 1 and machine_count",
         )
 
     try:
@@ -304,25 +377,36 @@ def setup_machine(
     check_rate_limit(user.uid, "checks")
 
     try:
-        parsed = call_robotics_er_setup(raw_bytes)
+        parsed = await asyncio.wait_for(
+            asyncio.to_thread(call_robotics_er_setup, raw_bytes, req.machine_count, req.machine_index),
+            timeout=TIMEOUT_MACHINE_SETUP_S,
+        )
+    except (asyncio.TimeoutError, TimeoutError):
+        logger.warning("Robotics-ER setup timed out")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Machine setup timed out. Try again or draw the boxes by hand.",
+        )
     except Exception as e:
-        logger.warning(f"Robotics-ER setup call failed: {e}. Falling back to default center layout.")
-        parsed = {
-            "stack_light": [100, 200, 500, 350],
-            "counter": [200, 450, 400, 750],
-            "hmi": [450, 400, 850, 850],
-        }
+        logger.warning("Robotics-ER setup failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Machine setup failed. Try again or draw the boxes by hand.",
+        )
 
-    raw_stack = parsed.get("stack_light") or [100, 200, 500, 350]
-    stack_roi = normalize_box(raw_stack)
-
-    counter_roi = None
-    if parsed.get("counter"):
-        counter_roi = normalize_box(parsed["counter"])
-
-    hmi_roi = None
-    if parsed.get("hmi"):
-        hmi_roi = normalize_box(parsed["hmi"])
+    try:
+        raw_stack = parsed.get("stack_light")
+        if not raw_stack:
+            raise ValueError("no stack light found")
+        stack_roi = normalize_box(raw_stack)
+        counter_roi = normalize_box(parsed["counter"]) if parsed.get("counter") else None
+        hmi_roi = normalize_box(parsed["hmi"]) if parsed.get("hmi") else None
+    except (ValueError, TypeError) as e:
+        logger.warning("Robotics-ER setup returned unusable boxes: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No stack light was found. Point the camera at the machine and try again.",
+        )
 
     return MachineSetupResponse(
         rois=RoisModel(
@@ -348,7 +432,6 @@ def create_machine(
         "red": "stopped",
         "yellow": "idle",
         "green": "running",
-        "off": "stopped",
     }
 
     machine_data = {
@@ -362,7 +445,8 @@ def create_machine(
         "created_by": user.uid,
         "created_at": now_iso,
         "updated_at": None,
-        "last_state": None,
+        "state": None,
+        "last_alarm": None,
         "last_count": None,
         "last_seen_at": None,
     }
@@ -398,7 +482,7 @@ def get_machine(
 
 
 @router.post("/machines/{machine_id}/read", response_model=MachineReadResponse)
-def read_machine(
+async def read_machine(
     machine_id: str,
     req: MachineReadRequest,
     user: AuthUser = Depends(require_role("trainee", "supervisor", "master")),
@@ -438,55 +522,55 @@ def read_machine(
         "red": "stopped",
         "yellow": "idle",
         "green": "running",
-        "off": "stopped",
     }
     light_order_str = ", ".join(light_order)
-    light_options_str = "/".join(light_order)
 
-    prompt = (
-        f"You are an industrial vision monitor inspecting crop images of a factory machine.\n"
-        f"The machine's physical stack light has lights ordered from top to bottom: {light_order_str}.\n"
-        f"Inspect the provided crop image(s):\n"
-        f"- For the stack light crop: determine which light is illuminated ({light_options_str} or 'off').\n"
-        f"- For the parts counter crop (if provided): read the numeric integer digits displayed on the counter, or null if unreadable.\n"
-        f"- For the HMI crop (if provided): return the alarm text exactly as shown on the screen, or null if no alarm or screen is clear.\n"
-        f"Answer in JSON."
+    labeled_crops: list[tuple[str, bytes]] = []
+    included_labels: list[str] = []
+    if stack_bytes is not None:
+        labeled_crops.append(("Stack light crop", stack_bytes))
+        included_labels.append("stack light")
+    if counter_bytes is not None:
+        labeled_crops.append(("Counter crop", counter_bytes))
+        included_labels.append("parts counter")
+    if hmi_bytes is not None:
+        labeled_crops.append(("HMI screen crop", hmi_bytes))
+        included_labels.append("HMI screen")
+
+    included_crops_str = ", ".join(included_labels)
+    prompt = READ_PROMPT_TEMPLATE.format(
+        included_crops_str=included_crops_str,
+        light_order_str=light_order_str,
     )
-
-    crops_list = [b for b in (stack_bytes, counter_bytes, hmi_bytes) if b is not None]
 
     t0 = time.time()
     try:
-        parsed = call_flash_lite_read(prompt, crops_list)
+        parsed = await call_flash_lite_read(prompt, labeled_crops)
+    except (asyncio.TimeoutError, TimeoutError):
+        logger.warning(f"Machine read timed out for machine {machine_id}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Gemini machine read timed out (8s limit exceeded)",
+        )
     except Exception as e:
-        logger.error(f"Gemini machine read error: {e}")
-        parsed = {
-            "light": "unknown",
-            "count": None,
-            "alarm_text": None,
-        }
+        logger.error(f"Gemini machine read error for machine {machine_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Gemini machine read failed",
+        )
     model_ms = int((time.time() - t0) * 1000)
 
-    detected_light = (parsed.get("light") or "off").lower().strip()
-    raw_count = parsed.get("count")
-    alarm_text = parsed.get("alarm_text")
+    detected_light = (parsed.light or "unclear").lower().strip()
+    if detected_light in ("unclear", "multiple"):
+        detected_state = None
+    elif detected_light == "off":
+        detected_state = state_map.get("off")
+    else:
+        detected_state = state_map.get(detected_light)
+
+    alarm_text = parsed.alarm_text if parsed.alarm_active else None
     if alarm_text and alarm_text.lower() in ("none", "null", "no alarm", "normal", "clear", ""):
         alarm_text = None
-
-    # Map light -> state
-    detected_state = state_map.get(detected_light)
-    if not detected_state:
-        if detected_light == "red":
-            detected_state = "stopped"
-        elif detected_light == "green":
-            detected_state = "running"
-        elif detected_light == "yellow":
-            detected_state = "idle"
-        else:
-            detected_state = "unknown"
-
-    if alarm_text:
-        detected_state = "stopped"
 
     # Count Sanity Validation
     last_count = machine_data.get("last_count")
@@ -503,10 +587,11 @@ def read_machine(
         except Exception:
             elapsed_s = 10.0
 
+    raw_count = parsed.count
     accepted_count = last_count
     count_flag: str | None = None
 
-    if raw_count is not None and raw_count >= 0:
+    if raw_count is not None and counter_bytes is not None and raw_count >= 0:
         if last_count is None:
             accepted_count = raw_count
         else:
@@ -515,7 +600,6 @@ def read_machine(
             if 0 <= delta <= max_delta:
                 accepted_count = raw_count
             elif delta < 0:
-                # Potential counter reset: accept only if two consecutive reads agree
                 if last_misread_count == raw_count:
                     accepted_count = raw_count
                 else:
@@ -525,14 +609,78 @@ def read_machine(
                 accepted_count = last_count
                 count_flag = "rejected_misread"
 
-    # Evidence Upload (only when alarm triggered and HMI crop provided)
-    evidence_path: str | None = None
-    event_id = f"mev_{uuid.uuid4().hex[:12]}"
-    if alarm_text and hmi_bytes:
-        try:
-            evidence_path = upload_machine_evidence_jpeg(machine_id, event_id, hmi_bytes)
-        except Exception as e:
-            logger.warning(f"Failed to upload alarm evidence to Storage: {e}")
+    machine_state = machine_data.get("state")
+    machine_alarm = machine_data.get("last_alarm")
+
+    machine_source = str(machine_data.get("source", "")).lower()
+    event_source = "HOME RIG" if (req.soak_run_id or machine_source == "virtual") else "LIVE"
+
+    events_to_write: list[dict[str, Any]] = []
+
+    # 1. state_change: detected_state != machine.state and detected_state != "unknown" (store from_state, to_state)
+    if detected_state is not None and detected_state != "unknown" and detected_state != machine_state:
+        events_to_write.append({
+            "event_type": "state_change",
+            "from_state": machine_state,
+            "to_state": detected_state,
+            "state": detected_state,
+            "light": detected_light,
+        })
+
+    # 2. alarm: alarm_text non-null and != machine.last_alarm;
+    #    alarm_cleared: machine.last_alarm non-null and alarm_text null (only when an HMI crop was sent)
+    if hmi_bytes is not None:
+        if alarm_text is not None and alarm_text != machine_alarm:
+            evidence_path = None
+            ev_id = f"mev_{uuid.uuid4().hex[:12]}"
+            try:
+                evidence_path = upload_machine_evidence_jpeg(machine_id, ev_id, hmi_bytes)
+            except Exception as e:
+                logger.warning(f"Failed to upload alarm evidence to Storage: {e}")
+            events_to_write.append({
+                "id": ev_id,
+                "event_type": "alarm",
+                "alarm_text": alarm_text,
+                "alarm_code": alarm_text,
+                "evidence_path": evidence_path,
+                "state": detected_state or machine_state,
+                "light": detected_light,
+            })
+        elif machine_alarm is not None and alarm_text is None:
+            events_to_write.append({
+                "event_type": "alarm_cleared",
+                "alarm_text": None,
+                "alarm_code": None,
+                "state": detected_state or machine_state,
+                "light": detected_light,
+            })
+
+    # 3. count: accepted_count > last_count; rejected misreads are logged as event_type "count" with flag "rejected_misread"
+    if count_flag == "rejected_misread":
+        events_to_write.append({
+            "event_type": "count",
+            "count": raw_count,
+            "flag": "rejected_misread",
+            "state": detected_state or machine_state,
+            "light": detected_light,
+        })
+    elif accepted_count is not None and (last_count is None or accepted_count > last_count):
+        events_to_write.append({
+            "event_type": "count",
+            "count": accepted_count,
+            "flag": None,
+            "state": detected_state or machine_state,
+            "light": detected_light,
+        })
+
+    # 4. heartbeat: only when reason == "heartbeat" and nothing else changed
+    if req.reason == "heartbeat" and len(events_to_write) == 0:
+        events_to_write.append({
+            "event_type": "heartbeat",
+            "state": machine_state,
+            "light": detected_light,
+            "count": last_count,
+        })
 
     # Compute run_s for video/live soak runs
     run_s: float | None = None
@@ -549,44 +697,54 @@ def read_machine(
                 except Exception:
                     pass
 
-    # Store Machine Event
-    event_type = "alarm" if alarm_text else ("count" if count_flag == "rejected_misread" else "state_change")
     now_iso = now.isoformat()
+    changed = len(events_to_write) > 0
 
-    event_data = {
-        "id": event_id,
-        "machine_id": machine_id,
-        "ts": now_iso,
-        "event_type": event_type,
-        "state": detected_state,
-        "light": detected_light,
-        "count": accepted_count,
-        "alarm_code": alarm_text,
-        "evidence_path": evidence_path,
-        "run_s": run_s,
-        "soak_run_id": req.soak_run_id,
-        "detected_by": req.detected_by,
-        "flag": count_flag,
-        "ms": model_ms,
-    }
+    for ev in events_to_write:
+        ev_id = ev.get("id") or f"mev_{uuid.uuid4().hex[:12]}"
+        ev["id"] = ev_id
+        ev["machine_id"] = machine_id
+        ev["ts"] = now_iso
+        ev["run_s"] = run_s
+        ev["soak_run_id"] = req.soak_run_id
+        ev["source"] = event_source
+        ev["detected_by"] = req.detected_by
+        ev["ms"] = model_ms
+        ev.setdefault("from_state", None)
+        ev.setdefault("to_state", None)
+        ev.setdefault("state", detected_state or machine_state)
+        ev.setdefault("light", detected_light)
+        ev.setdefault("count", accepted_count)
+        ev.setdefault("alarm_text", None)
+        ev.setdefault("alarm_code", None)
+        ev.setdefault("evidence_path", None)
+        ev.setdefault("flag", None)
 
-    db.collection("machine_events").document(event_id).set(event_data)
-    stream_machine_event(event_data)
+        db.collection("machine_events").document(ev_id).set(ev)
+        stream_machine_event(ev)
 
-    # Update machine latest state
-    update_data = {
-        "last_state": detected_state,
-        "last_count": accepted_count,
+    # Update machine document state and last_alarm
+    update_data: dict[str, Any] = {
         "last_seen_at": now_iso,
-        "last_misread_count": raw_count if count_flag == "rejected_misread" else None,
+        "updated_at": now_iso,
     }
+    if detected_state is not None and detected_state != "unknown":
+        update_data["state"] = detected_state
+    if hmi_bytes is not None:
+        update_data["last_alarm"] = alarm_text
+    if accepted_count is not None:
+        update_data["last_count"] = accepted_count
+        update_data["last_misread_count"] = raw_count if count_flag == "rejected_misread" else None
+
     machine_ref.update(update_data)
 
     return MachineReadResponse(
-        state=detected_state,
+        state=detected_state or machine_state,
         light=detected_light,
         count=accepted_count,
+        alarm_text=alarm_text,
         alarm_code=alarm_text,
+        changed=changed,
         ms=model_ms,
     )
 
@@ -685,11 +843,20 @@ def post_soak_truth(
         )
 
     truth_id = f"tr_{uuid.uuid4().hex[:12]}"
+    # Server clock only, so truth and detections share one time base.
+    now = datetime.now(timezone.utc)
+    run_s: float | None = None
+    try:
+        started = datetime.fromisoformat(str(data.get("started_at")).replace("Z", "+00:00"))
+        run_s = round(max(0.0, (now - started).total_seconds()), 3)
+    except ValueError:
+        run_s = None
+
     truth_data = {
         "id": truth_id,
         "machine_id": req.machine_id,
-        "ts": req.ts,
-        "run_s": req.run_s,
+        "ts": now.isoformat(),
+        "run_s": run_s,
         "event_type": req.event_type,
         "state": req.state,
         "count": req.count,

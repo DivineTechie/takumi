@@ -592,13 +592,24 @@ def test_product_and_unit_endpoints(mock_firestore):
 
 def test_gallery_endpoints(mock_firestore, mock_storage):
     """GET /api/inspect/gallery and POST /api/inspect/gallery."""
-    # Seed gallery item
-    gal_id = "candle_test_001"
+    # Seed gallery items with opaque ids (one normal, one anomaly)
+    gal_id = "gal_3f9a1c2b7d4e"
     mock_firestore.collection("gallery").document(gal_id).set({
         "id": gal_id,
         "product_id": "test_candle",
-        "image_path": "gallery/candle/normal_001.jpg",
+        "image_path": "gallery/9c1e0a7b44d2.jpg",
         "label": "normal",
+        "source_file": "candle/Data/Images/Normal/0001.JPG",
+        "split": "test",
+        "source": "PUBLIC DATA: VisA (CC BY 4.0)",
+        "created_at": "2026-10-09T00:00:00Z",
+    })
+    mock_firestore.collection("gallery").document("gal_a81d55e0c9f3").set({
+        "id": "gal_a81d55e0c9f3",
+        "product_id": "test_candle",
+        "image_path": "gallery/0b7f3e9a12c6.jpg",
+        "label": "wax melded out of the candle",
+        "source_file": "candle/Data/Images/Anomaly/013.JPG",
         "split": "test",
         "source": "PUBLIC DATA: VisA (CC BY 4.0)",
         "created_at": "2026-10-09T00:00:00Z",
@@ -628,16 +639,22 @@ def test_gallery_endpoints(mock_firestore, mock_storage):
             "total_ms": 450,
         }
 
-        # 1. GET gallery list (labels must NOT be exposed)
+        # 1. GET gallery list (labels, filenames and source paths must NOT be exposed)
         res_list = client.get("/api/inspect/gallery", headers={"Authorization": "Bearer token"})
         assert res_list.status_code == 200
         items = res_list.json()
-        assert len(items) >= 1
+        assert len(items) >= 2
+        for it in items:
+            assert set(it.keys()) == {"id", "category", "image_url"}
+            for value in it.values():
+                text = str(value).lower()
+                assert "normal" not in text
+                assert "anomaly" not in text
         gal_item = next(i for i in items if i["id"] == gal_id)
-        assert "label" not in gal_item
-        assert "dataset_label" not in gal_item
-        assert gal_item["product_id"] == "test_candle"
-        assert "image_url" in gal_item
+        assert gal_item["category"] == "test_candle"
+        # Same fixed order on every call
+        res_list2 = client.get("/api/inspect/gallery", headers={"Authorization": "Bearer token"})
+        assert [i["id"] for i in res_list2.json()] == [i["id"] for i in items]
 
         # 2. POST inspect gallery
         res_insp = client.post(

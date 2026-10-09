@@ -19,8 +19,16 @@
     },
     "event_type": {
       "type": "string",
-      "enum": ["state_change", "alarm", "count", "heartbeat"],
+      "enum": ["state_change", "alarm", "alarm_cleared", "count", "heartbeat"],
       "description": "Type of event"
+    },
+    "from_state": {
+      "type": ["string", "null"],
+      "description": "Prior machine state before transition"
+    },
+    "to_state": {
+      "type": ["string", "null"],
+      "description": "New machine state after transition"
     },
     "state": {
       "type": ["string", "null"],
@@ -34,6 +42,10 @@
       "type": ["integer", "null"],
       "minimum": 0,
       "description": "Parts count value"
+    },
+    "alarm_text": {
+      "type": ["string", "null"],
+      "description": "HMI alarm message text if triggered"
     },
     "alarm_code": {
       "type": ["string", "null"],
@@ -50,6 +62,11 @@
     "soak_run_id": {
       "type": ["string", "null"],
       "description": "Associated soak run ID if running in soak test"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["HOME RIG", "LIVE"],
+      "description": "HOME RIG or LIVE data source"
     },
     "detected_by": {
       "type": "string",

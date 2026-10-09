@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import io
 import json
 import logging
+import random
 import re
 import secrets
 import statistics
@@ -1902,7 +1903,7 @@ async def get_inspect_gallery(
     user: AuthUser = Depends(require_role("trainee", "supervisor", "master")),
 ) -> list[dict[str, Any]]:
     """Lists VisA benchmark gallery items with signed image URLs.
-    Labels are omitted to prevent cheating before inspection.
+    Labels and source filenames are omitted to prevent cheating before inspection.
     """
     db = get_firestore_client()
     query = db.collection("gallery")
@@ -1916,12 +1917,13 @@ async def get_inspect_gallery(
         img_url = get_signed_url_for_gs_uri(f"gs://{STORAGE_BUCKET}/{img_path}") if img_path else ""
         items.append({
             "id": d.id,
-            "product_id": data.get("product_id"),
             "category": data.get("product_id"),
             "image_url": img_url,
-            "filename": Path(img_path).name if img_path else d.id,
         })
-    items.sort(key=lambda x: (x.get("product_id", ""), x.get("id", "")))
+    # Deterministic fixed shuffle (seed 42) based on sorted ID
+    items.sort(key=lambda x: str(x.get("id", "")))
+    rng = random.Random(42)
+    rng.shuffle(items)
     return items
 
 

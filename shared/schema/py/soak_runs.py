@@ -17,6 +17,7 @@ class Status(Enum):
 class EventType(Enum):
     state_change = 'state_change'
     alarm = 'alarm'
+    alarm_cleared = 'alarm_cleared'
     count = 'count'
 
 
@@ -27,7 +28,7 @@ class SoakTruth(BaseModel):
     id: str | None = None
     machine_id: str
     ts: AwareDatetime
-    run_s: confloat(ge=0.0)
+    run_s: confloat(ge=0.0) | None
     event_type: EventType
     state: str | None = None
     count: int | None = None

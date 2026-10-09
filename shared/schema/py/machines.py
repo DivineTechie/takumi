@@ -53,9 +53,11 @@ class Machine(BaseModel):
     ideal_cycle_s: confloat(ge=0.1) = Field(
         ..., description='Ideal cycle time in seconds for count validation'
     )
-    last_state: str | None = Field(
-        None,
-        description='Latest detected machine state (running, idle, stopped, unknown)',
+    state: str | None = Field(
+        None, description='Current machine state (running, idle, stopped, unknown)'
+    )
+    last_alarm: str | None = Field(
+        None, description='Latest detected active alarm text, or null if clear'
     )
     last_count: conint(ge=0) | None = Field(
         None, description='Latest verified parts counter reading'

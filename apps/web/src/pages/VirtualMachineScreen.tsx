@@ -118,7 +118,7 @@ export const VirtualMachineScreen: React.FC = () => {
   // Log truth event helper
   const emitTruthEvent = useCallback(
     async (
-      eventType: 'state_change' | 'alarm' | 'count',
+      eventType: 'state_change' | 'alarm' | 'alarm_cleared' | 'count',
       newState: string | null,
       newLight: string | null,
       newCount: number | null,
@@ -129,7 +129,9 @@ export const VirtualMachineScreen: React.FC = () => {
         eventType === 'state_change'
           ? `State -> ${newState?.toUpperCase()} (${newLight?.toUpperCase()})`
           : eventType === 'alarm'
-          ? `Alarm -> ${newAlarm || 'CLEARED'}`
+          ? `Alarm -> ${newAlarm}`
+          : eventType === 'alarm_cleared'
+          ? 'Alarm cleared'
           : `Parts Count -> ${newCount}`;
 
       setRecentEvents((prev) => [
@@ -141,8 +143,6 @@ export const VirtualMachineScreen: React.FC = () => {
         try {
           await postSoakTruth(soakRunId, {
             machine_id: currentMachine.id,
-            ts: new Date().toISOString(),
-            run_s: runSeconds,
             event_type: eventType,
             state: newState,
             count: newCount,
@@ -153,7 +153,7 @@ export const VirtualMachineScreen: React.FC = () => {
         }
       }
     },
-    [soakRunId, currentMachine.id, runSeconds]
+    [soakRunId, currentMachine.id]
   );
 
   // Manual Controls
@@ -178,8 +178,8 @@ export const VirtualMachineScreen: React.FC = () => {
       setLight('red');
       setState('stopped');
       emitTruthEvent('alarm', 'stopped', 'red', count, text);
-    } else {
-      emitTruthEvent('alarm', state, light, count, null);
+    } else if (alarmCode) {
+      emitTruthEvent('alarm_cleared', state, light, count, null);
     }
   };
 

@@ -1,10 +1,17 @@
-"""Load 12 VisA gallery images (5 normal + 5 anomalous test images per category) into Cloud Storage and Firestore.
+"""Load the VisA gallery (5 normal + 5 anomalous test images per category, 12 categories) into Cloud Storage and Firestore.
 
 Public Data: VisA (CC BY 4.0).
 Uses fixed seed 42 to sample 5 normal and 5 anomalous images from the VisA test split for all 12 categories,
 strictly excluding the 3 reference images per category.
-Images are resized to max 1024 px JPEG (quality 90) and uploaded to gallery/{category}/{file}.
-Firestore collection 'gallery' records each unit's dataset label (never exposed to clients before inspection).
+
+Nothing visible to the browser may reveal the label:
+- Firestore doc ids are opaque: gal_<secrets.token_hex(6)>.
+- Storage objects are opaque: gallery/<secrets.token_hex(6)>.jpg (no category, no label, no source filename).
+- The dataset label and the source filename are stored ONLY in the Firestore gallery/{id} doc, which the
+  API never returns before inspection.
+
+Images are resized to max 1024 px JPEG (quality 90).
+Run with --purge to delete every existing gallery doc and every object under gallery/ before reseeding.
 """
 
 from __future__ import annotations
@@ -12,10 +19,10 @@ from __future__ import annotations
 import argparse
 import csv
 import io
-import json
 import os
 from pathlib import Path
 import random
+import secrets
 import sys
 from datetime import datetime, timezone
 
@@ -88,6 +95,42 @@ def load_category_annotations(visa_dir: Path, category: str) -> dict[str, str]:
     return mapping
 
 
+def sample_gallery(visa_dir: Path, seed: int, per_class: int) -> list[tuple[str, str, str]]:
+    """Returns the deterministic (category, item_type, rel_img_path) sample for the given seed."""
+    cls_csv_path = visa_dir / "1cls.csv"
+    category_test_splits: dict[str, dict[str, list[str]]] = {
+        cat: {"normal": [], "anomaly": []} for cat in CATEGORIES
+    }
+    with open(cls_csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            cat = row.get("object", "").strip()
+            split = row.get("split", "").strip()
+            label = row.get("label", "").strip()
+            img_rel = row.get("image", "").strip().replace("\\", "/")
+            if cat in category_test_splits and split == "test" and label in ("normal", "anomaly"):
+                category_test_splits[cat][label].append(img_rel)
+
+    rng = random.Random(seed)
+    out: list[tuple[str, str, str]] = []
+    for cat in CATEGORIES:
+        refs = REFS_TO_EXCLUDE.get(cat, [])
+        normal_candidates = sorted(
+            img for img in category_test_splits[cat]["normal"] if not any(ref in img for ref in refs)
+        )
+        anomaly_candidates = sorted(
+            img for img in category_test_splits[cat]["anomaly"] if not any(ref in img for ref in refs)
+        )
+        if len(normal_candidates) < per_class or len(anomaly_candidates) < per_class:
+            print(f"Error: Not enough candidates for {cat}", file=sys.stderr)
+            continue
+        sampled_normal = rng.sample(normal_candidates, per_class)
+        sampled_anomaly = rng.sample(anomaly_candidates, per_class)
+        out.extend((cat, "normal", p) for p in sampled_normal)
+        out.extend((cat, "anomaly", p) for p in sampled_anomaly)
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed VisA gallery into Firestore and Cloud Storage")
     parser.add_argument(
@@ -104,36 +147,20 @@ def main() -> None:
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed for sampling (default: 42)")
     parser.add_argument("--samples-per-class", type=int, default=5, help="Number of samples per class (default: 5)")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing gallery items")
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Delete every gallery doc and every object under gallery/ before reseeding",
+    )
     args = parser.parse_args()
 
     if not args.visa_dir.is_dir():
         print(f"Error: VisA directory {args.visa_dir} does not exist.", file=sys.stderr)
         sys.exit(1)
-
-    cls_csv_path = args.visa_dir / "1cls.csv"
-    if not cls_csv_path.is_file():
-        print(f"Error: 1cls.csv not found at {cls_csv_path}", file=sys.stderr)
+    if not (args.visa_dir / "1cls.csv").is_file():
+        print(f"Error: 1cls.csv not found in {args.visa_dir}", file=sys.stderr)
         sys.exit(1)
 
-    # Load 1cls.csv test splits
-    category_test_splits: dict[str, dict[str, list[str]]] = {
-        cat: {"normal": [], "anomaly": []} for cat in CATEGORIES
-    }
-
-    with open(cls_csv_path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            cat = row.get("object", "").strip()
-            split = row.get("split", "").strip()
-            label = row.get("label", "").strip()
-            img_rel = row.get("image", "").strip().replace("\\", "/")
-
-            if cat in category_test_splits and split == "test":
-                if label in ("normal", "anomaly"):
-                    category_test_splits[cat][label].append(img_rel)
-
-    # Initialize Firebase Admin & Cloud Storage
     if not firebase_admin._apps:
         firebase_admin.initialize_app(options={"projectId": args.project})
 
@@ -142,84 +169,63 @@ def main() -> None:
     storage_client = storage.Client(project=args.project)
     bucket = storage_client.bucket(args.bucket)
 
-    rng = random.Random(args.seed)
+    if args.purge:
+        # Old doc ids / object names leaked labels (e.g. gallery/candle/anomaly_013.jpg): delete them all.
+        deleted_docs = 0
+        for d in gallery_col.stream():
+            d.reference.delete()
+            deleted_docs += 1
+        deleted_blobs = 0
+        for blob in storage_client.list_blobs(args.bucket, prefix="gallery/"):
+            blob.delete()
+            deleted_blobs += 1
+        print(f"Purged {deleted_docs} gallery docs and {deleted_blobs} gallery objects.")
+    elif any(True for _ in gallery_col.limit(1).stream()):
+        print("Gallery already seeded. Use --purge to delete and reseed.", file=sys.stderr)
+        sys.exit(1)
+
+    sample = sample_gallery(args.visa_dir, args.seed, args.samples_per_class)
+    print(f"Seed={args.seed}: sampled {len(sample)} images across {len(CATEGORIES)} categories.")
+
+    anno_cache: dict[str, dict[str, str]] = {}
     now_iso = datetime.now(timezone.utc).isoformat()
     total_uploaded = 0
 
-    print(f"Sampling VisA Gallery with seed={args.seed}, {args.samples_per_class} normal + {args.samples_per_class} anomaly per category...")
-
-    for cat in CATEGORIES:
-        refs = REFS_TO_EXCLUDE.get(cat, [])
-        anno_map = load_category_annotations(args.visa_dir, cat)
-
-        # Filter out reference images
-        normal_candidates = [
-            img for img in category_test_splits[cat]["normal"]
-            if not any(ref in img for ref in refs)
-        ]
-        anomaly_candidates = [
-            img for img in category_test_splits[cat]["anomaly"]
-            if not any(ref in img for ref in refs)
-        ]
-
-        normal_candidates.sort()
-        anomaly_candidates.sort()
-
-        if len(normal_candidates) < args.samples_per_class:
-            print(f"Error: Not enough normal candidates for {cat} ({len(normal_candidates)})", file=sys.stderr)
-            continue
-        if len(anomaly_candidates) < args.samples_per_class:
-            print(f"Error: Not enough anomaly candidates for {cat} ({len(anomaly_candidates)})", file=sys.stderr)
+    for cat, item_type, rel_img_path in sample:
+        full_img_path = args.visa_dir / rel_img_path.replace("/", os.sep)
+        if not full_img_path.is_file():
+            print(f"Warning: a sampled file for {cat} is missing. Skipping.", file=sys.stderr)
             continue
 
-        sampled_normal = rng.sample(normal_candidates, args.samples_per_class)
-        sampled_anomaly = rng.sample(anomaly_candidates, args.samples_per_class)
+        if cat not in anno_cache:
+            anno_cache[cat] = load_category_annotations(args.visa_dir, cat)
 
-        print(f"Category '{cat}': selected {len(sampled_normal)} normal, {len(sampled_anomaly)} anomaly")
+        # Opaque ids. secrets (not the seeded rng) so the sample stays identical across reseeds.
+        doc_id = f"gal_{secrets.token_hex(6)}"
+        storage_path = f"gallery/{secrets.token_hex(6)}.jpg"
 
-        all_sampled = [("normal", p) for p in sampled_normal] + [("anomaly", p) for p in sampled_anomaly]
+        # Ground truth: the dataset's own defect label for anomalies, else 'normal'
+        ground_truth = anno_cache[cat].get(rel_img_path)
+        if not ground_truth or ground_truth.lower() == "normal":
+            ground_truth = "normal" if item_type == "normal" else "anomaly"
 
-        for item_type, rel_img_path in all_sampled:
-            full_img_path = args.visa_dir / rel_img_path.replace("/", os.sep)
-            if not full_img_path.is_file():
-                print(f"Warning: File {full_img_path} not found. Skipping.", file=sys.stderr)
-                continue
+        jpeg_bytes = resize_image_jpeg(full_img_path, max_long_side=1024, quality=90)
+        bucket.blob(storage_path).upload_from_string(jpeg_bytes, content_type="image/jpeg")
 
-            file_stem = Path(rel_img_path).stem
-            dest_filename = f"{item_type}_{file_stem}.jpg"
-            storage_path = f"gallery/{cat}/{dest_filename}"
-            doc_id = f"{cat}_{item_type}_{file_stem}"
+        # Label + source filename live only in this doc; the API never returns them before inspection.
+        gallery_col.document(doc_id).set({
+            "id": doc_id,
+            "product_id": cat,
+            "image_path": storage_path,
+            "label": ground_truth,
+            "source_file": rel_img_path,
+            "split": "test",
+            "source": "PUBLIC DATA: VisA (CC BY 4.0)",
+            "created_at": now_iso,
+        })
+        total_uploaded += 1
 
-            doc_ref = gallery_col.document(doc_id)
-            if doc_ref.get().exists and not args.force:
-                continue
-
-            # Ground truth label: specific defect from anno_map if anomaly, else 'normal'
-            ground_truth = anno_map.get(rel_img_path)
-            if not ground_truth or ground_truth.lower() == "normal":
-                ground_truth = "normal" if item_type == "normal" else "anomaly"
-
-            # Resize image to max 1024px JPEG quality 90
-            jpeg_bytes = resize_image_jpeg(full_img_path, max_long_side=1024, quality=90)
-
-            # Upload to Cloud Storage
-            blob = bucket.blob(storage_path)
-            blob.upload_from_string(jpeg_bytes, content_type="image/jpeg")
-
-            # Write Firestore doc
-            doc_data = {
-                "id": doc_id,
-                "product_id": cat,
-                "image_path": storage_path,
-                "label": ground_truth,
-                "split": "test",
-                "source": "PUBLIC DATA: VisA (CC BY 4.0)",
-                "created_at": now_iso,
-            }
-            doc_ref.set(doc_data)
-            total_uploaded += 1
-
-    print(f"Done! Successfully loaded {total_uploaded} gallery images into Cloud Storage & Firestore.")
+    print(f"Done. Loaded {total_uploaded} gallery images into Cloud Storage & Firestore.")
 
 
 if __name__ == "__main__":
