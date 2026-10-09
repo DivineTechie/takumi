@@ -96,6 +96,32 @@ describe('Firestore Security Rules', () => {
         skill_id: 'skill_published',
         verify_url: 'https://takumi.dev/passports/pass_1',
       });
+
+      // Seed machine
+      await setDoc(doc(db, 'machines', 'mach_1'), {
+        id: 'mach_1',
+        name: 'Packaging Cell 1',
+        created_by: 'trainee-1',
+      });
+
+      // Seed machine_events
+      await setDoc(doc(db, 'machine_events', 'ev_1'), {
+        id: 'ev_1',
+        machine_id: 'mach_1',
+        event_type: 'state_change',
+        state: 'running',
+      });
+
+      // Seed soak_run and truth
+      await setDoc(doc(db, 'soak_runs', 'soak_1'), {
+        id: 'soak_1',
+        created_by: 'trainee-1',
+        status: 'running',
+      });
+      await setDoc(doc(db, 'soak_runs', 'soak_1', 'truth', 't_1'), {
+        id: 't_1',
+        state: 'running',
+      });
     });
   });
 
@@ -298,14 +324,6 @@ describe('Firestore Security Rules', () => {
   });
 
   it('machines are readable by signed-in users, direct writes fail', async () => {
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(context.firestore(), 'machines', 'mach_1'), {
-        id: 'mach_1',
-        name: 'Packaging Cell 1',
-        created_by: 'user-1',
-      });
-    });
-
     const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
     const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
     const unauthedDb = testEnv.unauthenticatedContext().firestore();
@@ -319,15 +337,6 @@ describe('Firestore Security Rules', () => {
   });
 
   it('machine_events are readable by supervisors only, direct writes fail', async () => {
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(context.firestore(), 'machine_events', 'ev_1'), {
-        id: 'ev_1',
-        machine_id: 'mach_1',
-        event_type: 'state_change',
-        state: 'running',
-      });
-    });
-
     const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
     const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
     const unauthedDb = testEnv.unauthenticatedContext().firestore();
@@ -340,18 +349,6 @@ describe('Firestore Security Rules', () => {
   });
 
   it('soak_runs and soak_runs/{id}/truth are readable by creator or supervisor, direct writes fail', async () => {
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      await setDoc(doc(context.firestore(), 'soak_runs', 'soak_1'), {
-        id: 'soak_1',
-        created_by: 'trainee-1',
-        status: 'running',
-      });
-      await setDoc(doc(context.firestore(), 'soak_runs', 'soak_1', 'truth', 't_1'), {
-        id: 't_1',
-        state: 'running',
-      });
-    });
-
     const creatorDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
     const otherDb = testEnv.authenticatedContext('trainee-2', { role: 'trainee' }).firestore();
     const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
