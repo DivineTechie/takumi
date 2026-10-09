@@ -532,15 +532,21 @@ export interface InspectionStage {
 export interface InspectResponse {
   inspection_id: string;
   product_id?: string;
+  unit_id?: string | null;
   ai_verdict: 'ok' | 'defective' | 'needs_review';
+  defective?: boolean;
   defect: string | null;
   where: string | null;
   confidence: number;
   mode: string;
   stages: InspectionStage[];
+  checks_run?: number;
   total_ms: number;
+  created_at?: string;
+  inspector_uid?: string;
   dataset_label?: string;
   source?: string;
+  human_decision?: string | null;
 }
 
 export interface ProductItem {

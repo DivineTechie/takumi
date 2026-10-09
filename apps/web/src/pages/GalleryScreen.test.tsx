@@ -12,17 +12,17 @@ vi.mock('../lib/api', () => ({
 const mockItems: apiModule.GalleryItem[] = [
   {
     id: 'candle_001',
+    product_id: 'candle',
     category: 'candle',
-    file_name: '001.JPG',
+    filename: '001.JPG',
     image_url: 'https://storage.googleapis.com/test-bucket/candle_001.JPG',
-    source: 'PUBLIC DATA: VisA (CC BY 4.0)',
   },
   {
     id: 'candle_002',
+    product_id: 'candle',
     category: 'candle',
-    file_name: '002.JPG',
+    filename: '002.JPG',
     image_url: 'https://storage.googleapis.com/test-bucket/candle_002.JPG',
-    source: 'PUBLIC DATA: VisA (CC BY 4.0)',
   },
 ];
 
@@ -62,7 +62,7 @@ describe('GalleryScreen', () => {
       where: null,
       mode: 'few_false_alarms',
       stages: [
-        { stage: 'screen', defective: false, defect: null, confidence: 0.95, where: null, ms: 320 },
+        { stage: 'screen', model: 'gemini-3.5-flash-lite', defective: false, defect: null, confidence: 0.95, where: null, ms: 320 },
       ],
       total_ms: 320,
       checks_run: 1,

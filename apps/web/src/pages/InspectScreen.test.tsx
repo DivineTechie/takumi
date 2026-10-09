@@ -32,7 +32,9 @@ const mockProducts: apiModule.ProductItem[] = [
     description: '4-layer FR4 industrial control board',
     defect_types: ['scratch', 'missing_component', 'bridging'],
     default_mode: 'few_false_alarms',
-    reference_images: ['ref1.jpg', 'ref2.jpg', 'ref3.jpg'],
+    reference_image_paths: ['ref1.jpg', 'ref2.jpg', 'ref3.jpg'],
+    source: 'unit_test',
+    created_at: new Date().toISOString(),
   },
 ];
 
@@ -84,7 +86,7 @@ describe('InspectScreen', () => {
       where: null,
       mode: 'few_false_alarms',
       stages: [
-        { stage: 'screen', defective: false, defect: null, confidence: 0.96, where: null, ms: 450 },
+        { stage: 'screen', model: 'gemini-3.5-flash-lite', defective: false, defect: null, confidence: 0.96, where: null, ms: 450 },
       ],
       total_ms: 450,
       checks_run: 1,
@@ -144,8 +146,8 @@ describe('InspectScreen', () => {
       where: 'upper right corner',
       mode: 'few_false_alarms',
       stages: [
-        { stage: 'screen', defective: true, defect: 'scratch', confidence: 0.9, where: 'upper right corner', ms: 380 },
-        { stage: 'confirm', defective: true, defect: 'scratch', confidence: 0.94, where: 'upper right corner', ms: 510 },
+        { stage: 'screen', model: 'gemini-3.5-flash-lite', defective: true, defect: 'scratch', confidence: 0.9, where: 'upper right corner', ms: 380 },
+        { stage: 'confirm', model: 'gemini-3.8-flash', defective: true, defect: 'scratch', confidence: 0.94, where: 'upper right corner', ms: 510 },
       ],
       total_ms: 890,
       checks_run: 2,
@@ -156,10 +158,8 @@ describe('InspectScreen', () => {
     });
 
     vi.mocked(apiModule.submitInspectionDecision).mockResolvedValue({
-      id: 'insp-456',
+      status: 'success',
       human_decision: 'confirmed_defect',
-      decision_at: new Date().toISOString(),
-      decision_by: 'sup-1',
     });
 
     render(
