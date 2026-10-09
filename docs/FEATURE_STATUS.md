@@ -36,9 +36,17 @@ This inventory records the deployment status and ownership for all Google AI mod
 | **Firebase Hosting** | Global CDN hosting for React 19 + TypeScript + Vite Progressive Web Application with security headers and API rewrites. | Project: `takumi-cup-2026`<br>URL: `https://takumi-cup-2026.web.app` | **Live** | Member A |
 | **Firebase Authentication** | Identity management supporting Google Sign-In and email authentication with custom role claims (`role: trainee \| master \| supervisor`). | Project: `takumi-cup-2026` | **Live** | Member A |
 | **Cloud Firestore (Native)** | Document database storing sessions, real-time session events, skills, review requests, and skill passports with role-based security rules. | Database: `(default)`, Region: `asia-southeast1` | **Live** | Both |
-| **Cloud Storage** | Object storage bucket for workbench video frames, badge media, and master capture assets with strict access rules. | Bucket: `takumi-cup-2026.firebasestorage.app` | **Live** | Both |
-| **BigQuery** | Analytics data warehouse holding partitioned tables `takumi.session_events` and `takumi.api_calls` for latency metrics and supervisor insight aggregation. | Dataset: `takumi`, Region: `asia-southeast1` | **Live** | Member A |
+| **Cloud Storage** | Object storage bucket for workbench video frames, badge media, master capture assets, product reference units, and candidate inspection images with strict access rules. | Bucket: `takumi-cup-2026.firebasestorage.app` | **Live** | Both |
+| **BigQuery** | Analytics data warehouse holding partitioned tables `takumi.session_events`, `takumi.api_calls`, and `takumi.inspection_events` for latency metrics, supervisor insights, and inspection telemetry. | Dataset: `takumi`, Region: `asia-southeast1` | **Live** | Member A |
 | **Secret Manager** | Centralized credential vault holding `GEMINI_API_KEY` and Firebase configurations; keys never exposed to browsers. | Project: `takumi-cup-2026` | **Live** | Member A |
 | **Model Armor** | Security screening engine filtering prompt injection, jailbreaks, and toxicity on user inputs before model ingestion. | Template in `asia-southeast1` | **Live** | Member A |
 | **Cloud Monitoring & Logging** | Structured JSON logging with trace context, log-based metrics for availability, and automated alert policies. | Project: `takumi-cup-2026` | **Live** | Member A |
 | **Cloud Build** | Automated CI/CD running linting, Python pytest, web Vitest, emulator security rules tests, container builds, and deployment. | Region: `asia-southeast1` | **Live** | Both |
+
+---
+
+## 3. Factory Governance & Access Control
+
+- **End-of-Line Quality Inspection Decisions**: Inspection verification and override decisions ([`POST /api/inspections/{id}/decision`](file:///c:/takumi/services/api/main.py)) stay strictly **supervisor-only** (`role: supervisor`). The worker/trainee who captured or submitted the inspection photo cannot approve or override their own flagged unit.
+- **Unit & Inspection Read Access**: Inspection reports and unit tracking records are restricted to the supervisor or the creating trainee/operator (`inspector_uid` / `created_by`); other trainees receive `403 Forbidden`.
+

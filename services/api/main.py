@@ -66,7 +66,7 @@ from services.api.gemini import (
     create_live_token,
 )
 from services.api.images import decode_and_validate_image, resize_to_jpeg_bytes
-from services.api.inspection import resize_inspection_image, run_inspection_pipeline
+from services.api.inspection import get_or_load_references, resize_inspection_image, run_inspection_pipeline
 from services.api.telemetry import elapsed_ms, init_telemetry, setup_logging
 
 logger = setup_logging()
@@ -1531,12 +1531,10 @@ class CreateProductRequest(BaseModel):
 @app.post("/api/inspect")
 async def post_inspect(
     req: InspectRequest,
-    user: AuthUser = Depends(verify_auth_token),
+    user: AuthUser = Depends(require_role("trainee", "supervisor", "master")),
 ) -> dict[str, Any]:
     """Runs dual-stage visual inspection on a candidate product unit."""
     t_api_start = time.perf_counter()
-    # Rate limit counts 2 checks against daily limit for both modes
-    check_rate_limit(user.uid, "checks", cost=2)
 
     # 1. Validate unit_id format if provided
     if req.unit_id is not None:
@@ -1595,8 +1593,11 @@ async def post_inspect(
             detail=f"Product '{req.product_id}' does not have 3 reference images configured",
         )
 
+    # 4. Check rate limit ONLY after all inputs and product validation pass (400/404 never use quota)
+    check_rate_limit(user.uid, "checks", cost=2)
+
     try:
-        ref_bytes_list = [download_blob_bytes(p) for p in ref_paths[:3]]
+        ref_bytes_list = get_or_load_references(req.product_id, ref_paths[:3])
     except Exception as e:
         logger.error("Failed to load reference images for product %s: %s", req.product_id, e)
         raise HTTPException(
@@ -1606,7 +1607,7 @@ async def post_inspect(
 
     mode = req.mode or prod_data.get("default_mode", "few_false_alarms")
 
-    # 4. Run inspection pipeline
+    # 5. Run inspection pipeline
     inspect_res = await run_inspection_pipeline(
         product_description=prod_data.get("description", ""),
         defect_types=prod_data.get("defect_types", []),
@@ -1615,7 +1616,7 @@ async def post_inspect(
         mode=mode,
     )
 
-    # 5. Persist inspection image and document
+    # 6. Persist inspection image and document
     inspection_id = f"insp_{secrets.token_hex(12)}"
     now_iso = datetime.now(timezone.utc).isoformat()
     image_path = f"inspections/{inspection_id}.jpg"
@@ -1645,7 +1646,7 @@ async def post_inspect(
     }
     db.collection("inspections").document(inspection_id).set(inspection_doc)
 
-    # 6. Update unit lifecycle if unit_id is provided
+    # 7. Update unit lifecycle if unit_id is provided
     if req.unit_id:
         unit_ref = db.collection("units").document(req.unit_id)
         unit_snap = unit_ref.get()
@@ -1658,10 +1659,13 @@ async def post_inspect(
             existing_inspections = existing.get("inspections", [])
             if inspection_id not in existing_inspections:
                 existing_inspections.append(inspection_id)
-            unit_ref.update({
+            update_data = {
                 "status": unit_status,
                 "inspections": existing_inspections,
-            })
+            }
+            if not existing.get("created_by"):
+                update_data["created_by"] = user.uid
+            unit_ref.update(update_data)
         else:
             unit_ref.set({
                 "id": req.unit_id,
@@ -1764,7 +1768,7 @@ async def post_inspection_decision(
         "unit_id": unit_id,
         "mode": insp_data.get("mode", "few_false_alarms"),
         "ai_verdict": insp_data.get("ai_verdict", "needs_review"),
-        "defect": screen_data.get("defect") or confirm_data.get("defect"),
+        "defect": confirm_data.get("defect") or screen_data.get("defect"),
         "screen_ms": screen_data.get("ms"),
         "confirm_ms": confirm_data.get("ms"),
         "total_ms": insp_data.get("total_ms", 0),
@@ -1836,7 +1840,7 @@ async def get_unit(
     unit_id: str,
     user: AuthUser = Depends(verify_auth_token),
 ) -> dict[str, Any]:
-    """Retrieves a unit tracking document and lifecycle state."""
+    """Retrieves a unit tracking document and lifecycle state (supervisor or owner only)."""
     if not UNIT_ID_REGEX.match(unit_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1849,7 +1853,13 @@ async def get_unit(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Unit '{unit_id}' not found",
         )
-    return doc.to_dict() or {}
+    data = doc.to_dict() or {}
+    if user.role != "supervisor" and data.get("created_by") != user.uid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: access denied to this unit",
+        )
+    return data
 
 
 @app.get("/api/inspections/{inspection_id}")
@@ -1857,7 +1867,7 @@ async def get_inspection(
     inspection_id: str,
     user: AuthUser = Depends(verify_auth_token),
 ) -> dict[str, Any]:
-    """Retrieves an inspection result by ID with signed media URL."""
+    """Retrieves an inspection result by ID with signed media URL (supervisor or owner only)."""
     db = get_firestore_client()
     doc = db.collection("inspections").document(inspection_id).get()
     if not doc.exists:
@@ -1866,6 +1876,11 @@ async def get_inspection(
             detail=f"Inspection '{inspection_id}' not found",
         )
     data = doc.to_dict() or {}
+    if user.role != "supervisor" and data.get("inspector_uid") != user.uid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: access denied to this inspection",
+        )
     if "image_path" in data and data["image_path"]:
         data["image_url"] = get_signed_url_for_gs_uri(f"gs://{STORAGE_BUCKET}/{data['image_path']}")
     return data

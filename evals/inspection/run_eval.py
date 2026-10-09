@@ -1,14 +1,15 @@
-"""Offline evaluation script for TAKUMI End-of-Line Quality Inspection (P15).
+"""Offline evaluation benchmark for TAKUMI End-of-Line Quality Inspection (P15).
 
-Evaluates the dual-stage multimodal inspection pipeline on the VisA dataset
-across all 12 categories, computing precision, recall, F1, accuracy, and latency metrics.
+Evaluates the dual-stage vision pipeline on the VisA dataset across all 12 categories,
+running BOTH stages on every image and deriving all 4 configurations:
+1. Flash single (gemini-3.8-flash on candidate alone)
+2. Flash-Lite + 3 refs (gemini-3.5-flash-lite on candidate + 3 references)
+3. catch_everything (parallel screen + confirm, defective if either flags)
+4. few_false_alarms (screen first, confirm only if screen flags, defective only if both flag)
 
-Supports:
-- --backend: vertex (default, ADC) or gemini_api (GEMINI_API_KEY)
-- --categories: comma-separated list or all 12
-- --per-class: number of evaluation samples per category (e.g. 2 for smoke test)
-- --mode: few_false_alarms (default) or catch_everything
-- --output: path to markdown results file (default: evals/inspection/RESULTS.md)
+Prices (Vertex AI global intro pricing until Dec 31 2026):
+- gemini-3.5-flash-lite: $0.30 / 1M input tokens
+- gemini-3.8-flash: $0.75 / 1M input tokens, $3.75 / 1M output tokens (including thinking)
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import csv
 import io
 import os
 from pathlib import Path
+import random
 import statistics
 import sys
 import time
@@ -30,30 +32,37 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from google import genai
-from PIL import Image
+from google.genai import types
 
-from services.api.config import GCP_PROJECT, GEMINI_API_KEY
-from services.api.inspection import run_inspection_pipeline
+from services.api.config import (
+    GCP_PROJECT,
+    INSPECT_JPEG_QUALITY,
+    INSPECT_MAX_PX,
+    MODEL_FLASH,
+    MODEL_FLASH_LITE,
+    TIMEOUT_INSPECT_CONFIRM_S,
+    TIMEOUT_INSPECT_SCREEN_S,
+)
+from services.api.prompts import InspectionStageResponse, build_inspection_prompt
+from services.api.telemetry import elapsed_ms
 from infra.load_visa_products import CATEGORIES_SPEC, find_ref_file, parse_defect_types, resize_image_jpeg
 
 
+PRICE_FLASH_LITE_INPUT_PER_M = 0.30
+PRICE_FLASH_INPUT_PER_M = 0.75
+PRICE_FLASH_OUTPUT_PER_M = 3.75
+
+
 def init_eval_client(backend: str) -> genai.Client:
-    """Initializes google-genai Client with Vertex AI or Gemini Developer API."""
+    """Initializes google-genai Client with Vertex AI (global) or Gemini Developer API."""
     if backend == "vertex":
-        print(f"Initializing Vertex AI client (project={GCP_PROJECT}, location=us-central1)...")
-        return genai.Client(vertexai=True, project=GCP_PROJECT, location="us-central1")
+        print(f"Initializing Vertex AI client (project={GCP_PROJECT}, location=global)...")
+        return genai.Client(vertexai=True, project=GCP_PROJECT, location="global")
     elif backend == "gemini_api":
-        api_key = GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY", "").strip()
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:
-            try:
-                from google.cloud import secretmanager
-                sm_client = secretmanager.SecretManagerServiceClient()
-                name = f"projects/{GCP_PROJECT}/secrets/GEMINI_API_KEY/versions/latest"
-                resp = sm_client.access_secret_version(request={"name": name})
-                api_key = resp.payload.data.decode("UTF-8").strip()
-            except Exception as e:
-                raise ValueError(f"Failed to retrieve GEMINI_API_KEY from environment or Secret Manager: {e}")
-        print("Initializing Gemini API client with GEMINI_API_KEY...")
+            raise ValueError("GEMINI_API_KEY environment variable is required when using --backend gemini_api")
+        print("Initializing Gemini API client from GEMINI_API_KEY environment variable...")
         return genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
     else:
         raise ValueError(f"Unknown backend '{backend}'. Choose 'vertex' or 'gemini_api'.")
@@ -63,8 +72,9 @@ def load_eval_samples(
     category_dir: Path,
     spec: dict[str, Any],
     per_class: int,
+    rng: random.Random,
 ) -> list[dict[str, Any]]:
-    """Loads a balanced sample of normal and anomaly images excluding the 3 reference files."""
+    """Loads N normal + N anomaly images per category (excluding reference units), sampled deterministically."""
     anno_path = category_dir / "image_anno.csv"
     if not anno_path.is_file():
         raise FileNotFoundError(f"image_anno.csv not found in {category_dir}")
@@ -81,17 +91,13 @@ def load_eval_samples(
             if not img_rel:
                 continue
 
-            # Check if this image is one of the references
-            is_ref = any(r in img_rel for r in ref_ids)
-            if is_ref:
+            if any(r in img_rel for r in ref_ids):
                 continue
 
             img_path = category_dir.parent / img_rel
             if not img_path.is_file():
-                # Try relative to category_dir
                 img_path = category_dir / Path(img_rel).name
                 if not img_path.is_file():
-                    # Search inside Images
                     matches = list(category_dir.glob(f"**/Images/**/*{Path(img_rel).name}*"))
                     if matches:
                         img_path = matches[0]
@@ -100,7 +106,6 @@ def load_eval_samples(
 
             item = {
                 "path": img_path,
-                "rel_path": img_rel,
                 "label": label,
                 "is_defective": label.lower() != "normal",
             }
@@ -110,83 +115,276 @@ def load_eval_samples(
             else:
                 anomalies.append(item)
 
-    n_normal = max(1, per_class // 2)
-    n_anomaly = max(1, per_class - n_normal)
+    rng.shuffle(normals)
+    rng.shuffle(anomalies)
 
-    sampled: list[dict[str, Any]] = []
-    sampled.extend(normals[:n_normal])
-    sampled.extend(anomalies[:n_anomaly])
-    return sampled[:per_class]
+    sampled = []
+    sampled.extend(normals[:per_class])
+    sampled.extend(anomalies[:per_class])
+    return sampled
 
 
-async def evaluate_image(
+async def call_screen_raw(
+    client: genai.Client,
+    product_description: str,
+    defect_types: list[str],
+    candidate_bytes: bytes,
+    ref_bytes_list: list[bytes],
+) -> tuple[dict[str, Any], int, int]:
+    """Runs Stage 1 Screen and returns (result_dict, input_tokens, output_tokens)."""
+    t0 = time.perf_counter()
+    prompt_text = build_inspection_prompt(product_description, defect_types, stage="screen")
+    contents: list[Any] = [prompt_text]
+    for ref_b in ref_bytes_list:
+        contents.append(types.Part.from_bytes(data=ref_b, mime_type="image/jpeg"))
+    contents.append(types.Part.from_bytes(data=candidate_bytes, mime_type="image/jpeg"))
+
+    cfg = types.GenerateContentConfig(
+        response_schema=InspectionStageResponse,
+        response_mime_type="application/json",
+        media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    )
+
+    resp = await asyncio.wait_for(
+        asyncio.to_thread(client.models.generate_content, model=MODEL_FLASH_LITE, contents=contents, config=cfg),
+        timeout=TIMEOUT_INSPECT_SCREEN_S,
+    )
+    ms = elapsed_ms(t0)
+    import json
+    data = json.loads(resp.text)
+
+    usage = getattr(resp, "usage_metadata", None)
+    in_tok = getattr(usage, "prompt_token_count", 0) or 0
+    out_tok = getattr(usage, "candidates_token_count", 0) or 0
+
+    return {
+        "model": MODEL_FLASH_LITE,
+        "defective": bool(data.get("defective", False)),
+        "confidence": float(data.get("confidence", 0.0)),
+        "defect": data.get("defect"),
+        "where": data.get("where"),
+        "ms": ms,
+    }, in_tok, out_tok
+
+
+async def call_confirm_raw(
+    client: genai.Client,
+    product_description: str,
+    defect_types: list[str],
+    candidate_bytes: bytes,
+) -> tuple[dict[str, Any], int, int]:
+    """Runs Stage 2 Confirm and returns (result_dict, input_tokens, output_tokens)."""
+    t0 = time.perf_counter()
+    prompt_text = build_inspection_prompt(product_description, defect_types, stage="confirm")
+    contents = [
+        prompt_text,
+        types.Part.from_bytes(data=candidate_bytes, mime_type="image/jpeg"),
+    ]
+
+    cfg = types.GenerateContentConfig(
+        response_schema=InspectionStageResponse,
+        response_mime_type="application/json",
+        media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    )
+
+    resp = await asyncio.wait_for(
+        asyncio.to_thread(client.models.generate_content, model=MODEL_FLASH, contents=contents, config=cfg),
+        timeout=TIMEOUT_INSPECT_CONFIRM_S,
+    )
+    ms = elapsed_ms(t0)
+    import json
+    data = json.loads(resp.text)
+
+    usage = getattr(resp, "usage_metadata", None)
+    in_tok = getattr(usage, "prompt_token_count", 0) or 0
+    out_tok = getattr(usage, "candidates_token_count", 0) or 0
+
+    return {
+        "model": MODEL_FLASH,
+        "defective": bool(data.get("defective", False)),
+        "confidence": float(data.get("confidence", 0.0)),
+        "defect": data.get("defect"),
+        "where": data.get("where"),
+        "ms": ms,
+    }, in_tok, out_tok
+
+
+async def evaluate_single_image(
     client: genai.Client,
     spec: dict[str, Any],
     defect_types: list[str],
     ref_bytes_list: list[bytes],
     sample: dict[str, Any],
-    mode: str,
 ) -> dict[str, Any]:
-    """Runs evaluation on a single candidate image and records performance."""
+    """Runs BOTH stages on a single candidate image and computes results across all 4 modes."""
     cand_bytes = resize_image_jpeg(sample["path"])
-    t0 = time.perf_counter()
 
+    screen_res, screen_in_tok, screen_out_tok = None, 0, 0
+    screen_error = False
     try:
-        res = await run_inspection_pipeline(
-            product_description=spec["description"],
-            defect_types=defect_types,
-            candidate_bytes=cand_bytes,
-            reference_bytes_list=ref_bytes_list,
-            mode=mode,
-            client=client,
+        screen_res, screen_in_tok, screen_out_tok = await call_screen_raw(
+            client, spec["description"], defect_types, cand_bytes, ref_bytes_list
         )
     except Exception as exc:
-        print(f"    Error during inspection of {sample['path'].name}: {exc}", file=sys.stderr)
-        res = {
-            "ai_verdict": "needs_review",
-            "defect": None,
-            "where": None,
-            "confidence": 0.0,
-            "screen": None,
-            "confirm": None,
-            "total_ms": int(round((time.perf_counter() - t0) * 1000)),
-        }
+        print(f"    Screen stage failed on {sample['path'].name}: {exc}", file=sys.stderr)
+        screen_error = True
+        screen_res = {"defective": False, "ms": 5000, "error": str(exc)}
+
+    confirm_res, confirm_in_tok, confirm_out_tok = None, 0, 0
+    confirm_error = False
+    try:
+        confirm_res, confirm_in_tok, confirm_out_tok = await call_confirm_raw(
+            client, spec["description"], defect_types, cand_bytes
+        )
+    except Exception as exc:
+        print(f"    Confirm stage failed on {sample['path'].name}: {exc}", file=sys.stderr)
+        confirm_error = True
+        confirm_res = {"defective": False, "ms": 5000, "error": str(exc)}
+
+    # Cost calculations
+    cost_lite = screen_in_tok * (PRICE_FLASH_LITE_INPUT_PER_M / 1_000_000)
+    cost_flash = confirm_in_tok * (PRICE_FLASH_INPUT_PER_M / 1_000_000) + confirm_out_tok * (PRICE_FLASH_OUTPUT_PER_M / 1_000_000)
 
     gt_defective = sample["is_defective"]
-    pred_defective = res["ai_verdict"] == "defective"
-    # Note: if needs_review, in safety-first quality inspection we flag for review, but strictly compare binary:
-    match = (gt_defective == pred_defective)
+
+    # 1. Flash single (Confirm only)
+    flash_single_def = confirm_res["defective"]
+    flash_single_err = confirm_error
+    flash_single_ms = confirm_res["ms"]
+    flash_single_cost = cost_flash
+
+    # 2. Flash-Lite + 3 refs (Screen only)
+    flash_lite_def = screen_res["defective"]
+    flash_lite_err = screen_error
+    flash_lite_ms = screen_res["ms"]
+    flash_lite_cost = cost_lite
+
+    # 3. catch_everything (Screen or Confirm flags; error -> needs_review)
+    catch_all_err = screen_error or confirm_error
+    catch_all_def = (screen_res["defective"] or confirm_res["defective"]) if not catch_all_err else False
+    catch_all_ms = max(screen_res["ms"], confirm_res["ms"])
+    catch_all_cost = cost_lite + cost_flash
+
+    # 4. few_false_alarms (Screen first; confirm only if screen flags; defective only if both flag)
+    few_false_err = screen_error or (screen_res["defective"] and confirm_error)
+    if few_false_err:
+        few_false_def = False
+        few_false_ms = screen_res["ms"]
+        few_false_cost = cost_lite
+    else:
+        if not screen_res["defective"]:
+            few_false_def = False
+            few_false_ms = screen_res["ms"]
+            few_false_cost = cost_lite
+        else:
+            few_false_def = confirm_res["defective"]
+            few_false_ms = screen_res["ms"] + confirm_res["ms"]
+            few_false_cost = cost_lite + cost_flash
 
     return {
         "file_name": sample["path"].name,
         "label": sample["label"],
         "gt_defective": gt_defective,
-        "pred_defective": pred_defective,
-        "ai_verdict": res["ai_verdict"],
-        "defect": res.get("defect"),
-        "where": res.get("where"),
-        "confidence": res.get("confidence", 0.0),
-        "match": match,
-        "total_ms": res["total_ms"],
+        # Config 1: Flash single
+        "flash_single": {
+            "pred_defective": flash_single_def,
+            "error": flash_single_err,
+            "latency_ms": flash_single_ms,
+            "cost_usd": flash_single_cost,
+        },
+        # Config 2: Flash-Lite + 3 refs
+        "flash_lite": {
+            "pred_defective": flash_lite_def,
+            "error": flash_lite_err,
+            "latency_ms": flash_lite_ms,
+            "cost_usd": flash_lite_cost,
+        },
+        # Config 3: catch_everything
+        "catch_everything": {
+            "pred_defective": catch_all_def,
+            "error": catch_all_err,
+            "latency_ms": catch_all_ms,
+            "cost_usd": catch_all_cost,
+        },
+        # Config 4: few_false_alarms
+        "few_false_alarms": {
+            "pred_defective": few_false_def,
+            "error": few_false_err,
+            "latency_ms": few_false_ms,
+            "cost_usd": few_false_cost,
+        },
+    }
+
+
+def compute_metrics(eval_items: list[dict[str, Any]], config_key: str) -> dict[str, Any]:
+    """Computes accuracy, defects caught, false alarms, errors, latency, and cost for a config."""
+    total = len(eval_items)
+    if total == 0:
+        return {}
+
+    tp, fp, tn, fn, errors = 0, 0, 0, 0, 0
+    latencies: list[int] = []
+    costs: list[float] = []
+
+    for item in eval_items:
+        cfg = item[config_key]
+        gt = item["gt_defective"]
+        pred = cfg["pred_defective"]
+        err = cfg["error"]
+        latencies.append(cfg["latency_ms"])
+        costs.append(cfg["cost_usd"])
+
+        if err:
+            errors += 1
+            if gt:
+                fn += 1
+            else:
+                tn += 1
+        elif gt and pred:
+            tp += 1
+        elif not gt and pred:
+            fp += 1
+        elif not gt and not pred:
+            tn += 1
+        else:
+            fn += 1
+
+    accuracy = (tp + tn) / total
+    p50 = statistics.median(latencies) if latencies else 0
+    p90 = statistics.quantiles(latencies, n=10)[8] if len(latencies) >= 10 else max(latencies, default=0)
+    avg_cost = sum(costs) / total if total > 0 else 0.0
+
+    return {
+        "total": total,
+        "accuracy": accuracy,
+        "defects_caught": tp,
+        "total_defects": tp + fn,
+        "false_alarms": fp,
+        "total_normal": tn + fp,
+        "errors": errors,
+        "p50_ms": p50,
+        "p90_ms": p90,
+        "cost_per_image": avg_cost,
     }
 
 
 async def run_evaluation(args: argparse.Namespace) -> None:
     client = init_eval_client(args.backend)
+    rng = random.Random(args.seed)
+
     categories = (
         [c.strip() for c in args.categories.split(",") if c.strip()]
         if args.categories != "all"
         else list(CATEGORIES_SPEC.keys())
     )
 
-    all_results: list[dict[str, Any]] = []
-    category_summaries: list[dict[str, Any]] = []
+    print(f"\n--- Starting Evaluation: {len(categories)} categories, {args.per_class} normal + {args.per_class} anomaly per category (seed={args.seed}) ---\n")
 
-    print(f"\n--- Starting Evaluation: {len(categories)} categories, {args.per_class} per category, mode={args.mode} ---\n")
+    all_evaluated: list[dict[str, Any]] = []
+    category_results: dict[str, list[dict[str, Any]]] = {}
 
     for cat_id in categories:
         if cat_id not in CATEGORIES_SPEC:
-            print(f"Warning: Category '{cat_id}' not in spec. Skipping.", file=sys.stderr)
             continue
 
         spec = CATEGORIES_SPEC[cat_id]
@@ -194,134 +392,91 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         anno_path = cat_dir / "image_anno.csv"
         defect_types = parse_defect_types(anno_path)
 
-        # Load reference images
         ref_bytes_list: list[bytes] = []
         for r_id in spec["refs"]:
             ref_path = find_ref_file(cat_dir, r_id)
             ref_bytes_list.append(resize_image_jpeg(ref_path))
 
-        samples = load_eval_samples(cat_dir, spec, args.per_class)
+        samples = load_eval_samples(cat_dir, spec, args.per_class, rng)
         print(f"Evaluating {cat_id} ({len(samples)} samples)...")
 
-        cat_evals: list[dict[str, Any]] = []
+        cat_items = []
         for sample in samples:
-            ev = await evaluate_image(client, spec, defect_types, ref_bytes_list, sample, args.mode)
-            ev["category"] = cat_id
-            cat_evals.append(ev)
-            all_results.append(ev)
-            match_str = "OK" if ev["match"] else "MISMATCH"
-            print(f"  [{match_str}] {ev['file_name']} (GT: {ev['label']}) -> AI: {ev['ai_verdict']} ({ev['total_ms']}ms)")
+            item = await evaluate_single_image(client, spec, defect_types, ref_bytes_list, sample)
+            item["category"] = cat_id
+            cat_items.append(item)
+            all_evaluated.append(item)
 
-        # Summary for category
-        tp = sum(1 for e in cat_evals if e["gt_defective"] and e["pred_defective"])
-        fp = sum(1 for e in cat_evals if not e["gt_defective"] and e["pred_defective"])
-        tn = sum(1 for e in cat_evals if not e["gt_defective"] and not e["pred_defective"])
-        fn = sum(1 for e in cat_evals if e["gt_defective"] and not e["pred_defective"])
-        total = len(cat_evals)
-        acc = (tp + tn) / total if total > 0 else 0.0
-        prec = tp / (tp + fp) if (tp + fp) > 0 else 1.0
-        rec = tp / (tp + fn) if (tp + fn) > 0 else 1.0
-        f1 = (2 * prec * rec) / (prec + rec) if (prec + rec) > 0 else 0.0
-        latencies = [e["total_ms"] for e in cat_evals]
-        p50 = statistics.median(latencies) if latencies else 0
-        p90 = statistics.quantiles(latencies, n=10)[8] if len(latencies) >= 10 else max(latencies, default=0)
+        category_results[cat_id] = cat_items
 
-        category_summaries.append({
-            "category": cat_id,
-            "total": total,
-            "normal": tn + fp,
-            "anomaly": tp + fn,
-            "accuracy": acc,
-            "precision": prec,
-            "recall": rec,
-            "f1": f1,
-            "p50_ms": p50,
-            "p90_ms": p90,
-        })
-
-    # Overall summary metrics
-    total_evals = len(all_results)
-    tp = sum(1 for e in all_results if e["gt_defective"] and e["pred_defective"])
-    fp = sum(1 for e in all_results if not e["gt_defective"] and e["pred_defective"])
-    tn = sum(1 for e in all_results if not e["gt_defective"] and not e["pred_defective"])
-    fn = sum(1 for e in all_results if e["gt_defective"] and not e["pred_defective"])
-    overall_acc = (tp + tn) / total_evals if total_evals > 0 else 0.0
-    overall_prec = tp / (tp + fp) if (tp + fp) > 0 else 1.0
-    overall_rec = tp / (tp + fn) if (tp + fn) > 0 else 1.0
-    overall_f1 = (2 * overall_prec * overall_rec) / (overall_prec + overall_rec) if (overall_prec + overall_rec) > 0 else 0.0
-    all_lat = [e["total_ms"] for e in all_results]
-    overall_p50 = statistics.median(all_lat) if all_lat else 0
-    overall_p90 = statistics.quantiles(all_lat, n=10)[8] if len(all_lat) >= 10 else max(all_lat, default=0)
-
-    # Generate Markdown Report
-    lines = [
-        "# TAKUMI End-of-Line Quality Inspection — Offline Benchmark Evaluation",
-        "",
-        f"- **Dataset**: VisA (Visual Anomaly Benchmark, CC BY 4.0)",
-        f"- **Backend**: `{args.backend}`",
-        f"- **Inspection Mode**: `{args.mode}`",
-        f"- **Pipeline**: Dual-Stage Multimodal Vision (Stage 1: `gemini-3.5-flash-lite` with 3 references, Stage 2: `gemini-3.8-flash`)",
-        f"- **Total Categories Evaluated**: {len(category_summaries)}",
-        f"- **Total Units Evaluated**: {total_evals}",
-        "",
-        "## Overall Benchmark Summary",
-        "",
-        "| Metric | Value |",
-        "| :--- | :--- |",
-        f"| **Overall Accuracy** | {overall_acc * 100:.1f}% ({tp + tn}/{total_evals}) |",
-        f"| **Precision** | {overall_prec * 100:.1f}% |",
-        f"| **Recall (Defect Detection)** | {overall_rec * 100:.1f}% |",
-        f"| **F1 Score** | {overall_f1:.3f} |",
-        f"| **p50 Latency** | {overall_p50:.0f} ms |",
-        f"| **p90 Latency** | {overall_p90:.0f} ms |",
-        "",
-        "## Per-Category Results Breakdown",
-        "",
-        "| Category | Units | Normal | Anomaly | Accuracy | Precision | Recall | F1 | p50 Latency |",
-        "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
+    # Compute metrics for all 4 configurations
+    configs = [
+        ("flash_single", "Flash single"),
+        ("flash_lite", "Flash-Lite + 3 refs"),
+        ("catch_everything", "catch_everything"),
+        ("few_false_alarms", "few_false_alarms"),
     ]
 
-    for c in category_summaries:
+    summary_rows: list[dict[str, Any]] = []
+    for key, name in configs:
+        m = compute_metrics(all_evaluated, key)
+        m["name"] = name
+        summary_rows.append(m)
+
+    # Format Markdown
+    lines = [
+        "# TAKUMI End-of-Line Quality Inspection — VisA Offline Benchmark",
+        "",
+        f"- **Dataset**: VisA (Visual Anomaly Benchmark, CC BY 4.0)",
+        f"- **Backend**: `{args.backend}` (location: global)",
+        f"- **Seed**: `{args.seed}`",
+        f"- **Categories**: {len(categories)}",
+        f"- **Total Units Evaluated**: {len(all_evaluated)} ({args.per_class} normal + {args.per_class} anomaly per category)",
+        "",
+        "## Overall Configuration Comparison",
+        "",
+        "| Configuration | Accuracy | Defects Caught | False Alarms | Errors | p50 Latency | p90 Latency | Cost / Image |",
+        "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
+    ]
+
+    for s in summary_rows:
         lines.append(
-            f"| `{c['category']}` | {c['total']} | {c['normal']} | {c['anomaly']} | "
-            f"{c['accuracy']*100:.1f}% | {c['precision']*100:.1f}% | {c['recall']*100:.1f}% | "
-            f"{c['f1']:.3f} | {c['p50_ms']:.0f} ms |"
+            f"| **{s['name']}** | {s['accuracy']*100:.1f}% | {s['defects_caught']}/{s['total_defects']} | "
+            f"{s['false_alarms']}/{s['total_normal']} | {s['errors']} | {s['p50_ms']:.0f} ms | "
+            f"{s['p90_ms']:.0f} ms | ${s['cost_per_image']:.5f} |"
         )
 
     lines.extend([
         "",
-        "## Sample Evaluation Details",
+        "## Per-Category Breakdown (few_false_alarms vs catch_everything)",
         "",
-        "| Category | Image | Ground Truth | AI Verdict | Detected Defect | Match | Latency |",
-        "| :--- | :--- | :--- | :--- | :--- | :---: | :---: |",
+        "| Category | Units | FFA Acc | FFA Caught | FFA False Alarms | CE Acc | CE Caught | CE False Alarms |",
+        "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
     ])
 
-    for e in all_results:
-        defect_str = e["defect"] or "—"
-        match_str = "PASSED" if e["match"] else "FAILED"
+    for cat_id, items in category_results.items():
+        ffa = compute_metrics(items, "few_false_alarms")
+        ce = compute_metrics(items, "catch_everything")
         lines.append(
-            f"| `{e['category']}` | `{e['file_name']}` | {e['label']} | `{e['ai_verdict']}` | "
-            f"{defect_str} | **{match_str}** | {e['total_ms']} ms |"
+            f"| `{cat_id}` | {len(items)} | {ffa['accuracy']*100:.1f}% | {ffa['defects_caught']}/{ffa['total_defects']} | "
+            f"{ffa['false_alarms']} | {ce['accuracy']*100:.1f}% | {ce['defects_caught']}/{ce['total_defects']} | {ce['false_alarms']} |"
         )
 
     lines.append("")
-    report_content = "\n".join(lines)
+    out_path = Path(args.out)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(report_content)
-
-    print(f"\nEvaluation complete. Report written to {output_path.resolve()}\n")
-    print(f"Overall Accuracy: {overall_acc*100:.1f}% | Precision: {overall_prec*100:.1f}% | Recall: {overall_rec*100:.1f}% | p50: {overall_p50:.0f} ms")
+    print(f"\nEvaluation benchmark written to {out_path.resolve()}\n")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate dual-stage inspection against VisA benchmark")
-    parser.add_argument("--backend", choices=["vertex", "gemini_api"], default="gemini_api", help="Inference backend")
+    parser.add_argument("--backend", choices=["vertex", "gemini_api"], default="vertex", help="Inference backend (default: vertex global)")
     parser.add_argument("--categories", default="all", help="Comma-separated category names or 'all'")
-    parser.add_argument("--per-class", type=int, default=2, help="Number of test units per category")
-    parser.add_argument("--mode", choices=["few_false_alarms", "catch_everything"], default="few_false_alarms", help="Inspection mode")
+    parser.add_argument("--per-class", type=int, default=2, help="N normal and N anomaly test units per category")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducible sampling")
     parser.add_argument(
         "--visa-dir",
         type=Path,
@@ -329,7 +484,7 @@ def main() -> None:
         help="Path to VisA dataset root directory",
     )
     parser.add_argument(
-        "--output",
+        "--out",
         type=Path,
         default=Path("evals/inspection/RESULTS.md"),
         help="Output markdown report path",

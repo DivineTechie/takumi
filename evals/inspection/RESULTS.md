@@ -1,4 +1,4 @@
-# TAKUMI End-of-Line Quality Inspection — Offline Benchmark Evaluation
+# TAKUMI End-of-Line Quality Inspection — Smoke run (24 images), not a benchmark
 
 - **Dataset**: VisA (Visual Anomaly Benchmark, CC BY 4.0)
 - **Backend**: `gemini_api`

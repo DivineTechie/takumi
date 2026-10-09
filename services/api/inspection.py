@@ -15,6 +15,7 @@ import logging
 import time
 from typing import Any
 
+from collections import OrderedDict
 from PIL import Image
 from google import genai
 from google.genai import types
@@ -32,6 +33,44 @@ from services.api.prompts import InspectionStageResponse, build_inspection_promp
 from services.api.telemetry import elapsed_ms, trace_gemini_call
 
 logger = logging.getLogger("takumi.inspection")
+
+# In-memory cache for resized product reference images (keyed by product_id + ref_paths, max 32 entries)
+_REF_CACHE: OrderedDict[tuple[str, tuple[str, ...]], list[bytes]] = OrderedDict()
+_REF_CACHE_MAX_ENTRIES = 32
+
+
+def get_cached_references(product_id: str, ref_paths: list[str]) -> list[bytes] | None:
+    """Retrieves cached resized reference images for product if present."""
+    key = (product_id, tuple(ref_paths[:3]))
+    if key in _REF_CACHE:
+        _REF_CACHE.move_to_end(key)
+        return _REF_CACHE[key]
+    return None
+
+
+def cache_references(product_id: str, ref_paths: list[str], refs: list[bytes]) -> None:
+    """Stores resized reference images in LRU cache (max 32 entries)."""
+    key = (product_id, tuple(ref_paths[:3]))
+    _REF_CACHE[key] = refs
+    if len(_REF_CACHE) > _REF_CACHE_MAX_ENTRIES:
+        _REF_CACHE.popitem(last=False)
+
+
+def get_or_load_references(product_id: str, ref_paths: list[str]) -> list[bytes]:
+    """Retrieves cached reference images or downloads and pre-resizes them from Cloud Storage."""
+    cached = get_cached_references(product_id, ref_paths)
+    if cached is not None:
+        return cached
+
+    from services.api.storage_client import download_blob_bytes
+
+    resized_refs: list[bytes] = []
+    for path in ref_paths[:3]:
+        raw_b = download_blob_bytes(path)
+        resized_refs.append(resize_inspection_image(raw_b))
+
+    cache_references(product_id, ref_paths, resized_refs)
+    return resized_refs
 
 
 def resize_inspection_image(image_bytes: bytes, max_long_side: int = INSPECT_MAX_PX, quality: int = INSPECT_JPEG_QUALITY) -> bytes:

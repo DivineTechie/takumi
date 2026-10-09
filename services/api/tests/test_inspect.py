@@ -129,8 +129,11 @@ def mock_firestore():
 def mock_storage():
     """Mocks Cloud Storage bytes downloads and uploads."""
     dummy_bytes = base64.b64decode(_make_dummy_image_b64(width=50, height=50))
-    with patch("services.api.main.download_blob_bytes", return_value=dummy_bytes), \
-         patch("services.api.main.upload_inspection_jpeg", return_value="inspections/test.jpg"):
+    with patch("services.api.storage_client.download_blob_bytes", return_value=dummy_bytes), \
+         patch("services.api.storage_client.upload_inspection_jpeg", return_value="inspections/test.jpg"), \
+         patch("services.api.main.download_blob_bytes", return_value=dummy_bytes), \
+         patch("services.api.main.upload_inspection_jpeg", return_value="inspections/test.jpg"), \
+         patch("services.api.inspection.get_or_load_references", return_value=[dummy_bytes, dummy_bytes, dummy_bytes]):
         yield
 
 
@@ -360,12 +363,14 @@ def test_inspect_timeout_fallback(mock_firestore, mock_storage):
 
 
 def test_inspect_validation_errors(mock_firestore, mock_storage):
-    """Validation errors: invalid unit_id, corrupt image, non-existent product."""
+    """Validation errors: invalid unit_id, corrupt image, non-existent product.
+    Verifies that check_rate_limit is NOT called when validations fail.
+    """
     img_b64 = _make_dummy_image_b64()
 
     with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}), \
          patch("services.api.main.get_firestore_client", return_value=mock_firestore), \
-         patch("services.api.main.check_rate_limit"):
+         patch("services.api.main.check_rate_limit") as mock_rate_limit:
 
         # 1. Invalid unit_id regex
         res_unit = client.post(
@@ -378,6 +383,7 @@ def test_inspect_validation_errors(mock_firestore, mock_storage):
             headers={"Authorization": "Bearer token"},
         )
         assert res_unit.status_code == 400
+        mock_rate_limit.assert_not_called()
 
         # 2. Corrupt image_b64
         res_img = client.post(
@@ -390,6 +396,7 @@ def test_inspect_validation_errors(mock_firestore, mock_storage):
             headers={"Authorization": "Bearer token"},
         )
         assert res_img.status_code == 400
+        mock_rate_limit.assert_not_called()
 
         # 3. Product not found
         res_prod = client.post(
@@ -402,6 +409,68 @@ def test_inspect_validation_errors(mock_firestore, mock_storage):
             headers={"Authorization": "Bearer token"},
         )
         assert res_prod.status_code == 404
+        mock_rate_limit.assert_not_called()
+
+
+def test_inspection_and_unit_access_control(mock_firestore):
+    """Access control: other trainee -> 403, owner trainee -> 200, supervisor -> 200."""
+    insp_id = "insp_ac_test"
+    unit_id = "UNIT-AC-TEST"
+
+    mock_firestore.collection("inspections").document(insp_id).set({
+        "id": insp_id,
+        "unit_id": unit_id,
+        "product_id": "test_candle",
+        "image_path": "inspections/test.jpg",
+        "mode": "few_false_alarms",
+        "ai_verdict": "ok",
+        "human_decision": None,
+        "inspector_uid": "trainee_owner",
+        "created_at": "2026-10-09T00:00:00Z",
+        "total_ms": 1000,
+    })
+
+    mock_firestore.collection("units").document(unit_id).set({
+        "id": unit_id,
+        "product_id": "test_candle",
+        "created_at": "2026-10-09T00:00:00Z",
+        "status": "passed",
+        "station_records": [],
+        "inspections": [insp_id],
+        "created_by": "trainee_owner",
+    })
+
+    # 1. Other trainee is denied access (403)
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_other", "role": "trainee"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_firestore):
+
+        res_insp_other = client.get(f"/api/inspections/{insp_id}", headers={"Authorization": "Bearer token"})
+        assert res_insp_other.status_code == 403
+
+        res_unit_other = client.get(f"/api/units/{unit_id}", headers={"Authorization": "Bearer token"})
+        assert res_unit_other.status_code == 403
+
+    # 2. Owner trainee is granted access (200)
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_owner", "role": "trainee"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_firestore):
+
+        res_insp_owner = client.get(f"/api/inspections/{insp_id}", headers={"Authorization": "Bearer token"})
+        assert res_insp_owner.status_code == 200
+        assert res_insp_owner.json()["id"] == insp_id
+
+        res_unit_owner = client.get(f"/api/units/{unit_id}", headers={"Authorization": "Bearer token"})
+        assert res_unit_owner.status_code == 200
+        assert res_unit_owner.json()["id"] == unit_id
+
+    # 3. Supervisor is granted access to all (200)
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "supervisor_1", "role": "supervisor"}), \
+         patch("services.api.main.get_firestore_client", return_value=mock_firestore):
+
+        res_insp_sup = client.get(f"/api/inspections/{insp_id}", headers={"Authorization": "Bearer token"})
+        assert res_insp_sup.status_code == 200
+
+        res_unit_sup = client.get(f"/api/units/{unit_id}", headers={"Authorization": "Bearer token"})
+        assert res_unit_sup.status_code == 200
 
 
 def test_human_decision_lifecycle(mock_firestore):
