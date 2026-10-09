@@ -54,18 +54,21 @@ PRICE_FLASH_OUTPUT_PER_M = 3.75
 
 
 def init_eval_client(backend: str) -> genai.Client:
-    """Initializes google-genai Client with Vertex AI (global) or Gemini Developer API."""
-    if backend == "vertex":
-        print(f"Initializing Vertex AI client (project={GCP_PROJECT}, location=global)...")
-        return genai.Client(vertexai=True, project=GCP_PROJECT, location="global")
-    elif backend == "gemini_api":
+    """Initializes google-genai Client with Gemini Developer API or Vertex AI (global)."""
+    if backend == "gemini_api":
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is required when using --backend gemini_api")
+            raise ValueError(
+                "GEMINI_API_KEY environment variable is required when using --backend gemini_api. "
+                "Please export GEMINI_API_KEY in your shell environment."
+            )
         print("Initializing Gemini API client from GEMINI_API_KEY environment variable...")
         return genai.Client(api_key=api_key, http_options={"api_version": "v1beta"})
+    elif backend == "vertex":
+        print(f"Initializing Vertex AI client (project={GCP_PROJECT}, location=global)...")
+        return genai.Client(vertexai=True, project=GCP_PROJECT, location="global")
     else:
-        raise ValueError(f"Unknown backend '{backend}'. Choose 'vertex' or 'gemini_api'.")
+        raise ValueError(f"Unknown backend '{backend}'. Choose 'gemini_api' or 'vertex'.")
 
 
 def load_eval_samples(
@@ -378,10 +381,17 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         else list(CATEGORIES_SPEC.keys())
     )
 
-    print(f"\n--- Starting Evaluation: {len(categories)} categories, {args.per_class} normal + {args.per_class} anomaly per category (seed={args.seed}) ---\n")
+    print(f"\n--- Starting Evaluation: {len(categories)} categories, {args.per_class} normal + {args.per_class} anomaly per category (seed={args.seed}, workers={args.workers}, backend={args.backend}) ---\n")
 
     all_evaluated: list[dict[str, Any]] = []
     category_results: dict[str, list[dict[str, Any]]] = {}
+    sem = asyncio.Semaphore(args.workers)
+
+    async def _eval_sample(cat_id: str, spec: dict[str, Any], defect_types: list[str], ref_bytes_list: list[bytes], sample: dict[str, Any]) -> dict[str, Any]:
+        async with sem:
+            item = await evaluate_single_image(client, spec, defect_types, ref_bytes_list, sample)
+            item["category"] = cat_id
+            return item
 
     for cat_id in categories:
         if cat_id not in CATEGORIES_SPEC:
@@ -398,16 +408,15 @@ async def run_evaluation(args: argparse.Namespace) -> None:
             ref_bytes_list.append(resize_image_jpeg(ref_path))
 
         samples = load_eval_samples(cat_dir, spec, args.per_class, rng)
-        print(f"Evaluating {cat_id} ({len(samples)} samples)...")
+        print(f"Evaluating {cat_id} ({len(samples)} samples with {args.workers} workers)...")
 
-        cat_items = []
-        for sample in samples:
-            item = await evaluate_single_image(client, spec, defect_types, ref_bytes_list, sample)
-            item["category"] = cat_id
-            cat_items.append(item)
+        cat_items = await asyncio.gather(
+            *(_eval_sample(cat_id, spec, defect_types, ref_bytes_list, sample) for sample in samples)
+        )
+        for item in cat_items:
             all_evaluated.append(item)
 
-        category_results[cat_id] = cat_items
+        category_results[cat_id] = list(cat_items)
 
     # Compute metrics for all 4 configurations
     configs = [
@@ -424,11 +433,17 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         summary_rows.append(m)
 
     # Format Markdown
+    backend_desc = (
+        "`gemini_api` (Developer API via GEMINI_API_KEY environment variable)"
+        if args.backend == "gemini_api"
+        else f"`vertex` (Vertex AI global endpoint)"
+    )
     lines = [
         "# TAKUMI End-of-Line Quality Inspection — VisA Offline Benchmark",
         "",
         f"- **Dataset**: VisA (Visual Anomaly Benchmark, CC BY 4.0)",
-        f"- **Backend**: `{args.backend}` (location: global)",
+        f"- **Backend**: {backend_desc}",
+        f"- **Workers**: `{args.workers}`",
         f"- **Seed**: `{args.seed}`",
         f"- **Categories**: {len(categories)}",
         f"- **Total Units Evaluated**: {len(all_evaluated)} ({args.per_class} normal + {args.per_class} anomaly per category)",
@@ -473,7 +488,18 @@ async def run_evaluation(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate dual-stage inspection against VisA benchmark")
-    parser.add_argument("--backend", choices=["vertex", "gemini_api"], default="vertex", help="Inference backend (default: vertex global)")
+    parser.add_argument(
+        "--backend",
+        choices=["gemini_api", "vertex"],
+        default="gemini_api",
+        help="Inference backend (default: gemini_api, reads GEMINI_API_KEY from environment)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=2,
+        help="Number of concurrent image evaluation workers (default: 2)",
+    )
     parser.add_argument("--categories", default="all", help="Comma-separated category names or 'all'")
     parser.add_argument("--per-class", type=int, default=2, help="N normal and N anomaly test units per category")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducible sampling")
