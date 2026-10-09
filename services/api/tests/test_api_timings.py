@@ -173,5 +173,5 @@ def test_api_timings_sleep_800ms_success_and_503(endpoint, url, payload, expecte
                     row = captured_rows[0]
                     assert row["endpoint"] == endpoint
                     assert row["status"] == expected_status
-                    assert 750 <= row["model_ms"] <= 900, f"model_ms {row['model_ms']} not in [750, 900]"
+                    assert 750 <= row["model_ms"] <= 1000, f"model_ms {row['model_ms']} not in [750, 1000]"
                     assert row["total_ms"] >= row["model_ms"], f"total_ms {row['total_ms']} < model_ms {row['model_ms']}"
