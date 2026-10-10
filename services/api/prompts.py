@@ -4,7 +4,7 @@ Contains word-for-word watcher rules, verifier instructions, and pointing prompt
 """
 
 from enum import Enum
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class WatchState(str, Enum):
@@ -130,7 +130,6 @@ Return JSON matching the schema with up to 3 points.
 
 
 class CitationInfo(BaseModel):
-    model_config = ConfigDict(extra="forbid")
     type: str = Field(..., description="'transcript' or 'step'")
     t_start: float | None = Field(default=None, description="Start timestamp in seconds if from transcript")
     t_end: float | None = Field(default=None, description="End timestamp in seconds if from transcript")
@@ -139,7 +138,7 @@ class CitationInfo(BaseModel):
 
 
 class AskResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # Used as a Gemini response_schema: no extra="forbid" (the API rejects additionalProperties).
     answer: str = Field(..., description="1-2 short sentences answering the question in the requested language, naming the master as source.")
     citation: CitationInfo | None = Field(default=None, description="Citation from transcript or step, or null if not covered.")
 

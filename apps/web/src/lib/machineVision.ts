@@ -30,37 +30,50 @@ function value(data: Uint8ClampedArray, i: number): number {
   return Math.max(data[i], data[i + 1], data[i + 2]);
 }
 
+/** Lamp colour of one pixel if it is bright and saturated (a lit lamp or its glow), else null. */
+export function lampColour(r: number, g: number, b: number): string | null {
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max < 150 || max - min < 0.4 * max) return null;
+  let hue: number;
+  if (max === r) hue = (60 * (g - b)) / (max - min);
+  else if (max === g) hue = 120 + (60 * (b - r)) / (max - min);
+  else hue = 240 + (60 * (r - g)) / (max - min);
+  if (hue < 0) hue += 360;
+  if (hue < 20 || hue >= 330) return 'red';
+  if (hue >= 30 && hue < 70) return 'yellow';
+  if (hue >= 80 && hue < 170) return 'green';
+  return null;
+}
+
 export interface LitResult {
-  /** Colour of the lit segment, "off" when none is clearly lit, "multiple" when several are. */
+  /** Colour of the lit lamp, "off" when none is clearly lit, "multiple" when several are. */
   light: string;
-  /** Mean brightness of each segment, top to bottom. */
-  levels: number[];
+  /** Share of the region (0-1) covered by bright pixels of each colour. */
+  shares: Record<string, number>;
 }
 
 /**
- * Decides which segment of a stack light is lit by comparing the brightness of horizontal bands
- * (one band per colour in lightOrder, top to bottom). A segment counts as lit when its mean
- * brightness is well above the dimmest band.
+ * Decides which lamp of a stack light is lit by counting bright, saturated pixels of each lamp colour.
+ * This does not depend on where the lamps sit inside the box, so a box that also covers the pole or
+ * some background still works. Unlit lamps are dark and are ignored.
  */
-export function stackLightLit(block: PixelBlock, lightOrder: string[], minContrast = 40): LitResult {
-  const bands = Math.max(1, lightOrder.length);
-  const sums = new Array(bands).fill(0);
-  const counts = new Array(bands).fill(0);
+export function stackLightLit(block: PixelBlock, lightOrder: string[], minShare = 0.02): LitResult {
+  const counts: Record<string, number> = Object.fromEntries(lightOrder.map((c) => [c, 0]));
   const { width, height, data } = block;
-  for (let y = 0; y < height; y++) {
-    const band = Math.min(bands - 1, Math.floor((y / height) * bands));
-    for (let x = 0; x < width; x++) {
-      sums[band] += value(data, (y * width + x) * 4);
-      counts[band] += 1;
-    }
+  const n = width * height;
+  for (let i = 0; i < n * 4; i += 4) {
+    const c = lampColour(data[i], data[i + 1], data[i + 2]);
+    if (c && c in counts) counts[c] += 1;
   }
-  const levels = sums.map((s, i) => (counts[i] ? s / counts[i] : 0));
-  const floor = Math.min(...levels);
-  const lit = levels.map((l, i) => (l - floor >= minContrast ? i : -1)).filter((i) => i >= 0);
+  const shares = Object.fromEntries(Object.entries(counts).map(([c, k]) => [c, n ? k / n : 0]));
+  const lit = Object.entries(shares)
+    .filter(([, s]) => s >= minShare)
+    .sort((a, b) => b[1] - a[1]);
   let light = 'off';
-  if (lit.length === 1) light = lightOrder[lit[0]];
+  if (lit.length === 1 || (lit.length > 1 && lit[1][1] < 0.3 * lit[0][1])) light = lit[0][0];
   else if (lit.length > 1) light = 'multiple';
-  return { light, levels };
+  return { light, shares };
 }
 
 /** Mean absolute difference (0-255) between two equally sized blocks, on brightness only. */

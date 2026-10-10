@@ -107,7 +107,7 @@ class MachineCrops(BaseModel):
 
 
 class MachineReadGeminiResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # Used as the Gemini response_schema: no extra="forbid", because the API rejects additionalProperties.
     light: Literal["red", "yellow", "green", "off", "multiple", "unclear"]
     count: int | None = None
     alarm_text: str | None = None
@@ -245,7 +245,7 @@ def build_setup_prompt(machine_count: int, machine_index: int) -> str:
     return (
         f"{target}\n"
         "Locate these parts of that machine:\n"
-        "- stack_light: the signal light tower (stacked coloured lights).\n"
+        "- stack_light: the coloured lamps of the signal light tower (box the lamps only, not the pole or base).\n"
         "- counter: the numeric parts/cycle counter display.\n"
         "- hmi: the operator screen that shows status or alarm text.\n"
         'Return JSON: {"stack_light": [ymin, xmin, ymax, xmax], "counter": [ymin, xmin, ymax, xmax] or null, '
