@@ -1,4 +1,4 @@
-"""Tests for Forge ADK Graph Pipeline (Offline Execution < 5s)."""
+"""Tests for the Forge multi-agent pipeline (Offline Execution < 5s)."""
 
 import asyncio
 import time

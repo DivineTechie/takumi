@@ -159,6 +159,7 @@ steps:
       - '--no-cpu-throttling'
       - '--timeout=900s'
       - '--max-instances=3'
+      - '--memory=1Gi'
       - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
       - '--allow-unauthenticated'
       - '--project=takumi-cup-2026'

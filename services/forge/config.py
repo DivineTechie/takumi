@@ -31,5 +31,8 @@ FORGE_ENABLE_ILLUSTRATOR = os.environ.get("FORGE_ENABLE_ILLUSTRATOR", "0") == "1
 # Budget guard: at most 3 mistake clips per skill; skip when 0
 FORGE_MAX_VIDEO = int(os.environ.get("FORGE_MAX_VIDEO", "0"))
 
+# Agents
+TRACEBACK_TIMEOUT_S = float(os.environ.get("TRACEBACK_TIMEOUT_S", "90"))
+
 # Target languages for localization
 SUPPORTED_LANGUAGES = ["en", "ja", "vi", "hi", "id", "fil"]

@@ -36,6 +36,8 @@ interface CoachLiveViewProps {
   outputAudioContext: AudioContext;
   micAudioContext: AudioContext;
   speakerMode?: boolean;
+  /** Station Watch: serial of the unit being built (optional). */
+  unitId?: string;
   onEnd: () => void;
   handleTranscript?: (item: LiveTranscriptItem) => void;
 }
@@ -47,6 +49,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   outputAudioContext,
   micAudioContext,
   speakerMode = true,
+  unitId,
   onEnd,
   handleTranscript: externalHandleTranscript,
 }) => {
@@ -412,6 +415,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     createSession({
       skill_id: skill.id,
       language,
+      ...(unitId ? { unit_id: unitId } : {}),
     })
       .then((session) => {
         if (isMounted) {
@@ -425,7 +429,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [skill.id, language]);
+  }, [skill.id, language, unitId]);
 
   // 2. Initialize Live Client, Audio Queue, Mic, and Video Loop
   useEffect(() => {

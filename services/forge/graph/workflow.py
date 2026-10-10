@@ -1,4 +1,4 @@
-"""ADK 2.0 Forge Agent Graph Workflow.
+"""Forge multi-agent pipeline (asyncio orchestration of Gemini agents).
 
 Topology:
 load_capture
@@ -32,7 +32,7 @@ logger = logging.getLogger("forge.workflow")
 
 
 class ForgePipeline:
-    """Executes the ADK 2.0 graph pipeline for transforming a capture into a published skill."""
+    """Executes the multi-agent pipeline for transforming a capture into a published skill."""
 
     async def execute(self, state: ForgeState) -> ForgeState:
         t_start = time.time()

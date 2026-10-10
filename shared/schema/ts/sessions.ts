@@ -33,4 +33,8 @@ export interface Session {
    * [ADDED] True when session is a master lesson preview
    */
   preview?: boolean;
+  /**
+   * Serial of the unit built in this Station Watch session (P16), or null
+   */
+  unit_id?: string | null;
 }

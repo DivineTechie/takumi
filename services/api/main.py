@@ -76,9 +76,11 @@ logger = setup_logging()
 init_telemetry()
 
 from services.api.machines import router as machines_router
+from services.api.units import append_station_record, build_station_record, ensure_unit, router as units_router
 
 app = FastAPI(title="TAKUMI API", version="0.1.0")
 app.include_router(machines_router, prefix="/api")
+app.include_router(units_router, prefix="/api")
 
 
 # --- Middlewares ---
@@ -164,6 +166,9 @@ class AskRequest(BaseModel):
 class SessionCreateRequest(BaseModel):
     skill_id: str
     language: str
+    # Station Watch: the serial of the unit being built in this session (optional), and its product.
+    unit_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._-]{1,64}$")
+    product_id: str | None = Field(default=None, max_length=64)
 
 
 class SessionPatchRequest(BaseModel):
@@ -665,7 +670,11 @@ async def create_session(
         "steps": steps,
         "result": None,
         "preview": True if user.role == "master" else False,
+        "unit_id": req.unit_id,
     }
+
+    if req.unit_id and not session_data["preview"]:
+        ensure_unit(db, req.unit_id, req.product_id, user.uid)
 
     db.collection("sessions").document(session_id).set(session_data)
     return session_data
@@ -903,8 +912,19 @@ async def patch_session(
         "result": result,
     }
 
+    was_live = session_data.get("status") == "live"
     session_ref.update(updated_fields)
     session_data.update(updated_fields)
+
+    # Station Watch: record this station on the unit's history (once, when the session ends)
+    unit_id = session_data.get("unit_id")
+    if unit_id and was_live and not session_data.get("preview"):
+        try:
+            skill_snap = db.collection("skills").document(session_data.get("skill_id", "")).get()
+            record = build_station_record(session_data, events, skill_snap.to_dict() or {} if skill_snap.exists else {})
+            append_station_record(db, unit_id, record)
+        except Exception as e:
+            logger.warning("Failed to append station record for unit %s: %s", unit_id, e)
 
     # Evaluate passport issuance on clean completion
     passport_id = None

@@ -1276,7 +1276,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
           </div>
         </section>
 
-        {/* CENTER COLUMN: ADK 2.0 Multi-Agent Pipeline */}
+        {/* CENTER COLUMN: Multi-Agent Pipeline */}
         <section
           style={{
             padding: '1.5rem 2rem',
@@ -1288,7 +1288,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
         >
           <div style={{ width: '100%', maxWidth: '640px' }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 1.25rem 0', color: '#ffffff' }}>
-              ADK 2.0 Multi-Agent Pipeline
+              Multi-Agent Pipeline
             </h2>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', width: '100%' }}>
@@ -1437,7 +1437,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
               <Sparkles size={28} style={{ color: '#fbbf24' }} />
               <div style={{ fontSize: '0.95rem', color: '#f4f4f5', fontWeight: 600 }}>Lesson Assembling In Progress</div>
               <div style={{ fontSize: '0.8rem', color: '#71717a', lineHeight: 1.5 }}>
-                Steps will progressively populate here as the ADK multi-agent graph extracts instructions, craftsman rationale, and spatial points.
+                Steps will progressively populate here as the multi-agent pipeline extracts instructions, craftsman rationale, and spatial points.
               </div>
             </div>
           ) : (

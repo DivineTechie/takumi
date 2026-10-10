@@ -138,7 +138,7 @@ TAKUMI provides production transparency through dedicated endpoints:
 
 The master demonstration capture studio (`/capture`) is now deployed and live on the production site:
 - **Master Capture Screen (`/capture`)**: **Live**. Enables hands-on video recording, multi-camera selection, client-side frame extraction, and demonstration ingestion in the browser.
-- **Automated Forge Graph Pipeline (`takumi-forge`)**: **In progress**. Google ADK 2.0 graph workflow on Cloud Run processing master videos through multimodal segmentation (`gemini-omni-1.1-flash`), "why" rationale extraction (`gemini-3.8-flash`), spatial annotation (`gemini-robotics-er-2-preview`), and mistake simulation (`veo-3.1-fast-generate-preview`) until end-to-end automated publishing is finalized.
+- **Automated Forge Graph Pipeline (`takumi-forge`)**: **In progress**. Multi-agent Gemini pipeline on Cloud Run processing master videos through multimodal segmentation (`gemini-omni-1.1-flash`), "why" rationale extraction (`gemini-3.8-flash`), spatial annotation (`gemini-robotics-er-2-preview`), and mistake simulation (`veo-3.1-fast-generate-preview`) until end-to-end automated publishing is finalized.
 - **Skill Review & Library (`/review/:skillId`, `/library`)**: **Live in web application**, staging integration active.
 
 ---

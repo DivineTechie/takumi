@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
@@ -21,6 +21,7 @@ import { LiveNowStrip } from '../components/dashboard/LiveNowStrip';
 import { SkillMatrixTable } from '../components/dashboard/SkillMatrixTable';
 import { LessonHeatmap } from '../components/dashboard/LessonHeatmap';
 import { MachinesPanel } from '../components/dashboard/MachinesPanel';
+import { RecentUnits } from '../components/dashboard/RecentUnits';
 import {
   SessionReplayViewer,
   type RecentSessionItem,
@@ -506,6 +507,8 @@ export const DashboardScreen: React.FC = () => {
               </div>
             </div>
 
+            <RecentUnits />
+
             {/* Section 1: Live Factory Operations */}
             <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -571,9 +574,13 @@ export const DashboardScreen: React.FC = () => {
                         )}
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-[14px] text-on-surface">
-                              {item.unit_id || item.id}
-                            </span>
+                            {item.unit_id ? (
+                              <Link to={`/units/${encodeURIComponent(item.unit_id)}`} className="font-mono font-bold text-[14px] text-on-surface underline">
+                                {item.unit_id}
+                              </Link>
+                            ) : (
+                              <span className="font-mono font-bold text-[14px] text-on-surface">{item.id}</span>
+                            )}
                             <span className="text-xs text-on-surface-variant font-medium">
                               • {item.product_id}
                             </span>

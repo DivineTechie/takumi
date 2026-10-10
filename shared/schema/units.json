@@ -20,16 +20,118 @@
     },
     "status": {
       "type": "string",
-      "enum": ["in_progress", "passed", "failed", "needs_review"],
+      "enum": [
+        "in_progress",
+        "passed",
+        "failed",
+        "needs_review",
+        "on_hold"
+      ],
       "description": "Lifecycle state of the unit"
     },
     "station_records": {
       "type": "array",
+      "description": "One record per finished Station Watch session on this unit (P16)",
       "items": {
         "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "skill_id": {
+            "type": "string"
+          },
+          "station": {
+            "type": "string"
+          },
+          "operator_uid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Shown to supervisors only"
+          },
+          "status": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ended_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "steps_total": {
+            "type": "integer"
+          },
+          "steps_done": {
+            "type": "integer"
+          },
+          "incomplete_steps": {
+            "type": "array",
+            "items": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "mistakes": {
+            "type": "integer"
+          },
+          "safety_stops": {
+            "type": "integer"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "step": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "step_title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "t": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "frame_uri": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
         "additionalProperties": true
-      },
-      "description": "Station records across factory workflow (P16)"
+      }
     },
     "inspections": {
       "type": "array",
@@ -39,8 +141,55 @@
       "description": "Ordered inspection IDs performed on this unit"
     },
     "created_by": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Firebase UID of operator or inspector"
+    },
+    "holds": {
+      "type": "array",
+      "description": "Quarantine decisions by supervisors",
+      "items": {
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "by_uid": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "traceback",
+              "manual"
+            ]
+          },
+          "previous_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "released_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "released_by_uid": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

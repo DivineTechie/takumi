@@ -20,11 +20,35 @@ export interface Unit {
   /**
    * Lifecycle state of the unit
    */
-  status: "in_progress" | "passed" | "failed" | "needs_review";
+  status: "in_progress" | "passed" | "failed" | "needs_review" | "on_hold";
   /**
-   * Station records across factory workflow (P16)
+   * One record per finished Station Watch session on this unit (P16)
    */
   station_records: {
+    session_id?: string;
+    skill_id?: string;
+    station?: string;
+    /**
+     * Shown to supervisors only
+     */
+    operator_uid?: string | null;
+    status?: string;
+    started_at?: string | null;
+    ended_at?: string | null;
+    steps_total?: number;
+    steps_done?: number;
+    incomplete_steps?: (number | null)[];
+    mistakes?: number;
+    safety_stops?: number;
+    issues?: {
+      step?: number | null;
+      step_title?: string | null;
+      type?: string;
+      reason?: string | null;
+      t?: string | null;
+      frame_uri?: string | null;
+      [k: string]: unknown;
+    }[];
     [k: string]: unknown;
   }[];
   /**
@@ -35,4 +59,16 @@ export interface Unit {
    * Firebase UID of operator or inspector
    */
   created_by?: string | null;
+  /**
+   * Quarantine decisions by supervisors
+   */
+  holds?: {
+    at?: string;
+    by_uid?: string;
+    reason?: string;
+    source?: "traceback" | "manual";
+    previous_status?: string | null;
+  }[];
+  released_at?: string | null;
+  released_by_uid?: string | null;
 }

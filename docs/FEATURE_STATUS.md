@@ -35,7 +35,7 @@ This inventory records the deployment status and ownership for all Google AI mod
 | Service | Responsibility in TAKUMI | Configuration / Deployment | Production Status | Owner |
 | :--- | :--- | :--- | :--- | :--- |
 | **Cloud Run (`takumi-api`)** | Stateless container running FastAPI Python 3.12 backend (auth verification, live tokens, watcher proxy, BigQuery ingestion, rate limiting, dual-stage inspection engine). | Region: `asia-southeast1`<br>URL: `https://takumi-api-692366725458.asia-southeast1.run.app` | **Live** | Member A |
-| **Cloud Run (`takumi-forge`)** | Google ADK 2.0 graph workflow container for processing master capture videos. | Region: `asia-southeast1`<br>URL: `https://takumi-forge-692366725458.asia-southeast1.run.app` | **In progress** | Member B |
+| **Cloud Run (`takumi-forge`)** | Standard Work Studio multi-agent pipeline (asyncio + google-genai) for master capture videos, and the Google ADK quality trace-back agent. | Region: `asia-southeast1`<br>URL: `https://takumi-forge-692366725458.asia-southeast1.run.app` | **In progress** | Member B |
 | **Firebase Hosting** | Global CDN hosting for React 19 + TypeScript + Vite Progressive Web Application with security headers and API rewrites. | Project: `takumi-cup-2026`<br>URL: `https://takumi-cup-2026.web.app` | **Live** | Member A |
 | **Firebase Authentication** | Identity management supporting Google Sign-In and email authentication with custom role claims (`role: trainee \| master \| supervisor`). | Project: `takumi-cup-2026` | **Live** | Member A |
 | **Cloud Firestore (Native)** | Document database storing sessions, real-time session events, skills, review requests, skill passports, product inspection profiles (`products`), inspection results (`inspections`), unit tracking (`units`), gallery items (`gallery`), Machine Watch machines, events and soak runs (`machines`, `machine_events`, `soak_runs`) with role-based security rules. | Database: `(default)`, Region: `asia-southeast1` | **Live** | Both |
@@ -55,7 +55,14 @@ This inventory records the deployment status and ownership for all Google AI mod
 - Dashboard "Machines" tab: today's state timeline, availability, stops, downtime, top alarms, parts and availability x performance, labelled LIVE or HOME RIG.
 - Scoring: `python -m evals.machine_watch.score_soak <run_id>` writes detection rate, delays, false alarms and cost per machine. No soak run has been scored yet, so no Machine Watch numbers are published.
 
-## 4. Factory Governance & Access Control
+## 4. Unit records and quality trace-back: **In progress**
+
+- A serial entered on the coach start screen (Station Watch) links the session to the unit. When the session ends, the unit gets a station record: steps verified, steps not verified, and each mistake, block or safety stop with its evidence frame. Inspections with a serial are added to the same record.
+- `/units/{serial}` shows the full history. Supervisors can put units on hold and release them (`POST /api/units/hold`, `POST /api/units/{id}/release`); holds keep the previous status.
+- Trace-back agent (Google ADK, `services/forge/agents/traceback.py`, `POST /forge/agents/traceback`, supervisors only): an investigator agent with three read-only tools (unit history, similar units at the same station and step, the step's work instruction) and a reporter agent with a response schema. It proposes the likely station and step, units to hold and a work-instruction change. Hold candidates are checked against what the tools returned, and nothing changes until a supervisor approves. Operator identities are never given to the agent.
+- In progress until it has run on real Station Watch sessions with serials.
+
+## 5. Factory Governance & Access Control
 
 - **End-of-Line Quality Inspection Decisions**: Inspection verification and override decisions ([`POST /api/inspections/{id}/decision`](file:///c:/takumi/services/api/main.py)) stay strictly **supervisor-only** (`role: supervisor`). The worker/trainee who captured or submitted the inspection photo cannot approve or override their own flagged unit.
 - **Unit & Inspection Read Access**: Inspection reports and unit tracking records are restricted to the supervisor or the creating trainee/operator (`inspector_uid` / `created_by`); other trainees receive `403 Forbidden`.

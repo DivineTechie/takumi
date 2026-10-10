@@ -22,7 +22,7 @@ Across advanced manufacturing hubs in the Asia-Pacific region, an acute demograp
 
 ### The TAKUMI Solution
 TAKUMI bridges this gap through a dual-agent architecture built entirely on Google AI and Google Cloud:
-1. **Master Capture & Forge (Member B — In Progress)**: In progress to capture a master craftsman's physical demonstration once via a smartphone camera. An automated Google ADK 2.0 graph pipeline is designed to segment demonstrations into discrete steps, extract engineering rationale ("why"), annotate spatial coordinates, cross-reference technical SOP manuals, and localize guidance into 6 regional languages.
+1. **Master Capture & Forge (Member B — In Progress)**: In progress to capture a master craftsman's physical demonstration once via a smartphone camera. An automated multi-agent Gemini pipeline is designed to segment demonstrations into discrete steps, extract engineering rationale ("why"), annotate spatial coordinates, cross-reference technical SOP manuals, and localize guidance into 6 regional languages.
 2. **Live Multimodal Coach (Member A)**: A trainee props their smartphone above their workbench. TAKUMI watches their hands in real time through the phone camera and converses with them over bidirectional streaming audio in their native language (e.g. Vietnamese, Hindi, Japanese, English). It offers continuous reassurance, flags visible hazards such as bare copper and stops the trainee with a full-screen STOP, points to correct terminal screws via spatial coordinate bounding boxes, and strictly verifies step completion against physical visual criteria.
 
 ---
@@ -36,7 +36,7 @@ TAKUMI decouples rapid conversational speech from high-precision visual verifica
 ### Two Complementary Pipelines
 
 ```
-[ Master Capture Video ] ──> [ Forge ADK Pipeline (Member B) ] ──> [ Structured Skill in Firestore ]
+[ Master Capture Video ] ──> [ Forge multi-agent pipeline ] ──> [ Structured Skill in Firestore ]
                                                                              │
 [ Trainee Camera & Mic ] <──> [ Live Coach API / WebSocket (Member A) ] <────┘
                                         │
@@ -68,7 +68,7 @@ All model identifiers are strictly isolated in configuration constants (`service
 | **`gemini-3.8-flash-tts`** | High-fidelity synthetic speech for static instructional step playbacks | `services/forge/config.py` | **Planned** | Member B |
 | **`gemini-embedding-2-preview`** | Vector grounding of industrial equipment manuals and plant standards | `services/api/config.py`, `services/forge/config.py` | **Planned** | Both |
 | **Cloud Run (`takumi-api`)** | Stateless FastAPI Python 3.12 backend (auth, live tokens, watcher proxy, BigQuery) | `services/api/` (`asia-southeast1`) | **Live** | Member A |
-| **Cloud Run (`takumi-forge`)** | Google ADK 2.0 graph execution container | `services/forge/` (`asia-southeast1`) | **In Progress** | Member B |
+| **Cloud Run (`takumi-forge`)** | Standard Work Studio pipeline and Google ADK quality trace-back agent | `services/forge/` (`asia-southeast1`) | **In Progress** | Member B |
 | **Firebase Hosting** | Global edge distribution for React 19 + TypeScript + Vite PWA | `takumi-cup-2026.web.app` | **Live** | Member A |
 | **Firebase Authentication** | Identity management with custom role claims (`trainee`, `supervisor`, `master`) | Custom claims via Firebase Admin SDK | **Live** | Member A |
 | **Cloud Firestore (Native)** | Operational database for sessions, skills, review requests, and passports | `(default)` in `asia-southeast1` | **Live** | Both |
@@ -161,7 +161,7 @@ TAKUMI's live coaching experience solves the fundamental challenge of multimodal
 The TAKUMI test and evaluation suite provides reproducible accuracy and latency benchmarks:
 
 - **Coach Evaluation Suite ([/evals/coach](evals/coach))**: Benchmarks watcher state classification accuracy, verifier strictness against planted mistakes, reticle coordinate error distance, and camera event injection speed. *(The automated evaluation benchmark suite runs on Oct 14 during final physical test-rig validation).*
-- **Forge Evaluation Suite ([/evals/forge](evals/forge))**: Measures ADK graph step boundary segmentation precision, rationale extraction fidelity, and multi-lingual translation semantic consistency against reference electrical engineering manuals.
+- **Forge Evaluation Suite ([/evals/forge](evals/forge))**: Measures the Forge pipeline's step boundary segmentation precision, rationale extraction fidelity, and multi-lingual translation semantic consistency against reference electrical engineering manuals.
 
 ---
 
@@ -189,7 +189,7 @@ TAKUMI is designed for enterprise manufacturing deployments with strict complian
 
 To provide complete transparency for judges and evaluators:
 
-- **Production Scope**: Member A components (Live Coach, Watcher, Verifier, Spatial Reticles, Dashboard, Replay, Skill Passport, Observability) are live in production. Member B components (Forge ADK graph workflow, master capture ingestion, mistake video generation) are implemented on branch `forge` and in progress.
+- **Production Scope**: Member A components (Live Coach, Watcher, Verifier, Spatial Reticles, Dashboard, Replay, Skill Passport, Observability) are live in production. Member B components (Forge multi-agent pipeline, master capture ingestion, mistake video generation) are implemented on branch `forge` and in progress.
 - **Physical Test Kit**: Full hardware verification has been benchmarked using high-resolution industrial terminal-block workbench photographs. Live end-to-end multi-language hardware validation with physical DIN rail test kits concludes on October 14.
 - **Mobile Hardware**: The web application is optimized for mobile portrait viewports (tested at 390x844 on Safari iOS and Chrome Android). For optimal hands-free use, the device should be mounted on a standard gooseneck clamp 30–45 cm above the workbench.
 - **Latency Variance**: Gemini Live audio latency is typically under 1 second. High-resolution visual verification (`gemini-3.8-flash`) requires 4–5 seconds to thoroughly reason through physical wiring attributes; a responsive "Checking..." pulse chip provides immediate user feedback during verification.
@@ -283,7 +283,7 @@ docker build -f services/api/Dockerfile . -t asia-southeast1-docker.pkg.dev/taku
 ## 11. Team
 
 - **Member A (Lead / Platform & Live Coach)**: Systems architecture, FastAPI Cloud Run API, Gemini Live WebSocket gateway, visual watcher & verifier, supervisor analytics dashboard, skill passport, observability, and submission package.
-- **Member B (Master Capture & Forge Pipeline)**: Master video capture UI, Google ADK 2.0 graph workflow, multimodal step segmenter, why-extractor, technical manual cross-validator, and generative illustration assets.
+- **Member B (Master Capture & Forge Pipeline)**: Master video capture UI, multi-agent Gemini pipeline, multimodal step segmenter, why-extractor, technical manual cross-validator, and generative illustration assets.
 
 ---
 

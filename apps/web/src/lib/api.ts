@@ -107,6 +107,9 @@ export interface PointResponse {
 export interface CreateSessionRequest {
   skill_id: string;
   language: string;
+  /** Station Watch: serial of the unit built in this session. */
+  unit_id?: string;
+  product_id?: string;
 }
 
 export interface CreateSessionEventRequest {
@@ -676,6 +679,108 @@ export async function postSoakTruth(
   return await apiFetch<{ status: string }>(`/api/soak/${encodeURIComponent(id)}/truth`, {
     method: 'POST',
     body: JSON.stringify(truth),
+  });
+}
+
+export interface UnitIssue {
+  step: number | null;
+  step_title: string | null;
+  type: string;
+  reason: string | null;
+  t: string | null;
+  frame_url: string | null;
+}
+
+export interface StationRecord {
+  session_id: string;
+  skill_id: string;
+  station: string;
+  status: string;
+  started_at: string | null;
+  ended_at: string | null;
+  steps_total: number;
+  steps_done: number;
+  incomplete_steps: number[];
+  mistakes: number;
+  safety_stops: number;
+  issues: UnitIssue[];
+}
+
+export interface UnitInspection {
+  id: string;
+  created_at: string | null;
+  ai_verdict: string | null;
+  defect: string | null;
+  where: string | null;
+  human_decision: string | null;
+  mode: string | null;
+  source: string | null;
+  image_url: string | null;
+}
+
+export interface UnitHistory {
+  id: string;
+  product_id: string | null;
+  status: string;
+  created_at: string | null;
+  holds: { at: string; reason: string; source: string; previous_status: string | null }[];
+  station_records: StationRecord[];
+  inspections: UnitInspection[];
+}
+
+export interface UnitSummary {
+  id: string;
+  product_id: string | null;
+  status: string;
+  created_at: string | null;
+  stations: number;
+  inspections: number;
+  issues: number;
+}
+
+export interface TracebackResult {
+  unit_id: string;
+  report: {
+    summary: string;
+    root_cause_station: string | null;
+    root_cause_skill_id: string | null;
+    root_cause_step: number | null;
+    evidence: string[];
+    confidence: 'low' | 'medium' | 'high';
+    hold_unit_ids: string[];
+    hold_reason: string;
+    work_instruction_fix: string | null;
+  };
+  agent_steps: { agent: string; tool: string; args: Record<string, unknown> }[];
+}
+
+export async function fetchUnitHistory(id: string): Promise<UnitHistory> {
+  return await apiFetch<UnitHistory>(`/api/units/${encodeURIComponent(id)}/history`);
+}
+
+export async function fetchUnits(status?: string): Promise<UnitSummary[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return await apiFetch<UnitSummary[]>(`/api/units${query}`);
+}
+
+export async function holdUnits(unitIds: string[], reason: string, source: 'traceback' | 'manual'): Promise<{
+  held: string[];
+  skipped: { id: string; reason: string }[];
+}> {
+  return await apiFetch('/api/units/hold', {
+    method: 'POST',
+    body: JSON.stringify({ unit_ids: unitIds, reason, source }),
+  });
+}
+
+export async function releaseUnit(id: string): Promise<{ id: string; status: string }> {
+  return await apiFetch(`/api/units/${encodeURIComponent(id)}/release`, { method: 'POST' });
+}
+
+export async function runTraceback(unitId: string): Promise<TracebackResult> {
+  return await apiFetch<TracebackResult>('/forge/agents/traceback', {
+    method: 'POST',
+    body: JSON.stringify({ unit_id: unitId }),
   });
 }
 

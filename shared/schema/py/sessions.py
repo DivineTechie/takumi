@@ -5,7 +5,15 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, confloat, conint
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    confloat,
+    conint,
+    constr,
+)
 
 
 class Language(Enum):
@@ -66,4 +74,8 @@ class Session(BaseModel):
     result: Result | None = None
     preview: bool | None = Field(
         None, description='[ADDED] True when session is a master lesson preview'
+    )
+    unit_id: constr(pattern=r'^[A-Za-z0-9._-]{1,64}$') | None = Field(
+        None,
+        description='Serial of the unit built in this Station Watch session (P16), or null',
     )

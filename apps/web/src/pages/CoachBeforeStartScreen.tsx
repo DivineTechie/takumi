@@ -39,6 +39,9 @@ export const CoachBeforeStartScreen: React.FC = () => {
       : 'en';
   });
 
+  // Station Watch: optional serial of the unit built in this session (links the session to the unit's record)
+  const [unitSerial, setUnitSerial] = useState('');
+  const serialValid = unitSerial.trim() === '' || /^[A-Za-z0-9._-]{1,64}$/.test(unitSerial.trim());
   const [wearingHeadphones, setWearingHeadphones] = useState<boolean>(() => {
     try {
       return localStorage.getItem('takumi_wearing_headphones') === 'true';
@@ -227,6 +230,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
         outputAudioContext={outputAudioContextRef.current}
         micAudioContext={micAudioContextRef.current}
         speakerMode={!wearingHeadphones}
+        unitId={unitSerial.trim() || undefined}
         onEnd={handleEndLiveSession}
       />
     );
@@ -391,6 +395,27 @@ export const CoachBeforeStartScreen: React.FC = () => {
               })}
             </div>
 
+            {/* Unit serial (Station Watch) */}
+            <div className="flex flex-col gap-1.5 p-3.5 rounded-xl bg-surface-container-low border border-outline-variant">
+              <label htmlFor="unit-serial" className="font-body-md text-on-surface font-semibold">
+                Unit serial (optional)
+              </label>
+              <input
+                id="unit-serial"
+                value={unitSerial}
+                onChange={(e) => setUnitSerial(e.target.value)}
+                placeholder="e.g. SN-0042"
+                autoCapitalize="characters"
+                autoComplete="off"
+                className={`min-h-[48px] rounded-lg bg-surface-container px-3 font-mono border ${serialValid ? 'border-outline-variant' : 'border-error'}`}
+              />
+              <p className="font-body-sm text-on-surface-variant leading-snug">
+                {serialValid
+                  ? "Adds this station's checks to the unit's record, so a failed unit can be traced back."
+                  : 'Use letters, numbers, dot, dash or underscore (max 64).'}
+              </p>
+            </div>
+
             {/* Headphone Toggle & Note */}
             <div className="flex flex-col gap-2.5 p-3.5 rounded-xl bg-surface-container-low border border-outline-variant mt-auto">
               <label className="flex items-center justify-between cursor-pointer select-none">
@@ -435,7 +460,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
           ) : (
             <button
               type="button"
-              disabled={isStarting}
+              disabled={isStarting || !serialValid}
               onClick={handleStartCoaching}
               className="w-full min-h-[56px] h-14 rounded-xl bg-primary-container text-on-primary-container font-headline-sm font-extrabold flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow-lg cursor-pointer disabled:opacity-50"
             >

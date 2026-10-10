@@ -1,1 +1,1 @@
-Owned by Member B. Python 3.12, ADK 2.0 graph workflow.
+Python 3.12. Standard Work Studio multi-agent pipeline (asyncio + google-genai) and Google ADK agents in agents/.

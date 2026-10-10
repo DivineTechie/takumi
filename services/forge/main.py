@@ -9,7 +9,7 @@ from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from services.forge.config import LOCAL_DEV
+from services.forge.config import LOCAL_DEV, MOCK_MODELS, TRACEBACK_TIMEOUT_S
 from services.forge.auth import AuthUser, verify_auth_token
 from services.forge.models.state import ForgeState
 from services.forge.graph.workflow import ForgePipeline
@@ -174,3 +174,31 @@ async def regenerate_step_part(
         "part": req.part,
         "message": f"Successfully regenerated step {req.n} {req.part}",
     }
+
+
+# --- Agents ---
+
+class TracebackRequest(BaseModel):
+    unit_id: str = Field(..., pattern=r"^[A-Za-z0-9._-]{1,64}$")
+
+
+@app.post("/forge/agents/traceback")
+async def traceback_agent(
+    req: TracebackRequest,
+    user: AuthUser = Depends(verify_auth_token),
+) -> dict[str, Any]:
+    """Runs the ADK quality trace-back agent on a failed unit (supervisors only). Proposes; changes nothing."""
+    if user.role != "supervisor":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Supervisor role required")
+    db = get_firestore_client()
+    if db is None or MOCK_MODELS:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Trace-back agent is unavailable")
+    from services.forge.agents.traceback import run_traceback
+
+    try:
+        return await asyncio.wait_for(run_traceback(db, req.unit_id, user.uid), timeout=TRACEBACK_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Trace-back agent timed out")
+    except Exception as e:
+        logger.error("Trace-back agent failed for %s: %s", req.unit_id, e)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Trace-back agent failed")
