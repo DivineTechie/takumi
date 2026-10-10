@@ -784,6 +784,49 @@ export async function runTraceback(unitId: string): Promise<TracebackResult> {
   });
 }
 
+export interface ControlSourceKpis {
+  inspected: number;
+  ok: number;
+  defective: number;
+  needs_review: number;
+  first_pass_rate: number | null;
+  confirmed_defects: number;
+  overridden: number;
+  stations_completed: number;
+  steps_verified: number;
+  mistakes: number;
+  safety_stops: number;
+  machine_stops: number;
+  machine_alarms: number;
+  units_held: number;
+  events: number;
+}
+
+export interface ControlFeedItem {
+  ts: string;
+  kind: 'station' | 'inspection' | 'machine' | 'unit';
+  event_type: string;
+  source: string;
+  unit_id: string | null;
+  machine_id: string | null;
+  product_id: string | null;
+  station: string | null;
+  step: number | null;
+  status: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface ControlSummary {
+  hours: number;
+  by_source: Record<string, ControlSourceKpis>;
+  last_event_at: string | null;
+  feed: ControlFeedItem[];
+}
+
+export async function fetchControlSummary(hours = 24): Promise<ControlSummary> {
+  return await apiFetch<ControlSummary>(`/api/control/summary?hours=${hours}`);
+}
+
 export async function fetchMySoakRuns(): Promise<SoakRun[]> {
   return await apiFetch<SoakRun[]>('/api/soak/mine');
 }

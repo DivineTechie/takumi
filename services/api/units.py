@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.auth import AuthUser, get_firestore_client, require_role, verify_auth_token
 from services.api.config import STORAGE_BUCKET
+from services.api.events_bus import publish_event
 from services.api.storage_client import get_signed_url_for_gs_uri
 
 router = APIRouter(tags=["units"])
@@ -216,6 +217,8 @@ def hold_units(req: HoldRequest, user: AuthUser = Depends(require_role("supervis
             }]),
         })
         held.append(unit_id)
+        publish_event("unit", "hold", ts=now, unit_id=unit_id, entity_id=unit_id, status="on_hold",
+                      detail={"reason": req.reason, "source": req.source, "previous_status": unit.get("status")})
     return {"held": held, "skipped": skipped}
 
 
@@ -235,4 +238,5 @@ def release_unit(unit_id: str, user: AuthUser = Depends(require_role("supervisor
     holds = unit.get("holds") or []
     previous = (holds[-1].get("previous_status") if holds else None) or "in_progress"
     ref.update({"status": previous, "released_at": datetime.now(timezone.utc).isoformat(), "released_by_uid": user.uid})
+    publish_event("unit", "release", unit_id=unit_id, entity_id=unit_id, status=previous)
     return {"id": unit_id, "status": previous}

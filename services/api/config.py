@@ -51,6 +51,8 @@ INSPECT_JPEG_QUALITY = 90
 MAX_REQUEST_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
 
 # Cloud Storage Bucket
+# Pub/Sub topic for operational events (P18); a BigQuery subscription writes them to takumi.events
+EVENTS_TOPIC = os.environ.get("EVENTS_TOPIC", "takumi-events").strip()
 STORAGE_BUCKET = os.environ.get("FIREBASE_STORAGE_BUCKET", "takumi-cup-2026.firebasestorage.app")
 BQ_LOCATION = os.environ.get("BIGQUERY_LOCATION", "asia-southeast1")
 SESSIONS_ENABLED = os.environ.get("SESSIONS_ENABLED", "true").lower() in ("true", "1", "yes")

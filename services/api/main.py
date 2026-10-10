@@ -76,11 +76,14 @@ logger = setup_logging()
 init_telemetry()
 
 from services.api.machines import router as machines_router
+from services.api.control_tower import router as control_router
+from services.api.events_bus import publish_event
 from services.api.units import append_station_record, build_station_record, ensure_unit, router as units_router
 
 app = FastAPI(title="TAKUMI API", version="0.1.0")
 app.include_router(machines_router, prefix="/api")
 app.include_router(units_router, prefix="/api")
+app.include_router(control_router, prefix="/api")
 
 
 # --- Middlewares ---
@@ -819,6 +822,11 @@ async def create_session_event(
         "preview": session_data.get("preview", False),
     }
     stream_session_event(bq_row)
+    if req.type in ("step_done", "mistake", "safety_stop", "blocked") and not session_data.get("preview"):
+        publish_event(
+            "station", req.type, ts=now.isoformat(), entity_id=session_id, unit_id=session_data.get("unit_id"),
+            station=session_data.get("skill_id"), step=req.step, detail={"reason": clean_reason},
+        )
 
     return event_dict
 
@@ -923,6 +931,11 @@ async def patch_session(
             skill_snap = db.collection("skills").document(session_data.get("skill_id", "")).get()
             record = build_station_record(session_data, events, skill_snap.to_dict() or {} if skill_snap.exists else {})
             append_station_record(db, unit_id, record)
+            publish_event(
+                "station", "station_completed", ts=record.get("ended_at"), entity_id=session_id, unit_id=unit_id,
+                station=record.get("station"), status=record.get("status"),
+                detail={k: record.get(k) for k in ("steps_done", "steps_total", "mistakes", "safety_stops", "incomplete_steps")},
+            )
         except Exception as e:
             logger.warning("Failed to append station record for unit %s: %s", unit_id, e)
 
@@ -1722,6 +1735,11 @@ async def post_inspect(
         "human_decision": None,
         "source": req.source or "manual_upload",
     })
+    publish_event(
+        "inspection", "inspected", ts=now_iso, entity_id=inspection_id, unit_id=req.unit_id, product_id=req.product_id,
+        status=inspect_res["ai_verdict"], source=req.source,
+        detail={"defect": inspect_res.get("defect"), "mode": mode, "total_ms": inspect_res["total_ms"]},
+    )
 
     stream_api_call({
         "ts": now_iso,
@@ -1801,6 +1819,11 @@ async def post_inspection_decision(
         "human_decision": req.decision,
         "source": insp_data.get("source", "LIVE"),
     })
+    publish_event(
+        "inspection", "decision", ts=now_iso, entity_id=inspection_id, unit_id=unit_id,
+        product_id=insp_data.get("product_id"), status=req.decision, source=insp_data.get("source"),
+        detail={"ai_verdict": insp_data.get("ai_verdict")},
+    )
 
     return {
         "inspection_id": inspection_id,
@@ -2066,6 +2089,12 @@ async def post_inspect_gallery(
         "human_decision": None,
         "source": "PUBLIC DATA: VisA (CC BY 4.0)",
     })
+    publish_event(
+        "inspection", "inspected", ts=created_at_iso, entity_id=inspection_id, product_id=product_id,
+        status=ai_verdict, source="PUBLIC DATA: VisA (CC BY 4.0)",
+        detail={"defect": (confirm_dict or {}).get("defect") or (screen_dict or {}).get("defect"), "mode": req.mode,
+                "total_ms": total_ms, "dataset_label": dataset_label},
+    )
 
     model_ms = ((screen_dict or {}).get("ms", 0)) + ((confirm_dict or {}).get("ms", 0))
     stream_api_call({

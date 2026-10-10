@@ -284,6 +284,15 @@ export const DashboardScreen: React.FC = () => {
             </select>
           </div>
 
+          <Link
+            to="/control"
+            aria-label="Control tower"
+            title="Control tower"
+            className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors shrink-0"
+          >
+            <span className="material-symbols-outlined text-[19px] sm:text-[20px]">monitoring</span>
+          </Link>
+
           {/* Theme toggle: always visible */}
           <button
             onClick={toggleTheme}

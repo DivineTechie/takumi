@@ -62,6 +62,13 @@ This inventory records the deployment status and ownership for all Google AI mod
 - Trace-back agent (Google ADK, `services/forge/agents/traceback.py`, `POST /forge/agents/traceback`, supervisors only): an investigator agent with three read-only tools (unit history, similar units at the same station and step, the step's work instruction) and a reporter agent with a response schema. It proposes the likely station and step, units to hold and a work-instruction change. Hold candidates are checked against what the tools returned, and nothing changes until a supervisor approves. Operator identities are never given to the agent.
 - In progress until it has run on real Station Watch sessions with serials.
 
+## 5. Events pipeline and control tower: **In progress**
+
+- Cloud Run (`takumi-api`) publishes every operational event (station steps, mistakes, safety stops and finished stations; inspections and supervisor decisions; machine state changes, alarms and counts; unit holds and releases) to Pub/Sub topic `takumi-events`. Publishing is fire-and-forget and never slows or fails a request.
+- A Pub/Sub BigQuery subscription (`takumi-events-to-bigquery`) writes each message to `takumi.events` (partitioned by day, clustered by kind and source). Setup: `infra/events_pipeline.sh`.
+- `/control` (supervisors): KPIs per source label (LIVE, HOME RIG, PUBLIC DATA never mixed): inspected, first-pass rate, confirmed defects, units on hold, stations finished, mistakes, safety stops, machine stops and alarms, plus a live feed. Reads `GET /api/control/summary` every 10 s.
+- Windowed aggregation in Dataflow is planned; the control tower aggregates in BigQuery for now.
+
 ## 5. Factory Governance & Access Control
 
 - **End-of-Line Quality Inspection Decisions**: Inspection verification and override decisions ([`POST /api/inspections/{id}/decision`](file:///c:/takumi/services/api/main.py)) stay strictly **supervisor-only** (`role: supervisor`). The worker/trainee who captured or submitted the inspection photo cannot approve or override their own flagged unit.

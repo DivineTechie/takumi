@@ -30,6 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.auth import AuthUser, check_rate_limit, get_firestore_client, require_role, verify_auth_token
 from services.api.bigquery_client import stream_machine_event
+from services.api.events_bus import publish_event
 from services.api.config import (
     LIMIT_MACHINE_READS_PER_MIN,
     MACHINE_CROP_MAX_BYTES,
@@ -792,6 +793,10 @@ async def read_machine(
 
         db.collection("machine_events").document(ev_id).set(ev)
         stream_machine_event(ev)
+        publish_event(
+            "machine", ev["event_type"], ts=now_iso, entity_id=ev_id, machine_id=machine_id, status=ev.get("state"),
+            source=event_source, detail={k: ev.get(k) for k in ("from_state", "to_state", "alarm_text", "count", "light", "flag", "run_s")},
+        )
 
     # Update machine document state and last_alarm
     update_data: dict[str, Any] = {
