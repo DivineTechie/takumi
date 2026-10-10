@@ -710,7 +710,7 @@ export const DashboardScreen: React.FC = () => {
 
       {/* Footer */}
       <footer className="w-full border-t border-outline-variant bg-surface-container-low py-4 px-6 text-center text-[13px] text-on-surface-variant">
-        TAKUMI • Skill Captured Once, Taught Live Everywhere
+        TAKUMI • AI quality and operations for every factory
       </footer>
     </div>
   );

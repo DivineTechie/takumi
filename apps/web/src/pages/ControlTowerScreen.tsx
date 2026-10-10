@@ -36,7 +36,7 @@ const SourceBlock: React.FC<{ source: string; k: ControlSourceKpis }> = ({ sourc
   <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 space-y-3" data-testid={`source-${source}`}>
     <div className="flex items-center justify-between">
       <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-surface-container-high">{source}</span>
-      <span className="text-xs text-on-surface-variant">{k.events} events</span>
+      <span className="text-xs text-on-surface-variant">{k.events} {k.events === 1 ? 'event' : 'events'}</span>
     </div>
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
       <Kpi label="Inspected" value={k.inspected} />

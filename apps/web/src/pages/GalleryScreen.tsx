@@ -114,18 +114,19 @@ export const GalleryScreen: React.FC = () => {
     <div className="bg-background text-on-surface antialiased min-h-screen flex flex-col font-sans">
       {/* Top Header */}
       <header className="bg-surface-container-low border-b border-outline-variant sticky top-0 z-40">
-        <div className="max-w-[1200px] mx-auto px-4 min-h-[64px] flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="max-w-[1200px] mx-auto px-4 py-2 min-h-[64px] flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
               onClick={() => navigate('/inspect')}
               className="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
               aria-label="Back to inspect station"
+              title="Back to inspect station"
             >
               <span className="material-symbols-outlined text-[24px]">arrow_back</span>
             </button>
-            <img src={logoSvg} alt="TAKUMI" className="w-7 h-7 rounded-lg object-contain" />
-            <div>
+            <img src={logoSvg} alt="TAKUMI" className="w-7 h-7 rounded-lg object-contain shrink-0" />
+            <div className="min-w-0">
               <h1 className="text-[17px] font-bold text-on-surface leading-tight">
                 Judges' Benchmark Gallery
               </h1>
@@ -137,12 +138,13 @@ export const GalleryScreen: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <select
+              aria-label="Inspection mode"
               value={mode}
               onChange={(e) => setMode(e.target.value as 'few_false_alarms' | 'catch_everything')}
               className="bg-surface border border-outline-variant rounded-lg text-xs font-bold px-3 py-1.5 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-container cursor-pointer"
             >
-              <option value="few_false_alarms">Few False Alarms (Default)</option>
-              <option value="catch_everything">Catch Everything (Recall)</option>
+              <option value="few_false_alarms">Few false alarms (default)</option>
+              <option value="catch_everything">Catch everything</option>
             </select>
           </div>
         </div>

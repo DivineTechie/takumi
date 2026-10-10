@@ -1402,7 +1402,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   <span>You earned your Skill Passport!</span>
                 </div>
                 <p className="text-xs text-on-surface-variant max-w-[280px]">
-                  Congratulations! You demonstrated mastery with 3 clean runs.
+                  Well done: 3 clean runs completed.
                 </p>
                 <button
                   type="button"

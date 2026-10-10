@@ -151,6 +151,71 @@ export const HomeScreen: React.FC = () => {
         </div>
 
         <div className="space-y-5">
+          {/* Quality inspection */}
+          <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-colors">
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-[24px] leading-[32px] font-bold text-on-surface">
+                  Quality Inspection
+                </h2>
+              </div>
+              <p className="text-[16px] sm:text-[18px] leading-[24px] sm:leading-[26px] text-on-surface-variant">
+                Photograph each finished unit; Gemini flags defects and a person confirms. Try it on real public-dataset parts.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/inspect')}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">photo_camera</span>
+                <span>Inspect Station</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/inspect/gallery')}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-surface border border-outline-variant hover:bg-surface-container text-on-surface rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">photo_library</span>
+                <span>Try real parts (VisA)</span>
+              </button>
+            </div>
+          </section>
+
+          {/* Machine Watch */}
+          <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-colors">
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-[24px] leading-[32px] font-bold text-on-surface">
+                  Machine Watch
+                </h2>
+              </div>
+              <p className="text-[16px] sm:text-[18px] leading-[24px] sm:leading-[26px] text-on-surface-variant">
+                A camera you already have reads stack lights, counters and alarm screens. No wiring.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/machines/watch')}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">videocam</span>
+                <span>Watch machines</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/machines/virtual')}
+                className="w-full min-h-[56px] py-3.5 px-4 bg-surface-container-high text-on-surface rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">precision_manufacturing</span>
+                <span>Machine test bench</span>
+              </button>
+            </div>
+          </section>
           {/* CARD 1: Learn a skill */}
           <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-colors">
             <div className="mb-5">
@@ -275,6 +340,16 @@ export const HomeScreen: React.FC = () => {
                 <span>{t('card_team_btn')}</span>
                 <span className="material-symbols-outlined text-[22px]">arrow_forward</span>
               </button>
+            ) : null}
+            {canSeeTeam ? (
+              <button
+                type="button"
+                onClick={() => navigate('/control')}
+                className="mt-3 w-full min-h-[56px] py-3.5 px-5 bg-surface border border-outline-variant hover:bg-surface-container text-on-surface rounded-xl font-bold text-[17px] flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[22px]">monitoring</span>
+                <span>Control tower</span>
+              </button>
             ) : (
               <div className="w-full min-h-[56px] py-3.5 px-5 bg-surface-container text-on-surface-variant rounded-xl font-medium text-[16px] flex items-center justify-center border border-outline-variant">
                 {t('ask_supervisor_access')}
@@ -282,77 +357,6 @@ export const HomeScreen: React.FC = () => {
             )}
           </section>
 
-          {/* CARD 4: Quality Inspection (Pillar 2) */}
-          <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-colors">
-            <div className="mb-5">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-[24px] leading-[32px] font-bold text-on-surface">
-                  Quality Inspection
-                </h2>
-                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                  LIVE RIG
-                </span>
-              </div>
-              <p className="text-[16px] sm:text-[18px] leading-[24px] sm:leading-[26px] text-on-surface-variant">
-                Inspect finished units using dual-stage Gemini vision, or try the real Amazon VisA benchmark gallery.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/inspect')}
-                className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[20px]">photo_camera</span>
-                <span>Inspect Station</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/inspect/gallery')}
-                className="w-full min-h-[56px] py-3.5 px-4 bg-surface border border-outline-variant hover:bg-surface-container text-on-surface rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[20px]">photo_library</span>
-                <span>Try VisA Gallery</span>
-              </button>
-            </div>
-          </section>
-
-          {/* CARD 5: Machine Watch (Pillar 3) */}
-          <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-colors">
-            <div className="mb-5">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-[24px] leading-[32px] font-bold text-on-surface">
-                  Machine Watch
-                </h2>
-                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                  PILLAR 3
-                </span>
-              </div>
-              <p className="text-[16px] sm:text-[18px] leading-[24px] sm:leading-[26px] text-on-surface-variant">
-                A camera you already have reads stack lights, counters and alarm screens. No wiring.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={() => navigate('/machines/watch')}
-                className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[20px]">videocam</span>
-                <span>Watch machines</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => navigate('/machines/virtual')}
-                className="w-full min-h-[56px] py-3.5 px-4 bg-surface-container-high text-on-surface rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[20px]">precision_manufacturing</span>
-                <span>Machine test bench</span>
-              </button>
-            </div>
-          </section>
         </div>
       </main>
     </div>
