@@ -1,9 +1,32 @@
 """Tests for Forge Service FastAPI endpoints."""
 
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
+
+from services.forge.auth import AuthUser, verify_auth_token
 from services.forge.main import app
 
 client = TestClient(app)
+
+
+def _as_master():
+    return AuthUser(uid="master_test", role="master", email=None)
+
+
+app.dependency_overrides[verify_auth_token] = _as_master
+
+
+def test_dev_token_is_rejected_outside_local_dev():
+    """Regression: a made-up "dev_" token must never authenticate in a deployed service."""
+    app.dependency_overrides.pop(verify_auth_token, None)
+    try:
+        with patch("services.forge.auth.LOCAL_DEV", False):
+            for headers in ({}, {"Authorization": "Bearer dev_probe"}, {"Authorization": "Bearer not-a-token"}):
+                res = client.get("/forge/jobs/job_12345", headers=headers)
+                assert res.status_code in (401, 503), headers
+    finally:
+        app.dependency_overrides[verify_auth_token] = _as_master
 
 
 def test_healthz():
