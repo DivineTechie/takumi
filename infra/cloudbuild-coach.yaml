@@ -29,7 +29,7 @@ steps:
       - |
         set -eo pipefail
         export PYTHONDONTWRITEBYTECODE=1
-        pip install --no-cache-dir -r requirements-dev.txt -r services/forge/requirements.txt pip-audit
+        pip install --no-cache-dir -r services/forge/requirements.txt pip-audit
         pytest -p no:cacheprovider services/forge
         echo "=== Running Forge pip-audit (non-blocking) ==="
         pip-audit -r services/forge/requirements.txt || true
