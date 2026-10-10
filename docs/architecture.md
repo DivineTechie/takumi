@@ -19,7 +19,7 @@ flowchart TD
 
   subgraph CloudRun["Cloud Run & Security (asia-southeast1)"]
     API["takumi-api (Cloud Run)<br/>• Python 3.12 FastAPI (Member A)<br/>• /api/live-token (single-use)<br/>• /api/watch (1-FPS watcher proxy)<br/>• /api/verify, /api/point<br/>• /api/sessions & /api/status"]
-    Forge["takumi-forge (Cloud Run)<br/>• Multi-agent pipeline + ADK trace-back agent<br/>• Video segmentation & extraction<br/>• Multilingual localization"]
+    Forge["takumi-forge (Cloud Run)<br/>• Standard Work Studio (ADK 2 Workflow) + ADK trace-back agent<br/>• Video segmentation & extraction<br/>• Multilingual localization"]
     Armor["Model Armor<br/>Prompt injection & safety screening"]
     Secrets["Secret Manager<br/>GEMINI_API_KEY (server-only)"]
     Monitoring["Cloud Monitoring & Logs<br/>Structured logs, latency alerts"]

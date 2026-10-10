@@ -22,7 +22,7 @@ Across advanced manufacturing hubs in the Asia-Pacific region, an acute demograp
 
 ### The TAKUMI Solution
 TAKUMI bridges this gap through a dual-agent architecture built entirely on Google AI and Google Cloud:
-1. **Master Capture & Forge (Member B — In Progress)**: In progress to capture a master craftsman's physical demonstration once via a smartphone camera. An automated multi-agent Gemini pipeline is designed to segment demonstrations into discrete steps, extract engineering rationale ("why"), annotate spatial coordinates, cross-reference technical SOP manuals, and localize guidance into 6 regional languages.
+1. **Master Capture & Forge (Member B — In Progress)**: In progress to capture a master craftsman's physical demonstration once via a smartphone camera. An automated Google ADK workflow of Gemini steps is designed to segment demonstrations into discrete steps, extract engineering rationale ("why"), annotate spatial coordinates, cross-reference technical SOP manuals, and localize guidance into 6 regional languages.
 2. **Live Multimodal Coach (Member A)**: A trainee props their smartphone above their workbench. TAKUMI watches their hands in real time through the phone camera and converses with them over bidirectional streaming audio in their native language (e.g. Vietnamese, Hindi, Japanese, English). It offers continuous reassurance, flags visible hazards such as bare copper and stops the trainee with a full-screen STOP, points to correct terminal screws via spatial coordinate bounding boxes, and strictly verifies step completion against physical visual criteria.
 
 ---
@@ -36,7 +36,7 @@ TAKUMI decouples rapid conversational speech from high-precision visual verifica
 ### Two Complementary Pipelines
 
 ```
-[ Master Capture Video ] ──> [ Forge multi-agent pipeline ] ──> [ Structured Skill in Firestore ]
+[ Master Capture Video ] ──> [ Standard Work Studio (ADK workflow) ] ──> [ Structured Skill in Firestore ]
                                                                              │
 [ Trainee Camera & Mic ] <──> [ Live Coach API / WebSocket (Member A) ] <────┘
                                         │
@@ -68,7 +68,7 @@ All model identifiers are strictly isolated in configuration constants (`service
 | **`gemini-3.8-flash-tts`** | High-fidelity synthetic speech for static instructional step playbacks | `services/forge/config.py` | **Planned** | Member B |
 | **`gemini-embedding-2-preview`** | Vector grounding of industrial equipment manuals and plant standards | `services/api/config.py`, `services/forge/config.py` | **Planned** | Both |
 | **Cloud Run (`takumi-api`)** | Stateless FastAPI Python 3.12 backend (auth, live tokens, watcher proxy, BigQuery) | `services/api/` (`asia-southeast1`) | **Live** | Member A |
-| **Cloud Run (`takumi-forge`)** | Standard Work Studio pipeline and Google ADK quality trace-back agent | `services/forge/` (`asia-southeast1`) | **In Progress** | Member B |
+| **Cloud Run (`takumi-forge`)** | Standard Work Studio (Google ADK 2 Workflow graph) and ADK quality trace-back agent | `services/forge/` (`asia-southeast1`) | **In Progress** | Member B |
 | **Firebase Hosting** | Global edge distribution for React 19 + TypeScript + Vite PWA | `takumi-cup-2026.web.app` | **Live** | Member A |
 | **Firebase Authentication** | Identity management with custom role claims (`trainee`, `supervisor`, `master`) | Custom claims via Firebase Admin SDK | **Live** | Member A |
 | **Cloud Firestore (Native)** | Operational database for sessions, skills, review requests, and passports | `(default)` in `asia-southeast1` | **Live** | Both |

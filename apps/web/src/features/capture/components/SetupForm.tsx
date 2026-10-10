@@ -86,7 +86,7 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
             }}
           >
             <Sparkles size={16} />
-            <span>TAKUMI 匠 · Master Capture</span>
+            <span>TAKUMI 匠 · Standard Work Studio</span>
           </div>
           <h1
             style={{

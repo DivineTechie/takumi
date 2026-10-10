@@ -12,4 +12,16 @@ export interface ReviewRequest {
   suggested_success_criteria?: string;
   status: "open" | "applied" | "dismissed";
   created_at: string;
+  /**
+   * Who raised it: the quality trace-back agent (approved by a supervisor) or a supervisor directly
+   */
+  source?: "traceback" | "supervisor";
+  /**
+   * Failed unit that led to the request, if any
+   */
+  unit_id?: string | null;
+  /**
+   * Supervisor who sent the request
+   */
+  created_by_uid?: string;
 }

@@ -1288,7 +1288,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
         >
           <div style={{ width: '100%', maxWidth: '640px' }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 1.25rem 0', color: '#ffffff' }}>
-              Multi-Agent Pipeline
+              ADK Workflow Pipeline
             </h2>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', width: '100%' }}>

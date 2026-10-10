@@ -299,7 +299,7 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
             }}
           >
             <Square size={22} fill="#ffffff" />
-            <span>FINISH & FORGE LESSON</span>
+            <span>FINISH & BUILD WORK INSTRUCTION</span>
           </button>
         )}
       </div>

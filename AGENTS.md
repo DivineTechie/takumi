@@ -8,8 +8,9 @@ to any worker in their language (Live Coach). Google Cloud AI Builder Cup 2026, 
 - Web: React 19 + Vite + TypeScript in /apps/web, Firebase Hosting, Firebase Auth (Google sign-in),
   roles in custom claim `role`: master | trainee | supervisor.
 - API: Python 3.12 FastAPI in /services/api on Cloud Run.
-- Forge: Python 3.12 in /services/forge on Cloud Run: the Standard Work Studio multi-agent pipeline (asyncio,
-  google-genai) and Google ADK agents (services/forge/agents: quality trace-back).
+- Forge: Python 3.12 in /services/forge on Cloud Run: the Standard Work Studio pipeline as a Google ADK 2
+  Workflow graph (graph/workflow.py; each step a FunctionNode calling Gemini) and ADK LLM agents
+  (agents/: quality trace-back).
 - Data: Firestore (Native), Cloud Storage (one bucket), BigQuery dataset `takumi`.
 - AI: google-genai SDK. Model IDs live ONLY in services/*/config.py and apps/web/src/config.ts:
   gemini-3.8-flash, gemini-3.5-flash-lite, gemini-3.8-live, gemini-robotics-er-2-preview,

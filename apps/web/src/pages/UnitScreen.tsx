@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   ApiError,
+  createReviewRequest,
   fetchUnitHistory,
   holdUnits,
   releaseUnit,
@@ -43,6 +44,7 @@ export const UnitScreen: React.FC = () => {
   const [traceError, setTraceError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [sentToStudio, setSentToStudio] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +82,24 @@ export const UnitScreen: React.FC = () => {
       setActionMsg(`Put ${res.held.length} unit(s) on hold.${res.skipped.length ? ` Skipped ${res.skipped.length}.` : ''}`);
     } catch {
       setActionMsg('Could not put the units on hold.');
+    }
+  };
+
+  const sendToStudio = async () => {
+    const r = trace?.report;
+    if (!r || !r.work_instruction_fix || !r.root_cause_skill_id || r.root_cause_step === null) return;
+    try {
+      await createReviewRequest({
+        skill_id: r.root_cause_skill_id,
+        step: r.root_cause_step,
+        reason: `Quality trace-back of unit ${unitId}: ${r.summary}`.slice(0, 1000),
+        suggested_instruction: r.work_instruction_fix.slice(0, 1000),
+        source: 'traceback',
+        unit_id: unitId,
+      });
+      setSentToStudio(true);
+    } catch {
+      setActionMsg('Could not send the suggestion to the Standard Work Studio.');
     }
   };
 
@@ -265,7 +285,18 @@ export const UnitScreen: React.FC = () => {
                   <div className="bg-surface-container rounded-xl p-3 text-sm">
                     <h3 className="font-bold mb-1">Suggested work-instruction change</h3>
                     <p>{trace.report.work_instruction_fix}</p>
-                    <p className="text-xs text-on-surface-variant mt-1">Apply it in the Standard Work Studio after review.</p>
+                    {trace.report.root_cause_skill_id && trace.report.root_cause_step !== null ? (
+                      <button
+                        type="button"
+                        onClick={sendToStudio}
+                        disabled={sentToStudio}
+                        className="mt-2 min-h-[48px] px-4 rounded-xl bg-surface-container-high font-bold disabled:opacity-60"
+                      >
+                        {sentToStudio ? 'Sent to the Standard Work Studio' : `Send to the Standard Work Studio (step ${trace.report.root_cause_step})`}
+                      </button>
+                    ) : (
+                      <p className="text-xs text-on-surface-variant mt-1">No station step was identified, so this cannot be sent to the Studio.</p>
+                    )}
                   </div>
                 )}
               </div>

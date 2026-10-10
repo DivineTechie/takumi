@@ -89,3 +89,40 @@ def test_published_skill_conforms_to_shared_schema():
     assert validated_skill.id == result_state.skill_id
     assert validated_skill.status.value == "in_review"
     assert len(validated_skill.steps) >= 3
+
+
+def test_studio_runs_as_adk_workflow_with_parallel_media_and_stops_on_failure():
+    """The Studio is an ADK 2 Workflow graph: media steps run in parallel, and a failing step stops the run."""
+    import pytest
+    from google.adk.workflow import Workflow
+
+    from services.forge.graph import workflow as wf
+
+    box = wf.StateBox(ForgeState(job_id="job_adk", capture_id="cap_adk", skill_id="skill_adk", title="t", source_language="en"))
+    graph = wf.build_studio_workflow(box)
+    assert isinstance(graph, Workflow)
+    names = [n.name for n in graph.graph.nodes]
+    assert names[0] == "__START__" or "load_capture" in names
+    for step in ("load_capture", "segmenter", "why_extractor", "spatial_annotator", "verifier", "localizer",
+                 "illustrator", "mistake_simulator", "media_done", "publisher"):
+        assert step in names
+
+    ran = []
+
+    async def ok(state):
+        ran.append("ok")
+        return state
+
+    async def boom(state):
+        raise ValueError("segmenter exploded")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(wf, "run_load_capture", ok)
+        mp.setattr(wf, "run_segmenter", boom)
+        mp.setattr(wf, "run_publisher", ok)
+        mp.setattr(wf, "emit", lambda *a, **k: None)
+        state = ForgeState(job_id="job_fail", capture_id="cap_fail", skill_id="skill_fail", title="t", source_language="en")
+        with pytest.raises(ValueError, match="segmenter exploded"):
+            asyncio.run(wf.ForgePipeline().execute(state))
+    assert ran == ["ok"]  # nothing after the failing step ran
+    assert state.errors and "segmenter exploded" in state.errors[0]

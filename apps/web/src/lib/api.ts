@@ -777,6 +777,18 @@ export async function releaseUnit(id: string): Promise<{ id: string; status: str
   return await apiFetch(`/api/units/${encodeURIComponent(id)}/release`, { method: 'POST' });
 }
 
+export async function createReviewRequest(req: {
+  skill_id: string;
+  step: number;
+  reason: string;
+  suggested_instruction: string;
+  suggested_success_criteria?: string;
+  source: 'traceback' | 'supervisor';
+  unit_id?: string;
+}): Promise<{ id: string }> {
+  return await apiFetch('/api/review-requests', { method: 'POST', body: JSON.stringify(req) });
+}
+
 export async function runTraceback(unitId: string): Promise<TracebackResult> {
   return await apiFetch<TracebackResult>('/forge/agents/traceback', {
     method: 'POST',

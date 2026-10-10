@@ -13,7 +13,7 @@ vi.mock('../lib/api', () => {
       this.status = status;
     }
   }
-  return { ApiError, fetchUnitHistory: vi.fn(), holdUnits: vi.fn(), releaseUnit: vi.fn(), runTraceback: vi.fn() };
+  return { ApiError, fetchUnitHistory: vi.fn(), holdUnits: vi.fn(), releaseUnit: vi.fn(), runTraceback: vi.fn(), createReviewRequest: vi.fn() };
 });
 vi.mock('../lib/auth', () => ({ useAuth: vi.fn() }));
 
@@ -97,5 +97,14 @@ describe('UnitScreen', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'SN-0044' }));
     fireEvent.click(screen.getByText('Approve: hold 1 unit(s)'));
     await waitFor(() => expect(apiModule.holdUnits).toHaveBeenCalledWith(['SN-0043'], 'Same step 2 issue', 'traceback'));
+
+    vi.mocked(apiModule.createReviewRequest).mockResolvedValue({ id: 'rr_1' });
+    fireEvent.click(screen.getByText('Send to the Standard Work Studio (step 2)'));
+    await waitFor(() =>
+      expect(apiModule.createReviewRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ skill_id: 'skill_cable', step: 2, suggested_instruction: 'Add an orientation mark.', source: 'traceback', unit_id: 'SN-0042' })
+      )
+    );
+    expect(await screen.findByText('Sent to the Standard Work Studio')).toBeInTheDocument();
   });
 });

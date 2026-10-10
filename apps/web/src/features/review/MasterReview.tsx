@@ -35,6 +35,9 @@ interface ReviewRequestItem {
   step: number;
   reason: string;
   suggested_instruction: string;
+  suggested_success_criteria?: string;
+  source?: 'traceback' | 'supervisor';
+  unit_id?: string | null;
   status: 'open' | 'applied' | 'dismissed';
 }
 
@@ -154,6 +157,34 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
 
     updated.steps[stepIdx] = stepObj;
     setSkill(updated);
+  };
+
+  /** Applies a review request to the step with the same number (base language) and records the decision. */
+  const handleReviewRequest = async (rr: ReviewRequestItem, decision: 'applied' | 'dismissed') => {
+    if (decision === 'applied') {
+      const idx = skill.steps.findIndex((st) => st.n === rr.step);
+      if (idx < 0) return;
+      const updated = { ...skill, steps: [...skill.steps] };
+      updated.steps[idx] = {
+        ...updated.steps[idx],
+        instruction: rr.suggested_instruction,
+        ...(rr.suggested_success_criteria ? { success_criteria: rr.suggested_success_criteria } : {}),
+      };
+      setSkill(updated);
+      try {
+        // The master's Apply is the approval: save the step now so the change is not lost.
+        await updateDoc(doc(db, 'skills', skill.id), { steps: updated.steps });
+      } catch (err) {
+        console.warn('Failed to save the applied step:', err);
+        return;
+      }
+    }
+    try {
+      await updateDoc(doc(db, 'review_requests', rr.id), { status: decision });
+      setReviewRequests((prev) => prev.filter((x) => x.id !== rr.id));
+    } catch (err) {
+      console.warn('Failed to record review request decision:', err);
+    }
   };
 
   const handleUpdateClip = (stepIdx: number, subfield: 'start_s' | 'end_s', val: number) => {
@@ -540,33 +571,34 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
           </div>
         </div>
 
-        {/* Review Requests from Trainee Live Coach Dashboard */}
-        {reviewRequests.length > 0 && (
+        {/* Open review requests (from supervisors, often via the quality trace-back agent) */}
+        {reviewRequests.map((rr) => (
           <div
+            key={rr.id}
+            data-testid="review-request"
             style={{
               backgroundColor: 'rgba(245, 158, 11, 0.1)',
               border: '1px solid #f59e0b',
               borderRadius: '0.75rem',
               padding: '1rem 1.25rem',
-              marginBottom: '1.5rem',
+              marginBottom: '1rem',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fbbf24', fontWeight: 700, marginBottom: '0.5rem' }}>
               <AlertTriangle size={18} />
-              <span>Supervisor Insight: Review Request for Step {reviewRequests[0].step}</span>
+              <span>
+                Review request for step {rr.step}
+                {rr.source === 'traceback' ? ' (from quality trace-back' + (rr.unit_id ? ` of unit ${rr.unit_id}` : '') + ')' : ''}
+              </span>
             </div>
-            <div style={{ fontSize: '0.9rem', color: '#d4d4d8', marginBottom: '0.75rem' }}>
-              {reviewRequests[0].reason}
+            <div style={{ fontSize: '0.9rem', color: '#d4d4d8', marginBottom: '0.5rem' }}>{rr.reason}</div>
+            <div style={{ fontSize: '0.9rem', color: '#fafafa', marginBottom: '0.75rem' }}>
+              Suggested instruction: {rr.suggested_instruction}
+              {rr.suggested_success_criteria && <div>Suggested success criteria: {rr.suggested_success_criteria}</div>}
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button
-                onClick={() => {
-                  const stepIdx = reviewRequests[0].step - 1;
-                  if (skill.steps[stepIdx]) {
-                    handleUpdateStepField(stepIdx, 'instruction', reviewRequests[0].suggested_instruction);
-                  }
-                  setReviewRequests([]);
-                }}
+                onClick={() => handleReviewRequest(rr, 'applied')}
                 style={{
                   backgroundColor: '#f59e0b',
                   color: '#000000',
@@ -578,10 +610,10 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                   cursor: 'pointer',
                 }}
               >
-                Apply Suggestion
+                Apply to step {rr.step}
               </button>
               <button
-                onClick={() => setReviewRequests([])}
+                onClick={() => handleReviewRequest(rr, 'dismissed')}
                 style={{
                   backgroundColor: '#27272a',
                   color: '#a1a1aa',
@@ -596,7 +628,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
               </button>
             </div>
           </div>
-        )}
+        ))}
 
         {/* Step Cards List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
