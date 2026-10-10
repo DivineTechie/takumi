@@ -2031,10 +2031,10 @@ async def post_inspect_gallery(
 
     # 3. Run dual-stage pipeline
     pipeline_result = await run_inspection_pipeline(
-        cand_bytes=cand_bytes,
-        ref_bytes_list=ref_bytes_list,
-        product_desc=prod_data.get("description", product_id),
+        product_description=prod_data.get("description", product_id),
         defect_types=prod_data.get("defect_types", []),
+        candidate_bytes=cand_bytes,
+        reference_bytes_list=ref_bytes_list,
         mode=req.mode,
     )
 

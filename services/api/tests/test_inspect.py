@@ -619,7 +619,7 @@ def test_gallery_endpoints(mock_firestore, mock_storage):
          patch("services.api.main.get_firestore_client", return_value=mock_firestore), \
          patch("services.api.main.stream_inspection_event") as mock_stream, \
          patch("services.api.main.check_rate_limit") as mock_rate_limit, \
-         patch("services.api.main.run_inspection_pipeline") as mock_pipe:
+         patch("services.api.main.run_inspection_pipeline", autospec=True) as mock_pipe:
 
         mock_pipe.return_value = {
             "ai_verdict": "ok",
