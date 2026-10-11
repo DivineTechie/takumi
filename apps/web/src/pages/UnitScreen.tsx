@@ -11,6 +11,15 @@ import {
   type UnitHistory,
 } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { AgentWorking } from '../components/AgentWorking';
+import { TraceGraph } from '../components/units/TraceGraph';
+
+const TRACE_TOOLS = ['Unit history', 'Units through the same step', 'Work instruction'];
+const TRACE_TOOL_LABEL: Record<string, string> = {
+  get_unit_history: 'Read the unit’s stations and inspections',
+  find_similar_units: 'Found units that went through the same step',
+  get_work_instruction: 'Read the work instruction for that step',
+};
 
 /**
  * Unit record (P16) and quality trace-back: every station the unit went through (with the evidence
@@ -40,7 +49,7 @@ export const UnitScreen: React.FC = () => {
   const [unit, setUnit] = useState<UnitHistory | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState<TracebackResult | null>(null);
-  const [tracing, setTracing] = useState(false);
+  const [tracing, setTracing] = useState<number | null>(null);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -60,7 +69,7 @@ export const UnitScreen: React.FC = () => {
   }, [load]);
 
   const startTrace = async () => {
-    setTracing(true);
+    setTracing(Date.now());
     setTraceError(null);
     setTrace(null);
     try {
@@ -70,7 +79,7 @@ export const UnitScreen: React.FC = () => {
     } catch (e) {
       setTraceError(e instanceof ApiError ? e.message : 'The trace-back agent failed.');
     } finally {
-      setTracing(false);
+      setTracing(null);
     }
   };
 
@@ -226,21 +235,27 @@ export const UnitScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={startTrace}
-                disabled={tracing || !hasDefect}
+                disabled={tracing !== null || !hasDefect}
                 className="min-h-[56px] px-5 rounded-xl bg-primary text-on-primary font-bold disabled:opacity-40"
               >
-                {tracing ? 'Tracing…' : 'Trace back'}
+                {tracing !== null ? 'Tracing…' : 'Trace back'}
               </button>
             </div>
             {!hasDefect && <p className="text-sm text-on-surface-variant">Trace-back is for units with a defect.</p>}
             {traceError && <p className="text-sm text-red-400">{traceError}</p>}
+            {tracing !== null && <AgentWorking title={`Trace-back agent is investigating ${unit.id}`} tools={TRACE_TOOLS} startedAt={tracing} />}
 
             {trace && (
               <div className="space-y-4" data-testid="traceback-report">
-                <ol className="text-xs text-on-surface-variant space-y-1">
+                <TraceGraph unitId={unit.id} defect={unit.inspections.find((i) => i.ai_verdict === 'defective')?.defect ?? null} trace={trace} />
+                <ol className="text-xs text-on-surface-variant space-y-1" aria-label="What the agent did">
                   {trace.agent_steps.map((s, k) => (
-                    <li key={k} className="font-mono">
-                      {k + 1}. {s.agent} → {s.tool}({Object.values(s.args).join(', ')})
+                    <li key={k} className="flex items-center gap-2 tk-rise" style={{ animationDelay: `${k * 0.25}s` }}>
+                      <span className="material-symbols-outlined text-[16px] text-green-500">check_circle</span>
+                      <span>
+                        {TRACE_TOOL_LABEL[s.tool] ?? s.tool}
+                        {Object.keys(s.args).length > 0 && <span className="font-mono opacity-70"> ({Object.values(s.args).join(', ')})</span>}
+                      </span>
                     </li>
                   ))}
                 </ol>

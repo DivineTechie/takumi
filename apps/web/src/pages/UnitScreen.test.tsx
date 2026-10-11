@@ -91,7 +91,8 @@ describe('UnitScreen', () => {
     renderAt('supervisor');
     fireEvent.click(await screen.findByText('Trace back'));
     expect(await screen.findByTestId('traceback-report')).toBeInTheDocument();
-    expect(screen.getByText(/investigator → get_unit_history\(SN-0042\)/)).toBeInTheDocument();
+    expect(screen.getByText('Read the unit’s stations and inspections')).toBeInTheDocument();
+    expect(screen.getByLabelText('Trace-back graph')).toBeInTheDocument();
     expect(screen.getByText('Add an orientation mark.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'SN-0044' }));

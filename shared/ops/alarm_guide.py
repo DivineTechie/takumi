@@ -11,6 +11,9 @@ import re
 
 GUIDE_SOURCE = "TAKUMI test-bench alarm guide (written by the team, not a vendor manual)"
 
+# Words a machine screen shows when nothing is wrong; never treated as alarms.
+STATUS_WORDS = {"", "NONE", "NULL", "NO ALARM", "NORMAL", "CLEAR", "OK", "RUNNING", "RUN", "IDLE", "STOPPED", "STOP", "READY", "AUTO", "MANUAL", "STANDBY"}
+
 ALARM_GUIDE: dict[str, dict[str, list[str] | str]] = {
     "E-104": {
         "title": "Spindle overload",

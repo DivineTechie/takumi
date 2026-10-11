@@ -18,7 +18,6 @@ import {
   type InspectionInsightsResponse,
 } from '../lib/api';
 import { LiveNowStrip } from '../components/dashboard/LiveNowStrip';
-import { SkillMatrixTable } from '../components/dashboard/SkillMatrixTable';
 import { LessonHeatmap } from '../components/dashboard/LessonHeatmap';
 import { MachinesPanel } from '../components/dashboard/MachinesPanel';
 import { RecentUnits } from '../components/dashboard/RecentUnits';
@@ -27,14 +26,14 @@ import {
   type RecentSessionItem,
 } from '../components/dashboard/SessionReplayViewer';
 
-type DashboardTab = 'matrix' | 'heatmap' | 'replay' | 'inspections' | 'machines';
+type DashboardTab = 'heatmap' | 'replay' | 'inspections' | 'machines';
 
 export const DashboardScreen: React.FC = () => {
   const { t, language, setLanguage } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState<DashboardTab>('matrix');
+  const [activeTab, setActiveTab] = useState<DashboardTab>('inspections');
   const [matrixData, setMatrixData] = useState<InsightsMatrixResponse | null>(null);
   const [matrixLoading, setMatrixLoading] = useState(true);
   const [matrixError, setMatrixError] = useState<string | null>(null);
@@ -168,12 +167,6 @@ export const DashboardScreen: React.FC = () => {
         setReplayData(null);
       })
       .finally(() => setReplayLoading(false));
-  }, []);
-
-  // When a matrix cell is clicked, switch to heatmap for that skill
-  const handleSelectMatrixCell = useCallback((_traineeUid: string, skillId: string) => {
-    setSelectedSkillId(skillId);
-    setActiveTab('heatmap');
   }, []);
 
   const skillsMap = useMemo(() => {
@@ -332,113 +325,43 @@ export const DashboardScreen: React.FC = () => {
           onSelectSession={handleSelectSession}
         />
 
-        {/* Tabs Bar: Grid on mobile (no horizontal scroll), flex on desktop */}
+        {/* Tabs: 2x2 grid on phones (no horizontal scroll), one row from sm up */}
         <div
           role="tablist"
           aria-label="Dashboard sections"
-          className="grid grid-cols-3 sm:flex items-center gap-1.5 sm:gap-2 bg-surface-container-low p-1.5 rounded-2xl border border-outline-variant w-full sm:w-fit"
+          className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 sm:gap-2 bg-surface-container-low p-1.5 rounded-2xl border border-outline-variant w-full sm:w-fit"
         >
-          <button
-            role="tab"
-            aria-selected={activeTab === 'matrix'}
-            onClick={() => setActiveTab('matrix')}
-            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'matrix'
-                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">group</span>
-            <span className="hidden sm:inline">{t('dashboard_team_matrix')}</span>
-            <span className="sm:hidden">{t('dashboard_tab_matrix_short')}</span>
-          </button>
-
-          <button
-            role="tab"
-            aria-selected={activeTab === 'heatmap'}
-            onClick={() => setActiveTab('heatmap')}
-            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'heatmap'
-                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">analytics</span>
-            <span className="hidden sm:inline">{t('dashboard_lesson_insights')}</span>
-            <span className="sm:hidden">{t('dashboard_tab_insights_short')}</span>
-          </button>
-
-          <button
-            role="tab"
-            aria-selected={activeTab === 'replay'}
-            onClick={() => setActiveTab('replay')}
-            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'replay'
-                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">history</span>
-            <span className="hidden sm:inline">{t('dashboard_session_replay')}</span>
-            <span className="sm:hidden">{t('dashboard_tab_replay_short')}</span>
-            {selectedSessionId && (
-              <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
-            )}
-          </button>
-
-          <button
-            role="tab"
-            aria-selected={activeTab === 'inspections'}
-            onClick={() => setActiveTab('inspections')}
-            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'inspections'
-                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">verified</span>
-            <span className="hidden sm:inline">End-of-Line Quality</span>
-            <span className="sm:hidden">Inspect</span>
-            {inspectionInsights && inspectionInsights.live.flagged_awaiting_count > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-red-600 text-white shrink-0">
-                {inspectionInsights.live.flagged_awaiting_count}
-              </span>
-            )}
-          </button>
-
-          <button
-            role="tab"
-            aria-selected={activeTab === 'machines'}
-            onClick={() => setActiveTab('machines')}
-            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'machines'
-                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">precision_manufacturing</span>
-            <span>Machines</span>
-          </button>
+          {(
+            [
+              { id: 'inspections', icon: 'verified', label: t('dashboard_tab_quality'), short: t('dashboard_tab_quality_short') },
+              { id: 'machines', icon: 'precision_manufacturing', label: t('dashboard_tab_machines'), short: t('dashboard_tab_machines') },
+              { id: 'heatmap', icon: 'analytics', label: t('dashboard_lesson_insights'), short: t('dashboard_tab_insights_short') },
+              { id: 'replay', icon: 'history', label: t('dashboard_session_replay'), short: t('dashboard_tab_replay_short') },
+            ] as { id: DashboardTab; icon: string; label: string; short: string }[]
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`min-h-[48px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">{tab.icon}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.short}</span>
+              {tab.id === 'replay' && selectedSessionId && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+              {tab.id === 'inspections' && inspectionInsights && inspectionInsights.live.flagged_awaiting_count > 0 && (
+                <span className="px-1.5 rounded-full text-[10px] font-bold bg-red-600 text-white shrink-0">
+                  {inspectionInsights.live.flagged_awaiting_count}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
-
-        {/* Tab 1: Team Skill Matrix */}
-        {activeTab === 'matrix' && (
-          matrixLoading ? (
-            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-12 flex flex-col items-center justify-center gap-3">
-              <div className="w-8 h-8 border-3 border-primary-container border-t-transparent rounded-full animate-spin" />
-              <span className="text-[14px] text-on-surface-variant font-medium">
-                {t('loading')}
-              </span>
-            </div>
-          ) : matrixData ? (
-            <SkillMatrixTable
-              trainees={matrixData.trainees}
-              skills={matrixData.skills}
-              cells={matrixData.cells}
-              onSelectCell={handleSelectMatrixCell}
-            />
-          ) : null
-        )}
 
         {/* Tab 2: Lesson Insights (Step Heatmap) */}
         {activeTab === 'heatmap' && (

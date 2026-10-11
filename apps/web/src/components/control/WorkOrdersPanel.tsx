@@ -8,6 +8,7 @@ import {
   type SpeechLanguage,
   type WorkOrder,
 } from '../../lib/api';
+import { AgentWorking } from '../AgentWorking';
 
 /**
  * Maintenance work orders (control tower). When a machine stops, the Google ADK maintenance agent
@@ -55,33 +56,6 @@ function readLang(): SpeechLanguage {
   }
   return 'en';
 }
-
-const AgentWorking: React.FC<{ name: string; startedAt: number }> = ({ name, startedAt }) => {
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => tick((n) => n + 1), 250);
-    return () => clearInterval(t);
-  }, []);
-  const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
-  return (
-    <div className="relative overflow-hidden rounded-xl border border-primary/40 bg-surface-container p-4 tk-rise" role="status" aria-live="polite">
-      <div className="absolute inset-0 tk-shimmer pointer-events-none" aria-hidden="true" />
-      <div className="flex items-center gap-2 font-bold">
-        <span className="material-symbols-outlined text-primary animate-spin [animation-duration:2.4s]">settings</span>
-        Maintenance agent is investigating {name}
-        <span className="ml-auto font-mono text-sm text-on-surface-variant">{secs}s</span>
-      </div>
-      <p className="text-xs text-on-surface-variant mt-1">Google ADK · gemini-3.8-flash · read-only tools:</p>
-      <div className="flex flex-wrap gap-1.5 mt-2">
-        {AGENT_TOOLS.map((t, i) => (
-          <span key={t} className="text-xs px-2 py-1 rounded-full bg-surface-container-high animate-pulse" style={{ animationDelay: `${i * 0.3}s` }}>
-            {t}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-};
 
 const WorkOrderCard: React.FC<{
   wo: WorkOrder;
@@ -335,7 +309,7 @@ export const WorkOrdersPanel: React.FC<{
           Auto-draft on stop
         </label>
       </div>
-      {running && <AgentWorking name={running.name} startedAt={running.startedAt} />}
+      {running && <AgentWorking title={`Maintenance agent is investigating ${running.name}`} tools={AGENT_TOOLS} startedAt={running.startedAt} />}
       {error && <p className="text-sm text-red-500">{error}</p>}
       {!running && drafts.length === 0 && (
         <p className="text-sm text-on-surface-variant">No work orders waiting. When a machine stops, press “Draft work order” on it, or turn on auto-draft.</p>

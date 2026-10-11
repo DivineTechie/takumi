@@ -19,13 +19,15 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from pydantic import BaseModel, Field
 
-from services.forge.config import MODEL_FLASH
-from shared.ops.alarm_guide import lookup
+from services.forge.config import MODEL_FLASH, MODEL_FLASH_LITE
+from shared.ops.alarm_guide import STATUS_WORDS, lookup
 
 logger = logging.getLogger("forge.agents.maintenance")
 
 APP_NAME = "takumi_maintenance"
 HISTORY_DAYS = 7
+# A supervisor is waiting on the floor: low thinking keeps the whole run to a few model turns.
+FAST = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_level="low"))
 EVENT_TYPES = ("state_change", "alarm", "alarm_cleared")
 
 
@@ -108,7 +110,11 @@ class MaintenanceTools:
         """Returns the machine's stops and alarms over the last 7 days: counts per alarm text and the latest events."""
         events = self._history()
         stops = [e for e in events if e.get("event_type") == "state_change" and e.get("to_state") == "stopped"]
-        alarms = Counter(str(e.get("alarm_text")) for e in events if e.get("event_type") == "alarm" and e.get("alarm_text"))
+        # Older reads stored status words such as IDLE as alarms; they are not faults.
+        alarms = Counter(
+            str(e.get("alarm_text")) for e in events
+            if e.get("event_type") == "alarm" and e.get("alarm_text") and str(e.get("alarm_text")).upper().strip() not in STATUS_WORDS
+        )
         return {
             "days": HISTORY_DAYS,
             "stops": len(stops),
@@ -142,13 +148,14 @@ class MaintenanceTools:
 
 
 INVESTIGATOR_INSTRUCTION = """You are the maintenance lead of a small factory. A machine is stopped; prepare a work order.
-1. Call get_machine_status. If the machine is not stopped, say so in your notes and keep it short.
-2. Call lookup_alarm_guide with the exact alarm text, get_machine_history and get_past_work_orders.
+1. In your first turn call get_machine_status, get_machine_history and get_past_work_orders together (in parallel).
+2. Then call lookup_alarm_guide with the exact alarm text from the status. If the machine is not stopped, say so.
 3. Rank the likely causes. Use the history: the same alarm repeating in the last days, many stops, or a past
    work order that did not fix it make a deeper cause more likely. Cite the fact behind each cause.
 4. Write notes: what stopped and since when, ranked causes with evidence, ordered steps for the technician,
    safety points, parts, typical time from the guide, whether it is a repeat issue, and a priority
    (urgent for a safety hazard, high if it stopped production and repeats, medium otherwise).
+   Typical time: use the upper number of the guide's typical_minutes.
 The alarm guide is a team-written guide, not a vendor manual. Never invent alarm history or readings."""
 
 REPORTER_INSTRUCTION = """Turn the maintenance lead's notes into the work order. Use only facts from the notes:
@@ -166,10 +173,12 @@ def build_maintenance_agent(tools: MaintenanceTools) -> SequentialAgent:
         instruction=INVESTIGATOR_INSTRUCTION,
         tools=[tools.get_machine_status, tools.get_machine_history, tools.lookup_alarm_guide, tools.get_past_work_orders],
         output_key="findings",
+        generate_content_config=FAST,
     )
     reporter = LlmAgent(
         name="reporter",
-        model=MODEL_FLASH,
+        model=MODEL_FLASH_LITE,
+        generate_content_config=FAST,
         description="Writes the structured work-order draft.",
         instruction=REPORTER_INSTRUCTION,
         output_schema=WorkOrderDraft,

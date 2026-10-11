@@ -20,6 +20,12 @@ vi.mock('../lib/api', () => ({
   fetchInsightsMatrix: vi.fn(),
   fetchSkillInsights: vi.fn(),
   fetchSessionReplay: vi.fn(),
+  fetchInspectionInsights: vi.fn().mockResolvedValue({
+    live: { today_count: 0, first_pass_rate: null, top_defect_types: [], flagged_awaiting_count: 0, recent: [] },
+    gallery: { trials_count: 0, hits_count: 0, hit_rate: null, dataset: 'VisA' },
+  }),
+  fetchUnits: vi.fn().mockResolvedValue([]),
+  fetchMachinesSummary: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock Translation and Theme providers
@@ -249,24 +255,18 @@ describe('DashboardScreen', () => {
     expect(screen.queryByText('smoke-trainee')).not.toBeInTheDocument();
   });
 
-  it('renders skill matrix with trainee first names, certified status, and learning sparklines', async () => {
+  it('opens on end-of-line quality and no longer ranks individual workers', async () => {
     render(
       <MemoryRouter>
         <DashboardScreen />
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      // Trainees Alice and Bob
-      expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Bob')).toBeInTheDocument();
-    });
-
-    // Bob is certified on Wire a DIN-rail terminal
-    expect(screen.getByText('dashboard_certified')).toBeInTheDocument();
-
-    // Alice is learning with 3 sessions
-    expect(screen.getByText('dashboard_learning (3)')).toBeInTheDocument();
+    const tabs = await screen.findAllByRole('tab');
+    expect(tabs[0]).toHaveTextContent('dashboard_tab_quality');
+    expect(screen.getAllByRole('tab').map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
+    expect(screen.queryByText('dashboard_team_matrix')).not.toBeInTheDocument();
+    expect(screen.queryByText('dashboard_certified')).not.toBeInTheDocument();
 
     // Privacy verification: no email domains in document
     expect(document.body.textContent).not.toContain('@example.com');

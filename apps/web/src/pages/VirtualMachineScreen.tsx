@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { endSoakRun, postSoakTruth, startSoakRun } from '../lib/api';
+import { endSoakRun, fetchMachines, postSoakTruth, startSoakRun } from '../lib/api';
+import {
+  DETECTION_POLL_MS,
+  median,
+  resolvePending,
+  watchedFor,
+  type DetectionResult,
+  type PendingChange,
+} from '../lib/detectionTimer';
 import {
   BENCH_ALARMS,
   buildBenchSchedule,
@@ -49,11 +57,46 @@ const LIGHT_STYLE: Record<string, { on: string; off: string }> = {
 };
 const STATE_LIGHT: Record<BenchState, string> = { stopped: 'red', idle: 'yellow', running: 'green' };
 
+interface Detection {
+  pending: PendingChange | null;
+  result: DetectionResult | null;
+}
+
+/** Stopwatch chip: how long TAKUMI took to see this machine's last change (HOME RIG). */
+const DetectionChip: React.FC<{ d: Detection | undefined; now: number }> = ({ d, now }) => {
+  if (d?.pending) {
+    return (
+      <div className="h-9 px-3 rounded-full bg-neutral-800 text-neutral-200 text-sm font-mono flex items-center gap-2" role="status">
+        <span className="w-2 h-2 rounded-full bg-neutral-300 animate-pulse" />
+        TAKUMI watching… {((now - d.pending.since) / 1000).toFixed(1)} s
+      </div>
+    );
+  }
+  const r = d?.result;
+  if (!r || now - r.at > 12_000) return <div className="h-9" aria-hidden="true" />;
+  if (r.kind === 'seen') {
+    return (
+      <div key={r.at} className="h-9 px-3 rounded-full bg-neutral-700 text-white text-sm font-bold flex items-center gap-1.5 tk-pop" role="status">
+        <span className="material-symbols-outlined text-[18px]">visibility</span>
+        Seen by TAKUMI in {r.afterS.toFixed(1)} s
+      </div>
+    );
+  }
+  return (
+    <div className="h-9 px-3 rounded-full bg-neutral-800 text-neutral-400 text-sm flex items-center" role="status">
+      {r.kind === 'missed' ? 'Not seen within 90 s' : 'No camera is watching this machine'}
+    </div>
+  );
+};
+
 const MachinePanel: React.FC<{
   m: BenchMachine;
   showControls: boolean;
   onSet: (slot: number, state: BenchState, alarm: string | null) => void;
-}> = ({ m, showControls, onSet }) => {
+  detection?: Detection;
+  showTimer: boolean;
+  now: number;
+}> = ({ m, showControls, onSet, detection, showTimer, now }) => {
   const [alarmPick, setAlarmPick] = useState(BENCH_ALARMS[0]);
   const lit = STATE_LIGHT[m.state];
   return (
@@ -99,6 +142,8 @@ const MachinePanel: React.FC<{
           </div>
         </div>
       </div>
+      {/* Below the machine, away from the boxed lamps, counter and screen; neutral colours only. */}
+      {showTimer && <DetectionChip d={detection} now={now} />}
       {showControls && (
         <div className="flex flex-wrap justify-center gap-2 w-full">
           <button type="button" onClick={() => onSet(m.slot, 'running', null)} className="min-h-[48px] px-4 rounded-xl bg-green-700 font-bold">
@@ -145,6 +190,11 @@ export const VirtualMachineScreen: React.FC = () => {
   const [clockS, setClockS] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [truthFailures, setTruthFailures] = useState(0);
+  const [showTimer, setShowTimer] = useState(true);
+  const [detections, setDetections] = useState<Record<number, Detection>>({});
+  const [seenTimes, setSeenTimes] = useState<number[]>([]);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const pendingRef = useRef<Record<number, PendingChange>>({});
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   const updateMachines = useCallback((next: BenchMachine[]) => {
@@ -199,6 +249,11 @@ export const VirtualMachineScreen: React.FC = () => {
       if (prev.alarm && prev.alarm !== next.alarm) logTruth(slot, 'alarm_cleared', next);
       if (prev.state !== next.state) logTruth(slot, 'state_change', next);
       if (next.alarm && next.alarm !== prev.alarm) logTruth(slot, 'alarm', next);
+      if (prev.state !== next.state) {
+        const pending = { target: next.state, since: Date.now() };
+        pendingRef.current = { ...pendingRef.current, [slot]: pending };
+        setDetections((d) => ({ ...d, [slot]: { pending, result: null } }));
+      }
       updateMachines(machinesRef.current.map((m) => (m.slot === slot ? next : m)));
     },
     [logTruth, updateMachines]
@@ -238,6 +293,37 @@ export const VirtualMachineScreen: React.FC = () => {
     }, 250);
     return () => clearInterval(timer);
   }, [applyState, logTruth, machineCount, updateMachines, updateRun]);
+
+  // Detection stopwatch: while a change is waiting, ask the server what the watched copy reports.
+  useEffect(() => {
+    let inFlight = false;
+    const timer = setInterval(async () => {
+      setNowMs(Date.now());
+      const slots = Object.keys(pendingRef.current).map(Number);
+      if (slots.length === 0 || inFlight) return;
+      inFlight = true;
+      try {
+        const list = await fetchMachines();
+        const now = Date.now();
+        for (const slot of slots) {
+          const pending = pendingRef.current[slot];
+          if (!pending) continue;
+          const result = resolvePending(pending, watchedFor(list, slot, now), now);
+          if (!result) continue;
+          const rest = { ...pendingRef.current };
+          delete rest[slot];
+          pendingRef.current = rest;
+          setDetections((d) => ({ ...d, [slot]: { pending: null, result } }));
+          if (result.kind === 'seen') setSeenTimes((t) => [...t, result.afterS]);
+        }
+      } catch {
+        // Offline or signed out: the bench keeps running without the stopwatch.
+      } finally {
+        inFlight = false;
+      }
+    }, DETECTION_POLL_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   const startRun = async () => {
     setError(null);
@@ -316,6 +402,10 @@ export const VirtualMachineScreen: React.FC = () => {
                 </select>
               </label>
               <label className="flex items-center gap-1">
+                <input type="checkbox" checked={showTimer} onChange={(e) => setShowTimer(e.target.checked)} />
+                Detection timer
+              </label>
+              <label className="flex items-center gap-1">
                 <input type="checkbox" checked={autoSchedule} onChange={(e) => setAutoSchedule(e.target.checked)} disabled={!!run} />
                 Automatic faults
               </label>
@@ -342,7 +432,7 @@ export const VirtualMachineScreen: React.FC = () => {
         </header>
       )}
 
-      <main className="flex-1 relative flex items-center justify-center p-4" onDoubleClick={() => setShowControls(true)}>
+      <main className="flex-1 relative flex items-center justify-center p-4 pt-24" onDoubleClick={() => setShowControls(true)}>
         {/* Run clock: used to line up a recorded video with the ground truth */}
         <div className="absolute top-3 right-3 bg-black border border-neutral-700 rounded-xl px-4 py-2 text-right">
           <div className="text-[11px] font-mono text-neutral-400">{run ? `RUN ${run.id.slice(-6).toUpperCase()}` : 'NO RUN'}</div>
@@ -352,9 +442,25 @@ export const VirtualMachineScreen: React.FC = () => {
         </div>
         <div className={`grid gap-4 w-full max-w-7xl ${machineCount === 1 ? 'grid-cols-1' : machineCount === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 lg:grid-cols-3'}`}>
           {visible.map((m) => (
-            <MachinePanel key={m.slot} m={m} showControls={showControls && !run?.auto} onSet={applyState} />
+            <MachinePanel
+              key={m.slot}
+              m={m}
+              showControls={showControls && !run?.auto}
+              onSet={applyState}
+              detection={detections[m.slot]}
+              showTimer={showTimer}
+              now={nowMs}
+            />
           ))}
         </div>
+        {showTimer && seenTimes.length > 0 && (
+          <div className="absolute top-3 left-3 bg-black border border-neutral-700 rounded-xl px-4 py-2" data-testid="detection-summary">
+            <div className="text-[11px] font-mono text-neutral-400">SEEN BY TAKUMI · HOME RIG</div>
+            <div className="font-mono text-xl font-bold tabular-nums text-emerald-400">
+              median {median(seenTimes)?.toFixed(1)} s · {seenTimes.length} {seenTimes.length === 1 ? 'change' : 'changes'}
+            </div>
+          </div>
+        )}
         {!showControls && <div className="absolute bottom-3 left-3 text-[11px] text-neutral-600">Double-click to show controls</div>}
       </main>
 
