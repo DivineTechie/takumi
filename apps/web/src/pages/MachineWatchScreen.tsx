@@ -217,8 +217,13 @@ export const MachineWatchScreen: React.FC = () => {
     setSourceError(null);
     stopSource();
     try {
+      // Ask for a frame with the same shape as the phone is held. Asking a portrait iPhone for 1280x720
+      // returns a landscape frame with a small letterboxed image inside (tiny on screen and for Gemini).
+      const portraitNow = window.matchMedia?.('(orientation: portrait)').matches ?? false;
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: portraitNow
+          ? { facingMode: 'environment', width: { ideal: 1080 }, height: { ideal: 1920 } }
+          : { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       });
       streamRef.current = stream;
@@ -274,6 +279,19 @@ export const MachineWatchScreen: React.FC = () => {
     out.getContext('2d')?.drawImage(ctx.canvas, p.x, p.y, p.w, p.h, 0, 0, out.width, out.height);
     return out.toDataURL('image/jpeg', 0.85).split(',')[1];
   };
+
+  // Restart the camera when the phone is rotated before watching, so the frame matches the new orientation.
+  const startCameraRef = useRef(startCamera);
+  startCameraRef.current = startCamera;
+  const lastPortrait = useRef(portrait);
+  useEffect(() => {
+    if (lastPortrait.current === portrait) return;
+    lastPortrait.current = portrait;
+    if (source === 'camera' && mode === 'idle') {
+      const t = setTimeout(() => startCameraRef.current(), 400);
+      return () => clearTimeout(t);
+    }
+  }, [portrait, source, mode]);
 
   // ---------- Setup ----------
 
@@ -575,8 +593,23 @@ export const MachineWatchScreen: React.FC = () => {
                   const v = e.currentTarget;
                   if (v.videoWidth && v.videoHeight) setFrameAspect(v.videoWidth / v.videoHeight);
                 }}
+                onResize={(e) => {
+                  // Fires when the camera's frame size changes, e.g. after rotating the phone.
+                  const v = e.currentTarget;
+                  if (v.videoWidth && v.videoHeight) setFrameAspect(v.videoWidth / v.videoHeight);
+                }}
               />
-              {mode === 'setup' && setupFrame && <img src={setupFrame} alt="Setup frame" className="w-full h-full object-contain" />}
+              {mode === 'setup' && setupFrame && (
+                <img
+                  src={setupFrame}
+                  alt="Setup frame"
+                  className="w-full h-full object-contain"
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    if (img.naturalWidth && img.naturalHeight) setFrameAspect(img.naturalWidth / img.naturalHeight);
+                  }}
+                />
+              )}
               {(mode === 'setup' ? drafts : []).map((d, idx) =>
                 ROI_KINDS.map((kind) => {
                   const r = d.rois[kind];
