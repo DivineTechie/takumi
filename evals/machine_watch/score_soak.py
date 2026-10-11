@@ -62,6 +62,22 @@ def truth_events(rows: list[dict[str, Any]]) -> list[Event]:
     return out
 
 
+def retime(rows: list[dict[str, Any]], slot_by_machine: dict[str, int], started: datetime, duration_s: float) -> list[dict[str, Any]]:
+    """Untagged bench-machine readings within the run, with run_s from the shared server clock."""
+    out = []
+    for r in rows:
+        if r.get("soak_run_id") or r.get("machine_id") not in slot_by_machine:
+            continue
+        try:
+            t = datetime.fromisoformat(str(r["ts"]).replace("Z", "+00:00"))
+        except (KeyError, ValueError):
+            continue
+        run_s = (t - started).total_seconds()
+        if 0 <= run_s <= duration_s + 5:
+            out.append({**r, "run_s": run_s})
+    return out
+
+
 def detection_events(rows: list[dict[str, Any]], slot_by_machine: dict[str, int]) -> list[Event]:
     """Converts machine_events to scoreable events keyed by bench machine (bench_<slot>)."""
     out: list[Event] = []
@@ -205,6 +221,9 @@ def main() -> None:
     ap.add_argument("--out")
     ap.add_argument("--window", type=float, default=120.0)
     ap.add_argument("--project", default="takumi-cup-2026")
+    ap.add_argument("--by-time", action="store_true",
+                    help="also use bench-machine readings not tagged with the run, matched by server time "
+                         "(for a phone that started watching before the run was started)")
     args = ap.parse_args()
 
     from google.cloud import firestore  # imported here so the scoring functions test without credentials
@@ -219,6 +238,10 @@ def main() -> None:
     slot_by_machine = {
         m.get("id"): m.get("bench_slot") for m in (d.to_dict() for d in db.collection("machines").stream()) if m.get("bench_slot")
     }
+    if args.by_time:
+        started = datetime.fromisoformat(str(run["started_at"]).replace("Z", "+00:00"))
+        untagged = [d.to_dict() for d in db.collection("machine_events").where("ts", ">=", run["started_at"]).stream()]
+        det_rows += retime(untagged, slot_by_machine, started, float(run.get("duration_min") or 0) * 60)
 
     starts = watch_start(det_rows, slot_by_machine)
     end_s = float(run["duration_min"]) * 60 if run.get("duration_min") else None

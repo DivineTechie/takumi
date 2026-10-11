@@ -48,6 +48,12 @@ interface MachineRun {
   note?: string;
 }
 
+interface CostEstimate {
+  usd_per_machine_month_24_7: number;
+  usd_per_machine_month_one_shift: number;
+  assumptions: string[];
+}
+
 function pct(v: number | null | undefined, digits = 1): string {
   return v === null || v === undefined ? '—' : `${(v * 100).toFixed(digits)}%`;
 }
@@ -81,6 +87,7 @@ export const EvalsScreen: React.FC = () => {
 
   const d = visa.setups.few_false_alarms;
   const runs = machineWatch.runs as MachineRun[];
+  const estimate = (machineWatch as { cost_estimate?: CostEstimate }).cost_estimate;
 
   return (
     <div className="min-h-screen bg-surface text-on-surface">
@@ -268,6 +275,23 @@ export const EvalsScreen: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+              {estimate && (
+                <div className="mt-3 bg-surface-container-low border border-outline-variant rounded-2xl p-4 text-sm" data-testid="machine-estimate">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <h3 className="font-bold">Model cost on a normal line</h3>
+                    <Label>ESTIMATE</Label>
+                  </div>
+                  <p>
+                    About <strong>${estimate.usd_per_machine_month_one_shift.toFixed(2)}</strong> per machine per month for one shift, or{' '}
+                    <strong>${estimate.usd_per_machine_month_24_7.toFixed(0)}</strong> running 24/7.
+                  </p>
+                  <ul className="list-disc pl-5 text-xs text-on-surface-variant mt-1 space-y-0.5">
+                    {estimate.assumptions.map((a) => (
+                      <li key={a}>{a}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {runs.map((r) => r.note && (
                 <p key={`${r.run_id}-note`} className="text-xs text-on-surface-variant mt-2">
                   {r.date}: {r.note}

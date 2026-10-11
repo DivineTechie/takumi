@@ -1,5 +1,8 @@
 """Tests for the soak-run scorer with a synthetic fixture (no Firestore, no fake results files)."""
 
+from datetime import datetime, timezone
+
+from evals.machine_watch.score_soak import retime
 from evals.machine_watch.score_soak import Event, cost, detection_events, score, truth_events, watch_start, while_watched, in_window
 
 
@@ -86,3 +89,15 @@ def test_window_drops_starting_readings_and_events_after_the_run():
     starts = {"bench_1": 49.0}
     events = [Event("bench_1", "running", 50), Event("bench_1", "stopped", 300), Event("bench_1", "stopped", 912)]
     assert in_window(events, starts, end_s=900) == [Event("bench_1", "stopped", 300)]
+
+
+def test_retime_untagged_bench_readings_by_server_clock():
+    started = datetime(2026, 10, 11, 15, 42, 41, tzinfo=timezone.utc)
+    rows = [
+        {"machine_id": "m1", "ts": "2026-10-11T15:41:52+00:00", "event_type": "state_change"},   # before the run
+        {"machine_id": "m1", "ts": "2026-10-11T15:44:41+00:00", "event_type": "state_change"},   # 120 s in
+        {"machine_id": "m1", "ts": "2026-10-11T15:45:00+00:00", "soak_run_id": "other"},         # tagged: skipped
+        {"machine_id": "x9", "ts": "2026-10-11T15:45:00+00:00", "event_type": "alarm"},          # not a bench machine
+    ]
+    out = retime(rows, {"m1": 1}, started, 900)
+    assert len(out) == 1 and out[0]["run_s"] == 120.0

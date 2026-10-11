@@ -29,7 +29,7 @@ from PIL import Image
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.auth import AuthUser, check_rate_limit, get_firestore_client, require_role, verify_auth_token
-from services.api.bigquery_client import stream_machine_event
+from services.api.bigquery_client import stream_api_call, stream_machine_event
 from services.api.events_bus import publish_event
 from services.api.config import (
     LIMIT_MACHINE_READS_PER_MIN,
@@ -574,6 +574,7 @@ async def read_machine(
     user: AuthUser = Depends(require_role("trainee", "supervisor", "master")),
 ) -> MachineReadResponse:
     """Reads cropped images of a machine using Gemini Flash-Lite and performs count & state sanity validation."""
+    t_request = time.time()
     db = get_firestore_client()
     machine_ref = db.collection("machines").document(machine_id)
     doc = machine_ref.get()
@@ -842,6 +843,14 @@ async def read_machine(
         update_data["last_misread_count"] = raw_count if count_flag == "rejected_misread" else None
 
     machine_ref.update(update_data)
+
+    stream_api_call({
+        "ts": now_iso,
+        "endpoint": "machine_read",
+        "status": 200,
+        "model_ms": model_ms,
+        "total_ms": int((time.time() - t_request) * 1000),
+    })
 
     return MachineReadResponse(
         state=detected_state or machine_state,

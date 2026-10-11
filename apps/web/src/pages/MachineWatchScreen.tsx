@@ -283,6 +283,13 @@ export const MachineWatchScreen: React.FC = () => {
     return out.toDataURL('image/jpeg', 0.85).split(',')[1];
   };
 
+  // A soak run started on the bench after watching began is picked up within 30 s.
+  useEffect(() => {
+    if (mode !== 'watching' || runId) return;
+    const t = setInterval(() => refreshRuns(), 30_000);
+    return () => clearInterval(t);
+  }, [mode, runId, refreshRuns]);
+
   // Re-render every 10 s while watching so "counted … ago" and "last read" stay current.
   const [, setTick] = useState(0);
   useEffect(() => {

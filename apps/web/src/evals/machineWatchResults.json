@@ -2,6 +2,22 @@
  "label": "HOME RIG",
  "runs": [
   {
+   "run_id": "soak_3ec95c11472e",
+   "date": "2026-10-11",
+   "hours": 0.25,
+   "machines": 3,
+   "detection_rate": 1.0,
+   "detected": 61,
+   "truth": 61,
+   "median_delay_s": 3.6,
+   "p90_delay_s": 4.6,
+   "false_alarms": 1,
+   "reads_per_machine_hour": null,
+   "usd_per_machine_month": null,
+   "mode": "Fast x10 schedule",
+   "note": "Current read settings (light-region fallback, status words never alarms). The phone started watching before the run, so its readings were matched to the ground truth by server time (score_soak --by-time) and its Gemini reads were not counted for this run."
+  },
+  {
    "run_id": "soak_97c03da7a4d9",
    "date": "2026-10-11",
    "hours": 0.25,
@@ -17,5 +33,18 @@
    "mode": "Fast x10 schedule",
    "note": "Trial with the first read settings (counters re-read every minute with all three crops), at ten times the normal event rate, so reads and cost are far above a real line. The 3 false alarms were the screen word IDLE read as an alarm; status words are now never alarms."
   }
- ]
+ ],
+ "cost_estimate": {
+  "label": "ESTIMATE",
+  "usd_per_read_full": 0.0011,
+  "usd_per_read_counter": 0.00044,
+  "usd_per_machine_hour": 0.026,
+  "usd_per_machine_month_24_7": 19,
+  "usd_per_machine_month_one_shift": 4.6,
+  "assumptions": [
+   "Measured cost per read with gemini-3.5-flash-lite: $0.0011 for a full read (light, counter and screen crops), $0.00044 for a counter-only read.",
+   "Per machine per hour: 6 full check-ins, 30 counter-only reads (every 2 minutes) and about 3 stops, each needing 2 full reads.",
+   "One shift = 8 hours on 22 days a month. Fewer stops means fewer reads; a machine without a counter skips the counter reads."
+  ]
+ }
 }

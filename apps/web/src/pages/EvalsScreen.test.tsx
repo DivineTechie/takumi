@@ -24,7 +24,8 @@ describe('EvalsScreen', () => {
     expect(screen.getByText('LIVE')).toBeInTheDocument();
     const expected = `${(visa.setups.few_false_alarms.defects_caught * 100).toFixed(1)}%`;
     expect(screen.getAllByText(expected).length).toBeGreaterThan(0);
-    expect(screen.getByText(/61\/61/)).toBeInTheDocument();
+    expect(screen.getAllByText(/61\/61/).length).toBeGreaterThan(0);
+    expect(screen.getByTestId('machine-estimate')).toBeInTheDocument();
     expect(await screen.findByText('Station Watch step watcher (Flash-Lite)')).toBeInTheDocument();
     expect(screen.getByText('1.2 s')).toBeInTheDocument();
   });
