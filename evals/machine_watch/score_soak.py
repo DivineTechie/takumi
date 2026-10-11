@@ -9,9 +9,9 @@ live run and a recorded video replayed later are scored the same way.
 
 Matching: each truth event (state change to X, alarm, alarm cleared) is matched to the earliest unused
 detection of the same kind on the same bench machine within [truth - 2 s, truth + window]. The first
-truth event per machine is the starting state, not a change. Truth events from before a machine was
-being watched (plus a 30 s warm-up after its first reading) are not counted, and detections in the
-first 30 s of the run are ignored.
+truth event per machine is the starting state, not a change. Only events between a machine's first
+reading plus a 30 s warm-up (when the watcher learns its starting state) and the end of the run are
+scored, for both truth and detections.
 """
 
 from __future__ import annotations
@@ -94,6 +94,15 @@ def watch_start(rows: list[dict[str, Any]], slot_by_machine: dict[str, int]) -> 
 def while_watched(truth: list[Event], starts: dict[str, float]) -> list[Event]:
     """Drops truth events on a machine before it was watched (they could not be detected)."""
     return [t for t in truth if t.machine in starts and t.run_s >= starts[t.machine] + WARMUP_S]
+
+
+def in_window(events: list[Event], starts: dict[str, float], end_s: float | None) -> list[Event]:
+    """Keeps events after each machine's warm-up (its first reading is its starting state, not a change)
+    and before the run ended (the bench stops logging truth then)."""
+    return [
+        e for e in events
+        if e.machine in starts and e.run_s >= starts[e.machine] + WARMUP_S and (end_s is None or e.run_s <= end_s)
+    ]
 
 
 def score(truth: list[Event], detections: list[Event], window_s: float = 120.0) -> dict[str, Any]:
@@ -211,8 +220,10 @@ def main() -> None:
         m.get("id"): m.get("bench_slot") for m in (d.to_dict() for d in db.collection("machines").stream()) if m.get("bench_slot")
     }
 
-    truth = while_watched(truth_events(truth_rows), watch_start(det_rows, slot_by_machine))
-    detections = detection_events(det_rows, slot_by_machine)
+    starts = watch_start(det_rows, slot_by_machine)
+    end_s = float(run["duration_min"]) * 60 if run.get("duration_min") else None
+    truth = in_window(truth_events(truth_rows), starts, end_s)
+    detections = in_window(detection_events(det_rows, slot_by_machine), starts, end_s)
     result = score(truth, detections, args.window)
 
     last_s = max([e.run_s for e in truth] + [e.run_s for e in detections] + [0.0])

@@ -696,3 +696,16 @@ def test_read_in_soak_run_counts_reads_and_tokens(mock_firestore):
 
     assert "reads.mach_s" in soak_db["soak_2"]
     assert "tokens_in" in soak_db["soak_2"]
+
+
+def test_status_words_on_the_hmi_are_never_alarms(mock_firestore):
+    """Soak run finding: the model once flagged the screen text "IDLE" as an alarm."""
+    mock_db, machines_db, _ = mock_firestore
+    crop = _make_dummy_image_b64(200, 200)
+    _seed_machine(machines_db, "mach_idle", state="stopped", last_alarm="E-104 SPINDLE OVERLOAD")
+    from services.api.machines import MachineReadGeminiResponse
+    resp = _read(mock_db, "mach_idle", MachineReadGeminiResponse(light="yellow", alarm_text="IDLE", alarm_active=True),
+                 {"stack_light_b64": crop, "hmi_b64": crop})
+    assert resp.json()["alarm_text"] is None
+    types = [e["event_type"] for e in mock_db.events_db.values()]
+    assert "alarm" not in types and "alarm_cleared" in types

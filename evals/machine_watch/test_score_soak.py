@@ -1,6 +1,6 @@
 """Tests for the soak-run scorer with a synthetic fixture (no Firestore, no fake results files)."""
 
-from evals.machine_watch.score_soak import Event, cost, detection_events, score, truth_events, watch_start, while_watched
+from evals.machine_watch.score_soak import Event, cost, detection_events, score, truth_events, watch_start, while_watched, in_window
 
 
 def test_truth_skips_starting_state_and_keeps_changes():
@@ -80,3 +80,9 @@ def test_truth_before_the_machine_was_watched_is_not_counted():
     truth = [Event("bench_1", "stopped", 120), Event("bench_1", "stopped", 320), Event("bench_1", "stopped", 600),
              Event("bench_2", "stopped", 600)]
     assert while_watched(truth, starts) == [Event("bench_1", "stopped", 600)]  # 320 is inside the 30 s warm-up
+
+
+def test_window_drops_starting_readings_and_events_after_the_run():
+    starts = {"bench_1": 49.0}
+    events = [Event("bench_1", "running", 50), Event("bench_1", "stopped", 300), Event("bench_1", "stopped", 912)]
+    assert in_window(events, starts, end_s=900) == [Event("bench_1", "stopped", 300)]

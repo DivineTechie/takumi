@@ -34,6 +34,8 @@ interface DraftMachine {
 
 interface Watcher {
   light: StableValue<string>;
+  /** Pixel-change fallback on the light region, in case the colour check misses a change (glare, odd camera colour). */
+  lightRegion: RegionChange;
   counter: RegionChange;
   hmi: RegionChange;
   cap: RateCap;
@@ -43,6 +45,14 @@ interface Watcher {
   counterPending: boolean;
   reads: number;
   startedAt: number;
+  prevState: string | null;
+  prevAlarm: string | null;
+}
+
+interface StopAlert {
+  name: string;
+  text: string;
+  at: number;
 }
 
 interface MachineView {
@@ -110,6 +120,50 @@ export const MachineWatchScreen: React.FC = () => {
   const [message, setMessage] = useState<string | null>(null);
 
   const watchersRef = useRef<Record<string, Watcher>>({});
+  const [alerts, setAlerts] = useState<Record<string, StopAlert>>({});
+  const [soundOn, setSoundOn] = useState(true);
+  const soundOnRef = useRef(soundOn);
+  soundOnRef.current = soundOn;
+  const audioRef = useRef<AudioContext | null>(null);
+  const [frameAspect, setFrameAspect] = useState(16 / 9);
+  const [win, setWin] = useState({ w: window.innerWidth, h: window.innerHeight });
+  const [portrait, setPortrait] = useState(() => window.matchMedia?.('(orientation: portrait)').matches ?? false);
+
+  useEffect(() => {
+    const onResize = () => {
+      setWin({ w: window.innerWidth, h: window.innerHeight });
+      setPortrait(window.matchMedia?.('(orientation: portrait)').matches ?? false);
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
+
+  /** Two short beeps and a vibration (where supported) when a machine stops or raises an alarm. */
+  const signalStop = useCallback(() => {
+    if (!soundOnRef.current) return;
+    try {
+      const ctx = audioRef.current;
+      if (ctx) {
+        [0, 0.35].forEach((t) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.25, ctx.currentTime + t);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(ctx.currentTime + t);
+          osc.stop(ctx.currentTime + t + 0.26);
+        });
+      }
+      navigator.vibrate?.([300, 150, 300]);
+    } catch {
+      // Sound is a convenience; the banner still shows.
+    }
+  }, []);
   const [views, setViews] = useState<Record<string, MachineView>>({});
 
   const watched = useMemo(() => machines.filter((m) => selected.includes(m.id)), [machines, selected]);
@@ -316,7 +370,7 @@ export const MachineWatchScreen: React.FC = () => {
   // ---------- Watching ----------
 
   const doRead = useCallback(
-    async (m: Machine, ctx: CanvasRenderingContext2D, reason: 'change' | 'heartbeat') => {
+    async (m: Machine, ctx: CanvasRenderingContext2D, reason: 'change' | 'heartbeat', kind: 'full' | 'count' = 'full') => {
       const w = watchersRef.current[m.id];
       if (!w || w.inFlight) return;
       w.inFlight = true;
@@ -326,11 +380,11 @@ export const MachineWatchScreen: React.FC = () => {
         w.lastCounterReadAt = now;
         w.counterPending = false;
       }
-      const crops: { stack_light_b64?: string; counter_b64?: string; hmi_b64?: string } = {
-        stack_light_b64: cropJpegB64(ctx, m.rois.stack_light),
-      };
+      // A count-only read sends just the counter crop (about a third of the tokens of a full read).
+      const crops: { stack_light_b64?: string; counter_b64?: string; hmi_b64?: string } = {};
+      if (kind === 'full' || !m.rois.counter) crops.stack_light_b64 = cropJpegB64(ctx, m.rois.stack_light);
       if (m.rois.counter) crops.counter_b64 = cropJpegB64(ctx, m.rois.counter);
-      if (m.rois.hmi) crops.hmi_b64 = cropJpegB64(ctx, m.rois.hmi);
+      if (kind === 'full' && m.rois.hmi) crops.hmi_b64 = cropJpegB64(ctx, m.rois.hmi);
       const video = videoRef.current;
       const offset = parseOffset(offsetText);
       const videoRunS = source === 'file' && video && offset !== null ? Math.max(0, video.currentTime - offset) : undefined;
@@ -343,6 +397,26 @@ export const MachineWatchScreen: React.FC = () => {
           video_run_s: videoRunS,
         });
         w.reads += 1;
+        if (kind === 'full') {
+          const stoppedNow = res.state === 'stopped' && w.prevState !== 'stopped';
+          const newAlarm = !!res.alarm_text && res.alarm_text !== w.prevAlarm;
+          if (stoppedNow || newAlarm) {
+            setAlerts((prev) => ({
+              ...prev,
+              [m.id]: { name: m.name, text: res.alarm_text ?? 'Stopped', at: Date.now() },
+            }));
+            signalStop();
+          } else if (res.state === 'running' || res.state === 'idle') {
+            setAlerts((prev) => {
+              if (!prev[m.id]) return prev;
+              const next = { ...prev };
+              delete next[m.id];
+              return next;
+            });
+          }
+          w.prevState = res.state ?? w.prevState;
+          w.prevAlarm = res.alarm_text;
+        }
         const hours = Math.max(1 / 60, (Date.now() - w.startedAt) / 3_600_000);
         setViews((prev) => ({
           ...prev,
@@ -363,7 +437,7 @@ export const MachineWatchScreen: React.FC = () => {
         w.inFlight = false;
       }
     },
-    [offsetText, runId, source]
+    [offsetText, runId, source, signalStop]
   );
 
   const startWatching = () => {
@@ -377,6 +451,7 @@ export const MachineWatchScreen: React.FC = () => {
         m.id,
         {
           light: new StableValue<string>(MACHINE_WATCH.lightStableFrames),
+          lightRegion: new RegionChange(MACHINE_WATCH.lightDiffThreshold, MACHINE_WATCH.regionStableFrames),
           counter: new RegionChange(MACHINE_WATCH.regionDiffThreshold, MACHINE_WATCH.regionStableFrames),
           hmi: new RegionChange(MACHINE_WATCH.regionDiffThreshold, MACHINE_WATCH.regionStableFrames),
           cap: new RateCap(MACHINE_WATCH.maxReadsPerMinute, 60_000),
@@ -386,12 +461,31 @@ export const MachineWatchScreen: React.FC = () => {
           counterPending: false,
           reads: 0,
           startedAt: now,
+          prevState: null,
+          prevAlarm: null,
         },
       ])
     );
     setViews({});
+    setAlerts({});
     setMessage(null);
+    // This tap is the user gesture browsers need before a page may play sound.
+    try {
+      audioRef.current = audioRef.current ?? new AudioContext();
+      void audioRef.current.resume();
+    } catch {
+      audioRef.current = null;
+    }
+    // Full screen and landscape where the browser allows it (Android); iPhones keep the rotate hint.
+    document.documentElement.requestFullscreen?.().catch(() => {});
+    (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock?.('landscape').catch(() => {});
     setMode('watching');
+  };
+
+  const stopWatching = () => {
+    setMode('idle');
+    setAlerts({});
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   };
 
   useEffect(() => {
@@ -405,21 +499,33 @@ export const MachineWatchScreen: React.FC = () => {
         if (!w) continue;
         const lit = stackLightLit(cropBlock(ctx, m.rois.stack_light), m.light_order);
         const lightChanged = w.light.push(lit.light) !== undefined;
+        const lightRegionChanged = w.lightRegion.push(cropBlock(ctx, m.rois.stack_light));
         const hmiChanged = m.rois.hmi ? w.hmi.push(cropBlock(ctx, m.rois.hmi)) : false;
         if (m.rois.counter && w.counter.push(cropBlock(ctx, m.rois.counter))) w.counterPending = true;
         setViews((prev) => (prev[m.id]?.edgeLight === lit.light ? prev : { ...prev, [m.id]: { ...(prev[m.id] ?? emptyView()), edgeLight: lit.light } }));
 
         let reason: 'change' | 'heartbeat' | null = null;
-        if (w.lastReadAt === 0 || lightChanged || hmiChanged) reason = 'change';
-        else if (w.counterPending && now - w.lastCounterReadAt > MACHINE_WATCH.counterReadEveryMs) reason = 'change';
+        let kind: 'full' | 'count' = 'full';
+        if (w.lastReadAt === 0 || lightChanged || lightRegionChanged || hmiChanged) reason = 'change';
         else if (now - w.lastReadAt > MACHINE_WATCH.heartbeatMs) reason = 'heartbeat';
-        if (reason && !w.inFlight && w.cap.tryTake(now)) doRead(m, ctx, reason);
+        else if (w.counterPending && now - w.lastCounterReadAt > MACHINE_WATCH.counterReadEveryMs) {
+          reason = 'change';
+          kind = 'count';
+        }
+        if (reason && !w.inFlight && w.cap.tryTake(now)) doRead(m, ctx, reason, kind);
       }
     }, MACHINE_WATCH.frameIntervalMs);
     return () => clearInterval(timer);
   }, [mode, watched, doRead]);
 
   // ---------- Render ----------
+
+  const watching = mode === 'watching';
+  // Largest box with the camera's shape that fits the screen (full-screen watch mode).
+  const fitted =
+    win.w / win.h > frameAspect
+      ? { width: win.h * frameAspect, height: win.h, left: (win.w - win.h * frameAspect) / 2, top: 0 }
+      : { width: win.w, height: win.w / frameAspect, left: 0, top: (win.h - win.w / frameAspect) / 2 };
 
   const toggle = (id: string) => setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
@@ -443,55 +549,116 @@ export const MachineWatchScreen: React.FC = () => {
 
       <main className="flex-1 grid lg:grid-cols-[1fr_380px] gap-4 p-4">
         <section className="flex flex-col gap-3 min-w-0">
+          {portrait && source && mode !== 'watching' && (
+            <div className="bg-amber-500/20 text-amber-100 rounded-xl px-4 py-3 text-sm" role="status">
+              Turn the phone sideways: machines usually stand side by side, so landscape fits more of them.
+            </div>
+          )}
           <div
-            ref={overlayRef}
-            className="relative bg-black rounded-2xl overflow-hidden aspect-video touch-none"
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
+            className={watching ? 'fixed inset-0 z-40 bg-black' : 'relative bg-black rounded-2xl overflow-hidden w-full'}
+            style={watching ? undefined : { aspectRatio: String(frameAspect) }}
           >
-            <video ref={videoRef} className={`w-full h-full object-contain ${mode === 'setup' ? 'hidden' : ''}`} playsInline muted />
-            {mode === 'setup' && setupFrame && <img src={setupFrame} alt="Setup frame" className="w-full h-full object-contain" />}
-            {(mode === 'setup' ? drafts : []).map((d, idx) =>
-              ROI_KINDS.map((kind) => {
-                const r = d.rois[kind];
-                if (!r) return null;
-                return (
-                  <div
-                    key={`${idx}-${kind}`}
-                    className="absolute border-2 cursor-move"
-                    style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%`, borderColor: ROI_COLOUR[kind] }}
-                    onPointerDown={(e) => onPointerDown(e, idx, kind, false)}
-                  >
-                    <span className="absolute -top-5 left-0 text-[11px] font-bold px-1 rounded" style={{ background: ROI_COLOUR[kind], color: '#000' }}>
-                      M{idx + 1} {ROI_LABEL[kind]}
-                    </span>
-                    <span
-                      className="absolute -right-2 -bottom-2 w-5 h-5 rounded-full border-2 border-white cursor-se-resize"
-                      style={{ background: ROI_COLOUR[kind] }}
-                      onPointerDown={(e) => onPointerDown(e, idx, kind, true)}
-                    />
-                  </div>
-                );
-              })
-            )}
-            {mode === 'watching' &&
-              watched.map((m) =>
+            {/* The picture box always has the camera's shape, so boxes line up with the image. */}
+            <div
+              ref={overlayRef}
+              className="absolute touch-none"
+              style={watching ? fitted : { inset: 0 }}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+            >
+            <video
+                ref={videoRef}
+                className={`w-full h-full object-contain ${mode === 'setup' ? 'hidden' : ''}`}
+                playsInline
+                muted
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  if (v.videoWidth && v.videoHeight) setFrameAspect(v.videoWidth / v.videoHeight);
+                }}
+              />
+              {mode === 'setup' && setupFrame && <img src={setupFrame} alt="Setup frame" className="w-full h-full object-contain" />}
+              {(mode === 'setup' ? drafts : []).map((d, idx) =>
                 ROI_KINDS.map((kind) => {
-                  const r = m.rois[kind as keyof typeof m.rois] as NormalizedRoi | undefined;
+                  const r = d.rois[kind];
                   if (!r) return null;
                   return (
                     <div
-                      key={`${m.id}-${kind}`}
-                      className="absolute border pointer-events-none"
+                      key={`${idx}-${kind}`}
+                      className="absolute border-2 cursor-move"
                       style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%`, borderColor: ROI_COLOUR[kind] }}
-                    />
+                      onPointerDown={(e) => onPointerDown(e, idx, kind, false)}
+                    >
+                      <span className="absolute -top-5 left-0 text-[11px] font-bold px-1 rounded" style={{ background: ROI_COLOUR[kind], color: '#000' }}>
+                        M{idx + 1} {ROI_LABEL[kind]}
+                      </span>
+                      <span
+                        className="absolute -right-2 -bottom-2 w-5 h-5 rounded-full border-2 border-white cursor-se-resize"
+                        style={{ background: ROI_COLOUR[kind] }}
+                        onPointerDown={(e) => onPointerDown(e, idx, kind, true)}
+                      />
+                    </div>
                   );
                 })
               )}
+              {mode === 'watching' &&
+                watched.map((m) =>
+                  ROI_KINDS.map((kind) => {
+                    const r = m.rois[kind as keyof typeof m.rois] as NormalizedRoi | undefined;
+                    if (!r) return null;
+                    return (
+                      <div
+                        key={`${m.id}-${kind}`}
+                        className="absolute border pointer-events-none"
+                        style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%`, borderColor: ROI_COLOUR[kind] }}
+                      />
+                    );
+                  })
+                )}
+            </div>
             {!source && (
               <div className="absolute inset-0 flex items-center justify-center text-on-surface-variant text-sm p-4 text-center">
                 Mount the phone so the machines' lights, counters and screens are in view, then start the camera.
               </div>
+            )}
+            {watching && (
+              <>
+                <div className="absolute top-2 left-2 right-2 flex items-start justify-between gap-2 pointer-events-none">
+                  <div className="flex flex-col gap-2 pointer-events-auto">
+                    {Object.entries(alerts).map(([id, a]) => (
+                      <div key={id} className="bg-red-600 text-white rounded-xl px-4 py-3 shadow-lg animate-pulse" role="alert" data-testid="stop-alert">
+                        <div className="text-lg font-bold">{a.name} stopped</div>
+                        <div className="text-sm">{a.text}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 pointer-events-auto">
+                    <button type="button" onClick={() => setSoundOn((v) => !v)} aria-label={soundOn ? 'Mute stop alerts' : 'Sound on for stop alerts'} className="min-w-[48px] min-h-[48px] rounded-xl bg-black/60 text-white">
+                      <span className="material-symbols-outlined">{soundOn ? 'volume_up' : 'volume_off'}</span>
+                    </button>
+                    <button type="button" onClick={stopWatching} className="min-h-[48px] px-4 rounded-xl bg-red-700 text-white font-bold">
+                      Stop watching
+                    </button>
+                  </div>
+                </div>
+                {portrait && (
+                  <div className="absolute inset-x-4 top-20 bg-amber-500/90 text-black rounded-xl px-4 py-3 text-sm font-bold text-center">
+                    Turn the phone sideways to fit all machines.
+                  </div>
+                )}
+                <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-2 justify-center">
+                  {watched.map((m) => {
+                    const v = views[m.id];
+                    const colour = v?.state === 'stopped' ? 'bg-red-600' : v?.state === 'idle' ? 'bg-amber-500 text-black' : v?.state === 'running' ? 'bg-green-600' : 'bg-neutral-700';
+                    return (
+                      <div key={m.id} className={`${colour} text-white rounded-xl px-3 py-2 text-sm shadow`} data-testid={`watch-chip-${m.id}`}>
+                        <span className="font-bold">{m.name}</span> · {v?.state ?? '…'}
+                        {v?.count !== null && v?.count !== undefined && ` · ${v.count}`}
+                        {v?.alarm && <span className="block text-xs">{v.alarm}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
 
@@ -506,7 +673,7 @@ export const MachineWatchScreen: React.FC = () => {
               </label>
             )}
             {mode === 'watching' ? (
-              <button type="button" onClick={() => setMode('idle')} className="min-h-[56px] px-5 rounded-xl bg-red-700 text-white font-bold">
+              <button type="button" onClick={stopWatching} className="min-h-[56px] px-5 rounded-xl bg-red-700 text-white font-bold">
                 Stop watching
               </button>
             ) : (

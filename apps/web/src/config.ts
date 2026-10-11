@@ -18,8 +18,11 @@ export const MACHINE_WATCH = {
   lightStableFrames: 3,
   regionStableFrames: 2,
   regionDiffThreshold: 12,
-  counterReadEveryMs: 60_000,
-  heartbeatMs: 5 * 60_000,
+  /** Pixel-change threshold on the stack light region (fallback trigger when the colour check misses). */
+  lightDiffThreshold: 18,
+  /** Counters change every cycle; read them (counter crop only) at most every 5 minutes. */
+  counterReadEveryMs: 5 * 60_000,
+  heartbeatMs: 10 * 60_000,
   maxReadsPerMinute: 6,
   cropMaxPx: 512,
 };

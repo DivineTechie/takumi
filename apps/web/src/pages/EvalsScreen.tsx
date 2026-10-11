@@ -43,6 +43,9 @@ interface MachineRun {
   reads_per_machine_hour: number | null;
   usd_per_machine_month: number | null;
   mode: string;
+  detected?: number;
+  truth?: number;
+  note?: string;
 }
 
 function pct(v: number | null | undefined, digits = 1): string {
@@ -252,7 +255,10 @@ export const EvalsScreen: React.FC = () => {
                       <td className="py-2 pr-3">
                         {r.hours.toFixed(1)} × {r.machines}
                       </td>
-                      <td className="py-2 pr-3">{pct(r.detection_rate, 0)}</td>
+                      <td className="py-2 pr-3">
+                        {pct(r.detection_rate, 0)}
+                        {r.truth !== undefined && ` (${r.detected}/${r.truth})`}
+                      </td>
                       <td className="py-2 pr-3">
                         {r.median_delay_s?.toFixed(1) ?? '—'} s / {r.p90_delay_s?.toFixed(1) ?? '—'} s
                       </td>
@@ -262,6 +268,11 @@ export const EvalsScreen: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+              {runs.map((r) => r.note && (
+                <p key={`${r.run_id}-note`} className="text-xs text-on-surface-variant mt-2">
+                  {r.date}: {r.note}
+                </p>
+              ))}
             </div>
           )}
         </section>

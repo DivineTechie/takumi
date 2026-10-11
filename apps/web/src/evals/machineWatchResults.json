@@ -1,4 +1,21 @@
 {
  "label": "HOME RIG",
- "runs": []
+ "runs": [
+  {
+   "run_id": "soak_97c03da7a4d9",
+   "date": "2026-10-11",
+   "hours": 0.25,
+   "machines": 3,
+   "detection_rate": 1.0,
+   "detected": 61,
+   "truth": 61,
+   "median_delay_s": 4.1,
+   "p90_delay_s": 25.7,
+   "false_alarms": 3,
+   "reads_per_machine_hour": 138.9,
+   "usd_per_machine_month": 109.37,
+   "mode": "Fast x10 schedule",
+   "note": "Trial with the first read settings (counters re-read every minute with all three crops), at ten times the normal event rate, so reads and cost are far above a real line. The 3 false alarms were the screen word IDLE read as an alarm; status words are now never alarms."
+  }
+ ]
 }

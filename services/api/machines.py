@@ -283,6 +283,8 @@ def call_robotics_er_setup(
     return json.loads(res.text)
 
 
+NOT_ALARMS = {"", "NONE", "NULL", "NO ALARM", "NORMAL", "CLEAR", "OK", "RUNNING", "RUN", "IDLE", "STOPPED", "STOP", "READY", "AUTO", "MANUAL", "STANDBY"}
+
 READ_PROMPT_TEMPLATE = """You are an industrial vision monitor inspecting cropped regions of a factory machine.
 This inspection includes the following crops: {included_crops_str}.
 The machine's physical stack light has lights ordered from top to bottom: {light_order_str}.
@@ -290,7 +292,7 @@ The machine's physical stack light has lights ordered from top to bottom: {light
 Task instructions:
 - Stack light: identify which light is illuminated ('red', 'yellow', 'green', 'off', 'multiple' if more than one is illuminated, or 'unclear' if not legible).
 - Parts counter: read the numeric integer value displayed on the counter, or null if unreadable or absent.
-- HMI screen: return the active alarm message text exactly as shown on the screen, or null if no alarm or screen is clear/normal/absent. Set alarm_active to true if an active alarm is present, else false.
+- HMI screen: an alarm is a fault, error or warning message (often with a code). Return its text exactly as shown and set alarm_active to true. Normal status words such as RUNNING, IDLE, STOPPED, READY, AUTO or MANUAL are not alarms: then return null and alarm_active false. Also return null when the screen is blank or absent.
 
 Answer in JSON conforming to the schema."""
 
@@ -630,9 +632,11 @@ async def read_machine(
     else:
         detected_state = state_map.get(detected_light)
 
-    alarm_text = parsed.alarm_text if parsed.alarm_active else None
-    if alarm_text and alarm_text.lower() in ("none", "null", "no alarm", "normal", "clear", ""):
-        alarm_text = None
+    alarm_text = (parsed.alarm_text or "").strip() if parsed.alarm_active else ""
+    # Status words are never alarms, even if the model flags them (seen in a soak run: "IDLE").
+    if alarm_text.upper().strip(" .!") in NOT_ALARMS:
+        alarm_text = ""
+    alarm_text = alarm_text or None
 
     # Count Sanity Validation
     last_count = machine_data.get("last_count")
