@@ -24,6 +24,8 @@ from services.forge.config import MODEL_FLASH
 logger = logging.getLogger("forge.agents.traceback")
 
 APP_NAME = "takumi_quality_traceback"
+# A supervisor waits on screen: low thinking and parallel tool calls keep the run short.
+FAST = types.GenerateContentConfig(thinking_config=types.ThinkingConfig(thinking_level="low"))
 MAX_SIMILAR = 50
 
 
@@ -162,8 +164,7 @@ Find where the defect most likely started, using only the tools:
 1. Call get_unit_history for the failed unit. Read the inspection defect and every station record.
 2. Pick the station and step whose recorded mistake, safety stop or unverified step best explains the defect.
    If nothing in the records explains it, say so; do not guess.
-3. Call get_work_instruction for that step.
-4. Call find_similar_units for that station and step to list other units at risk.
+3. Call get_work_instruction and find_similar_units for that station and step together, in parallel.
 Write your findings as plain notes: the root cause (station, skill id, step) with the facts that support it,
 how sure you are, the unit ids at risk exactly as returned by find_similar_units, and a concrete change to the
 step's instruction or success criteria that would prevent this. Never mention or guess who the operator was."""
@@ -182,6 +183,7 @@ def build_traceback_agent(tools: TracebackTools) -> SequentialAgent:
         instruction=INVESTIGATOR_INSTRUCTION,
         tools=[tools.get_unit_history, tools.find_similar_units, tools.get_work_instruction],
         output_key="findings",
+        generate_content_config=FAST,
     )
     reporter = LlmAgent(
         name="reporter",
@@ -190,6 +192,7 @@ def build_traceback_agent(tools: TracebackTools) -> SequentialAgent:
         instruction=REPORTER_INSTRUCTION,
         output_schema=TracebackReport,
         output_key="report",
+        generate_content_config=FAST,
     )
     return SequentialAgent(name="quality_traceback", sub_agents=[investigator, reporter])
 

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { fetchLiveLatency, type LiveLatencyRow } from '../lib/api';
 import visa from '../evals/visaResults.json';
 import machineWatch from '../evals/machineWatchResults.json';
+import agents from '../evals/agentResults.json';
 import { useI18n } from '../i18n';
 
 /**
@@ -322,6 +323,43 @@ export const EvalsScreen: React.FC = () => {
               ))}
             </div>
           )}
+        </section>
+
+        {/* Agents on scripted scenarios */}
+        <section className="space-y-3" aria-labelledby="eval-agents" data-testid="eval-agents">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 id="eval-agents" className="text-xl font-bold">{t('quality.evals_agents_title')}</h2>
+            <Label>{agents.label}</Label>
+          </div>
+          <p className="text-sm text-on-surface-variant">{t('quality.evals_agents_desc')}</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 text-sm space-y-2">
+              <h3 className="font-bold">{t('quality.evals_agents_maintenance')}</h3>
+              <p className="text-3xl font-extrabold">
+                {agents.maintenance.all_checks}/{agents.maintenance.n}
+              </p>
+              <p className="text-on-surface-variant">{t('quality.evals_agents_maintenance_desc', { s: agents.maintenance.median_s.toFixed(1) })}</p>
+              <ul className="text-xs text-on-surface-variant space-y-0.5">
+                <li>{t('quality.evals_agents_check_cause', { n: agents.maintenance.pass.cause_in_guide, total: agents.maintenance.n })}</li>
+                <li>{t('quality.evals_agents_check_minutes', { n: agents.maintenance.pass.minutes_from_guide, total: agents.maintenance.n })}</li>
+                <li>{t('quality.evals_agents_check_repeat', { n: agents.maintenance.pass.repeat_flag_right, total: agents.maintenance.n })}</li>
+                <li>{t('quality.evals_agents_check_safety', { n: agents.maintenance.pass.safety_present, total: agents.maintenance.n })}</li>
+              </ul>
+            </div>
+            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 text-sm space-y-2">
+              <h3 className="font-bold">{t('quality.evals_agents_traceback')}</h3>
+              <p className="text-3xl font-extrabold">
+                {agents.traceback.pass.holds_exact}/{agents.traceback.n}
+              </p>
+              <p className="text-on-surface-variant">{t('quality.evals_agents_traceback_desc', { s: agents.traceback.median_s.toFixed(1) })}</p>
+              <ul className="text-xs text-on-surface-variant space-y-0.5">
+                <li>{t('quality.evals_agents_check_step', { n: agents.traceback.pass.step_right, total: agents.traceback.n })}</li>
+                <li>{t('quality.evals_agents_check_holds', { n: agents.traceback.pass.holds_exact, total: agents.traceback.n })}</li>
+                <li>{t('quality.evals_agents_check_unsupported', { n: agents.traceback.pass.no_unsupported_hold, total: agents.traceback.n })}</li>
+              </ul>
+            </div>
+          </div>
+          <p className="text-xs text-on-surface-variant">{t('quality.evals_agents_method', { date: agents.generated, judge: agents.judge_model })}</p>
         </section>
 
         {/* 3. Live timings */}

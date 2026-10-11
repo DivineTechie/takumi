@@ -26,6 +26,8 @@ describe('EvalsScreen', () => {
     expect(screen.getAllByText(expected).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/61\/61/).length).toBeGreaterThan(0);
     expect(screen.getByTestId('machine-estimate')).toBeInTheDocument();
+    expect(screen.getByTestId('eval-agents')).toHaveTextContent('TEST FIXTURES');
+    expect(screen.getByTestId('eval-agents')).toHaveTextContent('12/12');
     expect(await screen.findByText('Station Watch step watcher (Flash-Lite)')).toBeInTheDocument();
     expect(screen.getByText('1.2 s')).toBeInTheDocument();
   });

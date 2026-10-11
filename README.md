@@ -33,6 +33,7 @@ Every number TAKUMI shows is labelled **LIVE** (our deployment), **HOME RIG** (o
 
 - **Visual inspection, PUBLIC DATA** (Amazon VisA, CC BY 4.0): measured on the VisA test split across 12 product categories with the exact shipped prompt, models and reference images. Results, method and cost per image are on the [/evals](https://takumi-cup-2026.web.app/evals) page and in [evals/inspection](evals/inspection).
 - **Machine Watch, HOME RIG**: soak runs on the test bench are scored for detection rate, detection delay, false alarms and cost per machine by [evals/machine_watch/score_soak.py](evals/machine_watch/score_soak.py).
+- **Agents, TEST FIXTURES**: the maintenance agent passed every check on 12 of 12 scripted stops (6 alarm codes, first and repeat), median 17 s; the trace-back agent found the right step and the exact units to hold in 4 of 4 scripted failures, median 21 s ([evals/agents](evals/agents)).
 - **Station Watch, LIVE**: latencies are measured in production and stored in BigQuery `takumi.api_calls`.
 
 ---
