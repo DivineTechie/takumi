@@ -127,6 +127,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // orders (demand agent): readable by supervisors, written only by takumi-api.
+    match /orders/{orderId} {
+      allow read: if isSupervisor();
+      allow write: if false;
+    }
+
     // machine_events: readable by supervisors only (no created_by on events).
     match /machine_events/{eventId} {
       allow read: if isSupervisor();

@@ -202,3 +202,22 @@ async def traceback_agent(
     except Exception as e:
         logger.error("Trace-back agent failed for %s: %s", req.unit_id, e)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Trace-back agent failed")
+
+
+@app.post("/forge/agents/demand")
+async def demand_agent(user: AuthUser = Depends(verify_auth_token)) -> dict[str, Any]:
+    """Runs the ADK demand agent over today's open orders (supervisors only). Suggests; changes nothing."""
+    if user.role != "supervisor":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Supervisor role required")
+    db = get_firestore_client()
+    if db is None or MOCK_MODELS:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Demand agent is unavailable")
+    from services.forge.agents.demand import run_demand
+
+    try:
+        return await asyncio.wait_for(run_demand(db, user.uid), timeout=TRACEBACK_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Demand agent timed out")
+    except Exception as e:
+        logger.error("Demand agent failed: %s", e)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Demand agent failed")

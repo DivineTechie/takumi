@@ -5,7 +5,15 @@ import { ControlTowerScreen } from './ControlTowerScreen';
 import { describe as describeEvent } from '../lib/controlEvents';
 import * as apiModule from '../lib/api';
 
-vi.mock('../lib/api', () => ({ fetchControlSummary: vi.fn() }));
+vi.mock('../lib/api', () => ({
+  fetchControlSummary: vi.fn(),
+  fetchOrders: vi.fn().mockResolvedValue([]),
+  fetchMachines: vi.fn().mockResolvedValue([]),
+  createOrder: vi.fn(),
+  closeOrder: vi.fn(),
+  runDemandAgent: vi.fn(),
+  ApiError: class extends Error {},
+}));
 
 const kpis = (over: Partial<apiModule.ControlSourceKpis>): apiModule.ControlSourceKpis => ({
   inspected: 0, ok: 0, defective: 0, needs_review: 0, first_pass_rate: null, confirmed_defects: 0, overridden: 0,

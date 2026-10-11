@@ -13,6 +13,12 @@ const REPO = 'https://github.com/DivineTechie/takumi/blob/main';
 
 type SetupKey = 'few_false_alarms' | 'catch_everything' | 'lite_ref' | 'flash_single';
 const SETUP_ORDER: SetupKey[] = ['few_false_alarms', 'catch_everything', 'lite_ref', 'flash_single'];
+const SETUP_SHORT: Record<SetupKey, string> = {
+  few_false_alarms: 'Few false alarms (default)',
+  catch_everything: 'Catch everything',
+  lite_ref: 'Flash-Lite + references',
+  flash_single: 'Flash only',
+};
 
 const ENDPOINT_NAMES: Record<string, string> = {
   watch: 'Station Watch step watcher (Flash-Lite)',
@@ -139,11 +145,11 @@ export const EvalsScreen: React.FC = () => {
                 value={catSetup}
                 onChange={(e) => setCatSetup(e.target.value as SetupKey)}
                 aria-label="Setup for the per-product table"
-                className="min-h-[40px] rounded-lg bg-surface-container px-2 text-sm"
+                className="min-h-[40px] max-w-full rounded-lg bg-surface-container px-2 text-sm"
               >
                 {SETUP_ORDER.map((k) => (
                   <option key={k} value={k}>
-                    {visa.setups[k].name}
+                    {SETUP_SHORT[k]}
                   </option>
                 ))}
               </select>

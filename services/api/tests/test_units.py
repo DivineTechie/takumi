@@ -58,13 +58,14 @@ class _Col:
         return _Doc(self.store, f"{self.path}/{doc_id}")
 
     def where(self, field, op, value):
-        return _Col(self.store, self.path, self.filters + ((field, value),))
+        return _Col(self.store, self.path, self.filters + ((field, op, value),))
 
     def stream(self):
+        ops = {"==": lambda a, b: a == b, ">=": lambda a, b: a is not None and a >= b, "<=": lambda a, b: a is not None and a <= b}
         prefix = self.path + "/"
         out = []
         for p, d in self.store.items():
-            if p.startswith(prefix) and "/" not in p[len(prefix):] and all(d.get(f) == v for f, v in self.filters):
+            if p.startswith(prefix) and "/" not in p[len(prefix):] and all(ops[o](d.get(f), v) for f, o, v in self.filters):
                 out.append(_Snap(d))
         return out
 

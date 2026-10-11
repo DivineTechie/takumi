@@ -69,6 +69,11 @@ This inventory records the deployment status and ownership for all Google AI mod
 - `/control` (supervisors): KPIs per source label (LIVE, HOME RIG, PUBLIC DATA never mixed): inspected, first-pass rate, confirmed defects, units on hold, stations finished, mistakes, safety stops, machine stops and alarms, plus a live feed. Reads `GET /api/control/summary` every 10 s.
 - Windowed aggregation in Dataflow is planned; the control tower aggregates in BigQuery for now.
 
+## 6. Demand agent: **In progress**
+
+- Supervisors enter today's orders on the control tower (`POST /api/orders`: name, quantity, due time, machines). `GET /api/orders` projects each order from real Machine Watch counts and inspections (gallery inspections never count): parts made, recent rate, yield, projected good parts at the due time, shortfall and the rate needed. The projection is plain code (`shared/ops/demand.py`), shared by the API and the agent.
+- "Will we make it?" runs a Google ADK agent (`services/forge/agents/demand.py`, `POST /forge/agents/demand`, supervisors only): a planner with two read-only tools (open orders with projections, a machine's stops and alarms) and a reporter with a response schema. It explains which orders are at risk, the constraint, and actions for a supervisor to decide. Numbers shown come from the tools, not the model. Each order carries the source label of its machines (LIVE or HOME RIG).
+
 ## 5. Factory Governance & Access Control
 
 - **End-of-Line Quality Inspection Decisions**: Inspection verification and override decisions ([`POST /api/inspections/{id}/decision`](file:///c:/takumi/services/api/main.py)) stay strictly **supervisor-only** (`role: supervisor`). The worker/trainee who captured or submitted the inspection photo cannot approve or override their own flagged unit.

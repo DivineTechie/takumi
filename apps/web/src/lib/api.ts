@@ -854,6 +854,59 @@ export interface ControlSummary {
   feed: ControlFeedItem[];
 }
 
+export interface OrderStatus {
+  order_id: string;
+  name: string;
+  quantity: number;
+  due_at: string;
+  made: number;
+  rate_per_hour: number | null;
+  first_pass_rate: number | null;
+  machines: {
+    machine_id: string;
+    name: string;
+    state: string | null;
+    last_alarm: string | null;
+    made: number;
+    rate_per_hour: number | null;
+    ideal_rate_per_hour: number | null;
+  }[];
+  source: string;
+  hours_left: number;
+  good_made: number;
+  projected_good: number | null;
+  shortfall: number | null;
+  on_track: boolean | null;
+  rate_needed_per_hour: number | null;
+}
+
+export interface DemandResult {
+  report: {
+    summary: string;
+    orders: { order_id: string; verdict: string; main_constraint: string | null }[];
+    actions: { action: string; reason: string; expected_extra_units: number | null }[];
+    confidence: string;
+  };
+  orders: OrderStatus[];
+  agent_steps: { agent: string; tool: string; args: Record<string, unknown> }[];
+}
+
+export async function fetchOrders(): Promise<OrderStatus[]> {
+  return await apiFetch<OrderStatus[]>('/api/orders');
+}
+
+export async function createOrder(order: { name: string; quantity: number; due_at: string; machine_ids: string[]; product_id?: string }): Promise<{ id: string }> {
+  return await apiFetch('/api/orders', { method: 'POST', body: JSON.stringify(order) });
+}
+
+export async function closeOrder(id: string): Promise<{ id: string; status: string }> {
+  return await apiFetch(`/api/orders/${encodeURIComponent(id)}/close`, { method: 'POST' });
+}
+
+export async function runDemandAgent(): Promise<DemandResult> {
+  return await apiFetch<DemandResult>('/forge/agents/demand', { method: 'POST' });
+}
+
 export async function fetchControlSummary(hours = 24): Promise<ControlSummary> {
   return await apiFetch<ControlSummary>(`/api/control/summary?hours=${hours}`);
 }

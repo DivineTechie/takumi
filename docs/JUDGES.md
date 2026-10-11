@@ -54,6 +54,8 @@ Images: VisA dataset (Amazon), CC BY 4.0. Every result is labelled PUBLIC DATA. 
 
 Open **Home → Control tower** (`/control`). Every event (station steps, inspections, decisions, machine events, holds) flows from Cloud Run through Pub/Sub into BigQuery; this page shows the totals per source label (LIVE, HOME RIG, PUBLIC DATA) and a live feed. Events from steps 1 to 4 appear here within about a minute.
 
+**Will we make today's orders?** On the same page, press **New order**, pick the test bench machines from step 2, a quantity and a due time. The order is projected from the real machine counts. Stop a machine on the test bench and press **Will we make it?**: a Google ADK planner agent explains which order is at risk, why, and what you could do. The numbers come from the counts, not from the model, and nothing changes without you.
+
 ## 6. Standard Work Studio (master)
 
 As master, **Home → Teach a skill** records a demonstration; a Google ADK 2 workflow turns it into steps with success criteria, reasons, pointing hints and translations. In the review screen the master edits steps, applies or dismisses review requests from supervisors, and publishes.

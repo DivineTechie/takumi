@@ -112,6 +112,9 @@ describe('Firestore Security Rules', () => {
         state: 'running',
       });
 
+      // Seed an order
+      await setDoc(doc(db, 'orders', 'ord_1'), { id: 'ord_1', name: 'Order A', quantity: 100, status: 'open' });
+
       // Seed soak_run and truth
       await setDoc(doc(db, 'soak_runs', 'soak_1'), {
         id: 'soak_1',
@@ -346,6 +349,15 @@ describe('Firestore Security Rules', () => {
     await assertFails(getDoc(doc(unauthedDb, 'machine_events', 'ev_1')));
 
     await assertFails(setDoc(doc(supervisorDb, 'machine_events', 'ev_2'), { state: 'stopped' }));
+  });
+
+  it('orders are readable by supervisors only, direct writes fail', async () => {
+    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    const supervisorDb = testEnv.authenticatedContext('sup-1', { role: 'supervisor' }).firestore();
+
+    await assertSucceeds(getDoc(doc(supervisorDb, 'orders', 'ord_1')));
+    await assertFails(getDoc(doc(traineeDb, 'orders', 'ord_1')));
+    await assertFails(setDoc(doc(supervisorDb, 'orders', 'ord_2'), { quantity: 5 }));
   });
 
   it('soak_runs and soak_runs/{id}/truth are readable by creator or supervisor, direct writes fail', async () => {

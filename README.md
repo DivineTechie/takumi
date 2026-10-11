@@ -21,6 +21,7 @@ TAKUMI turns **a camera the factory already has** (an old phone or a cheap webca
 | **Unit records & quality trace-back** | Each unit's serial links its stations and inspections. When a unit fails, an ADK agent finds the station and step where the defect most likely started, the other units that went through the same step, and a fix to the work instruction. The supervisor approves holds; the master applies the fix in the Standard Work Studio. | Google ADK agents on `gemini-3.8-flash`, Firestore |
 | **Standard Work Studio** | A master demonstrates a task once; a Google ADK 2 workflow turns the video into a step-by-step instruction with success criteria, the reason for each step, pointing hints and translations into 6 languages. | ADK 2 Workflow graph, `gemini-omni-1.1-flash`, `gemini-3.8-flash`, `gemini-robotics-er-2-preview` |
 | **Events pipeline & control tower** | Every station step, inspection, machine event and hold is published to Pub/Sub; a BigQuery subscription stores it; the control tower shows quality, stoppages and holds per source. | Pub/Sub, BigQuery |
+| **Demand agent** | "Will we make today's orders?" Orders are projected from real machine counts and inspection yield (plain code); an ADK planner agent explains the risk and the constraint and suggests actions for the supervisor. | Google ADK agent on `gemini-3.8-flash` |
 
 ---
 
@@ -81,7 +82,7 @@ Model IDs live only in `services/*/config.py` and `apps/web/src/config.ts`. Temp
 
 ## Status and limitations
 
-[docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md) lists what is live and what is in progress. In short: inspection, Station Watch, the dashboard, unit records, the events pipeline and the control tower are deployed; Machine Watch and the trace-back agent are deployed and are being proven on home-rig and real station data; windowed aggregation in Dataflow and the demand agent are planned.
+[docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md) lists what is live and what is in progress. In short: inspection, Station Watch, the dashboard, unit records, the events pipeline and the control tower are deployed; Machine Watch and the trace-back agent are deployed and are being proven on home-rig and real station data; the demand agent is deployed and being proven on home-rig data; windowed aggregation in Dataflow is planned.
 
 ---
 

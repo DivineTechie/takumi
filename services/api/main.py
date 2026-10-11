@@ -79,6 +79,7 @@ from services.api.machines import router as machines_router
 from services.api.control_tower import router as control_router
 from services.api.evals_live import router as evals_live_router
 from services.api.events_bus import publish_event
+from services.api.orders import router as orders_router
 from services.api.review_requests import router as review_requests_router
 from services.api.units import append_station_record, build_station_record, ensure_unit, router as units_router
 
@@ -88,6 +89,7 @@ app.include_router(units_router, prefix="/api")
 app.include_router(control_router, prefix="/api")
 app.include_router(review_requests_router, prefix="/api")
 app.include_router(evals_live_router, prefix="/api")
+app.include_router(orders_router, prefix="/api")
 
 
 # --- Middlewares ---

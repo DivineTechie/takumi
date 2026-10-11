@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchControlSummary, type ControlSourceKpis, type ControlSummary } from '../lib/api';
 import { describe } from '../lib/controlEvents';
+import { OrdersPanel } from '../components/control/OrdersPanel';
 
 /**
  * Control tower (P18): the whole factory from one event stream. Cloud Run publishes every event to
@@ -92,6 +93,7 @@ export const ControlTowerScreen: React.FC = () => {
 
       <main className="max-w-6xl mx-auto p-4 grid gap-4 lg:grid-cols-[1fr_380px]">
         <div className="space-y-4 min-w-0">
+          <OrdersPanel />
           {error && <p className="text-red-400">{error}</p>}
           {!data && !error && <p className="text-on-surface-variant">Loading…</p>}
           {data && sources.length === 0 && (
