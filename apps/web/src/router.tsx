@@ -4,6 +4,7 @@ import { createBrowserRouter, Outlet, type RouteObject } from 'react-router-dom'
 import { RoleGuard } from './components/RoleGuard';
 import { featureRoutes, type FeatureRoute } from './features/routes';
 import { VersionBanner } from './components/VersionBanner';
+import { RouteError } from './components/RouteError';
 
 const SignInScreen = lazy(() => import('./pages/SignInScreen'));
 const SignInFinishScreen = lazy(() => import('./pages/SignInFinishScreen'));
@@ -40,6 +41,7 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
           <Outlet />
         </>
       ),
+      errorElement: <RouteError />,
       children: [
         // Public routes
         {
