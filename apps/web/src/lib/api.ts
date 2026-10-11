@@ -449,6 +449,25 @@ export async function fetchSystemStatus(): Promise<SystemStatusResponse> {
   return await res.json();
 }
 
+export interface LiveLatencyRow {
+  endpoint: string;
+  n: number;
+  p50_ms: number;
+  p90_ms: number;
+  model_p50_ms: number | null;
+  first_ts: string | null;
+  last_ts: string | null;
+}
+
+/** Public LIVE production timings for /evals (no sign-in). */
+export async function fetchLiveLatency(days = 30): Promise<{ label: string; days: number; endpoints: LiveLatencyRow[] }> {
+  const res = await fetch(`/api/evals/live?days=${days}`);
+  if (!res.ok) {
+    throw new ApiError(await res.text(), res.status);
+  }
+  return await res.json();
+}
+
 export interface MasterClipResponse {
   url: string;
   start_s: number;

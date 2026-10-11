@@ -1,0 +1,600 @@
+{
+ "label": "PUBLIC DATA: VisA (Amazon), CC BY 4.0",
+ "dataset_url": "https://github.com/amazon-science/spot-diff",
+ "split": "VisA 1cls test split",
+ "generated": "2026-10-11",
+ "images_total": 2162,
+ "images_scored": 1857,
+ "images_failed": 305,
+ "categories": 11,
+ "models": {
+  "screen": "gemini-3.5-flash-lite",
+  "confirm": "gemini-3.8-flash"
+ },
+ "method": [
+  "Same prompt, models, settings and 3 known-good reference images (train split) as the shipped inspection service.",
+  "Images resized to at most 1024 px (JPEG quality 90), media resolution MEDIUM, default thinking, no temperature.",
+  "Both stages run on every image so all four setups are scored from one run; costs count the confirm stage only where that setup calls it."
+ ],
+ "caveats": [
+  "Clean, evenly lit lab photos; real lines have more glare and clutter.",
+  "The test split is about 55% defective; real lines are usually 1-5%, so few false alarms matters more than raw accuracy.",
+  "Every flagged unit is confirmed or overridden by a person in the product."
+ ],
+ "prices_usd_per_million_tokens": {
+  "gemini-3.5-flash-lite": {
+   "input": 0.3,
+   "output_assumed": 1.5
+  },
+  "gemini-3.8-flash": {
+   "input": 0.75,
+   "output": 3.75,
+   "note": "introductory price until 31 Dec 2026"
+  }
+ },
+ "latency_ms": {
+  "screen_p50": 1773,
+  "screen_p90": 10307,
+  "confirm_p50": 12149,
+  "confirm_p90": 39833,
+  "note": "Measured during the batch run with 2-12 parallel requests."
+ },
+ "setups": {
+  "few_false_alarms": {
+   "name": "Few false alarms (default): Flash-Lite screens, Flash confirms",
+   "n": 1857,
+   "normal": 857,
+   "anomaly": 1000,
+   "accuracy": 0.877221324717286,
+   "accuracy_ci95": 0.014926781699037408,
+   "balanced_accuracy": 0.8849988331388565,
+   "defects_caught": 0.784,
+   "false_alarms": 0.014002333722287048,
+   "cost_per_image_usd": 0.0021264385298869213
+  },
+  "catch_everything": {
+   "name": "Catch everything: defective if either flags",
+   "n": 1857,
+   "normal": 857,
+   "anomaly": 1000,
+   "accuracy": 0.8228325255788906,
+   "accuracy_ci95": 0.0173659218323883,
+   "balanced_accuracy": 0.8132240373395565,
+   "defects_caught": 0.938,
+   "false_alarms": 0.3115519253208868,
+   "cost_per_image_usd": 0.005522844426494343
+  },
+  "lite_ref": {
+   "name": "Flash-Lite + 3 references only",
+   "n": 1857,
+   "normal": 857,
+   "anomaly": 1000,
+   "accuracy": 0.8761443187937533,
+   "accuracy_ci95": 0.014982901010726713,
+   "balanced_accuracy": 0.8817462077012836,
+   "defects_caught": 0.809,
+   "false_alarms": 0.045507584597432905,
+   "cost_per_image_usd": 0.0007770027463651175
+  },
+  "flash_single": {
+   "name": "Flash on the unit only",
+   "n": 1857,
+   "normal": 857,
+   "anomaly": 1000,
+   "accuracy": 0.8239095315024233,
+   "accuracy_ci95": 0.01732438424165911,
+   "balanced_accuracy": 0.8164766627771296,
+   "defects_caught": 0.913,
+   "false_alarms": 0.28004667444574094,
+   "cost_per_image_usd": 0.004745841680129239
+  }
+ },
+ "by_category": {
+  "candle": {
+   "few_false_alarms": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.905,
+    "accuracy_ci95": 0.040637517148566046,
+    "balanced_accuracy": 0.9049999999999999,
+    "defects_caught": 0.84,
+    "false_alarms": 0.03,
+    "cost_per_image_usd": 0.0015884400000000004
+   },
+   "catch_everything": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.85,
+    "accuracy_ci95": 0.04948757419797418,
+    "balanced_accuracy": 0.85,
+    "defects_caught": 0.94,
+    "false_alarms": 0.24,
+    "cost_per_image_usd": 0.0033565387499999992
+   },
+   "lite_ref": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.905,
+    "accuracy_ci95": 0.040637517148566046,
+    "balanced_accuracy": 0.9049999999999999,
+    "defects_caught": 0.84,
+    "false_alarms": 0.03,
+    "cost_per_image_usd": 0.0007764450000000001
+   },
+   "flash_single": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.85,
+    "accuracy_ci95": 0.04948757419797418,
+    "balanced_accuracy": 0.85,
+    "defects_caught": 0.94,
+    "false_alarms": 0.24,
+    "cost_per_image_usd": 0.002580093750000001
+   }
+  },
+  "capsules": {
+   "few_false_alarms": {
+    "n": 160,
+    "normal": 60,
+    "anomaly": 100,
+    "accuracy": 0.79375,
+    "accuracy_ci95": 0.06269529176401525,
+    "balanced_accuracy": 0.835,
+    "defects_caught": 0.67,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.0019632140625000004
+   },
+   "catch_everything": {
+    "n": 160,
+    "normal": 60,
+    "anomaly": 100,
+    "accuracy": 0.925,
+    "accuracy_ci95": 0.04081291155994631,
+    "balanced_accuracy": 0.9199999999999999,
+    "defects_caught": 0.94,
+    "false_alarms": 0.1,
+    "cost_per_image_usd": 0.0063270796875000025
+   },
+   "lite_ref": {
+    "n": 160,
+    "normal": 60,
+    "anomaly": 100,
+    "accuracy": 0.79375,
+    "accuracy_ci95": 0.06269529176401525,
+    "balanced_accuracy": 0.835,
+    "defects_caught": 0.67,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.0007707749999999992
+   },
+   "flash_single": {
+    "n": 160,
+    "normal": 60,
+    "anomaly": 100,
+    "accuracy": 0.925,
+    "accuracy_ci95": 0.04081291155994631,
+    "balanced_accuracy": 0.9199999999999999,
+    "defects_caught": 0.94,
+    "false_alarms": 0.1,
+    "cost_per_image_usd": 0.005556304687499998
+   }
+  },
+  "cashew": {
+   "few_false_alarms": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.7866666666666666,
+    "accuracy_ci95": 0.06555943099655909,
+    "balanced_accuracy": 0.835,
+    "defects_caught": 0.69,
+    "false_alarms": 0.02,
+    "cost_per_image_usd": 0.0017083699999999983
+   },
+   "catch_everything": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.78,
+    "accuracy_ci95": 0.06629321533912802,
+    "balanced_accuracy": 0.78,
+    "defects_caught": 0.78,
+    "false_alarms": 0.22,
+    "cost_per_image_usd": 0.002665305
+   },
+   "lite_ref": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.8,
+    "accuracy_ci95": 0.06401333194473371,
+    "balanced_accuracy": 0.845,
+    "defects_caught": 0.71,
+    "false_alarms": 0.02,
+    "cost_per_image_usd": 0.0007711300000000008
+   },
+   "flash_single": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.7666666666666667,
+    "accuracy_ci95": 0.06768651050027401,
+    "balanced_accuracy": 0.77,
+    "defects_caught": 0.76,
+    "false_alarms": 0.22,
+    "cost_per_image_usd": 0.0018941749999999995
+   }
+  },
+  "chewinggum": {
+   "few_false_alarms": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.98,
+    "accuracy_ci95": 0.022404666180656813,
+    "balanced_accuracy": 0.985,
+    "defects_caught": 0.97,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.0017769349999999999
+   },
+   "catch_everything": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.94,
+    "accuracy_ci95": 0.038005810082144036,
+    "balanced_accuracy": 0.9199999999999999,
+    "defects_caught": 0.98,
+    "false_alarms": 0.14,
+    "cost_per_image_usd": 0.0025906899999999992
+   },
+   "lite_ref": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.9866666666666667,
+    "accuracy_ci95": 0.01835545009385898,
+    "balanced_accuracy": 0.99,
+    "defects_caught": 0.98,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.0007664400000000005
+   },
+   "flash_single": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.9333333333333333,
+    "accuracy_ci95": 0.03991932605383754,
+    "balanced_accuracy": 0.915,
+    "defects_caught": 0.97,
+    "false_alarms": 0.14,
+    "cost_per_image_usd": 0.0018242500000000006
+   }
+  },
+  "fryum": {
+   "few_false_alarms": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.88,
+    "accuracy_ci95": 0.05200467671277267,
+    "balanced_accuracy": 0.9099999999999999,
+    "defects_caught": 0.82,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.001631564999999999
+   },
+   "catch_everything": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.96,
+    "accuracy_ci95": 0.03136000000000001,
+    "balanced_accuracy": 0.965,
+    "defects_caught": 0.95,
+    "false_alarms": 0.02,
+    "cost_per_image_usd": 0.0026834800000000007
+   },
+   "lite_ref": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.88,
+    "accuracy_ci95": 0.05200467671277267,
+    "balanced_accuracy": 0.9099999999999999,
+    "defects_caught": 0.82,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.0007775300000000006
+   },
+   "flash_single": {
+    "n": 150,
+    "normal": 50,
+    "anomaly": 100,
+    "accuracy": 0.96,
+    "accuracy_ci95": 0.03136000000000001,
+    "balanced_accuracy": 0.965,
+    "defects_caught": 0.95,
+    "false_alarms": 0.02,
+    "cost_per_image_usd": 0.00190595
+   }
+  },
+  "macaroni1": {
+   "few_false_alarms": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.905,
+    "accuracy_ci95": 0.040637517148566046,
+    "balanced_accuracy": 0.9049999999999999,
+    "defects_caught": 0.86,
+    "false_alarms": 0.05,
+    "cost_per_image_usd": 0.002074361249999999
+   },
+   "catch_everything": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.67,
+    "accuracy_ci95": 0.06516815786870149,
+    "balanced_accuracy": 0.6699999999999999,
+    "defects_caught": 0.98,
+    "false_alarms": 0.64,
+    "cost_per_image_usd": 0.005313033749999999
+   },
+   "lite_ref": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.905,
+    "accuracy_ci95": 0.040637517148566046,
+    "balanced_accuracy": 0.9049999999999999,
+    "defects_caught": 0.86,
+    "false_alarms": 0.05,
+    "cost_per_image_usd": 0.0007787399999999994
+   },
+   "flash_single": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.67,
+    "accuracy_ci95": 0.06516815786870149,
+    "balanced_accuracy": 0.6699999999999999,
+    "defects_caught": 0.98,
+    "false_alarms": 0.64,
+    "cost_per_image_usd": 0.004534293750000002
+   }
+  },
+  "macaroni2": {
+   "few_false_alarms": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.745,
+    "accuracy_ci95": 0.060407282673532,
+    "balanced_accuracy": 0.745,
+    "defects_caught": 0.49,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.0015294037499999963
+   },
+   "catch_everything": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.595,
+    "accuracy_ci95": 0.06803416641658806,
+    "balanced_accuracy": 0.595,
+    "defects_caught": 0.97,
+    "false_alarms": 0.78,
+    "cost_per_image_usd": 0.007492184999999996
+   },
+   "lite_ref": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.75,
+    "accuracy_ci95": 0.06001249869818786,
+    "balanced_accuracy": 0.75,
+    "defects_caught": 0.5,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.0007766099999999998
+   },
+   "flash_single": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.59,
+    "accuracy_ci95": 0.06816461838813447,
+    "balanced_accuracy": 0.59,
+    "defects_caught": 0.96,
+    "false_alarms": 0.78,
+    "cost_per_image_usd": 0.006715574999999999
+   }
+  },
+  "pcb1": {
+   "few_false_alarms": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.925,
+    "accuracy_ci95": 0.03650417784309077,
+    "balanced_accuracy": 0.925,
+    "defects_caught": 0.85,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.002582696250000002
+   },
+   "catch_everything": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.875,
+    "accuracy_ci95": 0.04583530298798078,
+    "balanced_accuracy": 0.875,
+    "defects_caught": 0.99,
+    "false_alarms": 0.24,
+    "cost_per_image_usd": 0.004294222500000001
+   },
+   "lite_ref": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.89,
+    "accuracy_ci95": 0.04336430790408166,
+    "balanced_accuracy": 0.89,
+    "defects_caught": 0.97,
+    "false_alarms": 0.19,
+    "cost_per_image_usd": 0.0007787474999999994
+   },
+   "flash_single": {
+    "n": 200,
+    "normal": 100,
+    "anomaly": 100,
+    "accuracy": 0.91,
+    "accuracy_ci95": 0.0396627684359022,
+    "balanced_accuracy": 0.91,
+    "defects_caught": 0.87,
+    "false_alarms": 0.05,
+    "cost_per_image_usd": 0.0035154749999999997
+   }
+  },
+  "pcb2": {
+   "few_false_alarms": {
+    "n": 45,
+    "normal": 45,
+    "anomaly": 0,
+    "accuracy": 0.9555555555555556,
+    "accuracy_ci95": 0.06021248155929232,
+    "balanced_accuracy": null,
+    "defects_caught": null,
+    "false_alarms": 0.044444444444444446,
+    "cost_per_image_usd": 0.0010367166666666661
+   },
+   "catch_everything": {
+    "n": 45,
+    "normal": 45,
+    "anomaly": 0,
+    "accuracy": 0.5555555555555556,
+    "accuracy_ci95": 0.14518518518518517,
+    "balanced_accuracy": null,
+    "defects_caught": null,
+    "false_alarms": 0.4444444444444444,
+    "cost_per_image_usd": 0.010029033333333335
+   },
+   "lite_ref": {
+    "n": 45,
+    "normal": 45,
+    "anomaly": 0,
+    "accuracy": 0.9555555555555556,
+    "accuracy_ci95": 0.06021248155929232,
+    "balanced_accuracy": null,
+    "defects_caught": null,
+    "false_alarms": 0.044444444444444446,
+    "cost_per_image_usd": 0.0007777000000000003
+   },
+   "flash_single": {
+    "n": 45,
+    "normal": 45,
+    "anomaly": 0,
+    "accuracy": 0.5555555555555556,
+    "accuracy_ci95": 0.14518518518518517,
+    "balanced_accuracy": null,
+    "defects_caught": null,
+    "false_alarms": 0.4444444444444444,
+    "cost_per_image_usd": 0.009251333333333335
+   }
+  },
+  "pcb3": {
+   "few_false_alarms": {
+    "n": 201,
+    "normal": 101,
+    "anomaly": 100,
+    "accuracy": 0.8557213930348259,
+    "accuracy_ci95": 0.04857638675212687,
+    "balanced_accuracy": 0.855049504950495,
+    "defects_caught": 0.72,
+    "false_alarms": 0.009900990099009901,
+    "cost_per_image_usd": 0.002730985820895522
+   },
+   "catch_everything": {
+    "n": 201,
+    "normal": 101,
+    "anomaly": 100,
+    "accuracy": 0.8706467661691543,
+    "accuracy_ci95": 0.046394626582219586,
+    "balanced_accuracy": 0.8706930693069306,
+    "defects_caught": 0.88,
+    "false_alarms": 0.13861386138613863,
+    "cost_per_image_usd": 0.006659799253731342
+   },
+   "lite_ref": {
+    "n": 201,
+    "normal": 101,
+    "anomaly": 100,
+    "accuracy": 0.8805970149253731,
+    "accuracy_ci95": 0.04482850330502887,
+    "balanced_accuracy": 0.8801485148514852,
+    "defects_caught": 0.79,
+    "false_alarms": 0.0297029702970297,
+    "cost_per_image_usd": 0.0007791164179104474
+   },
+   "flash_single": {
+    "n": 201,
+    "normal": 101,
+    "anomaly": 100,
+    "accuracy": 0.845771144278607,
+    "accuracy_ci95": 0.04993065840085034,
+    "balanced_accuracy": 0.8455940594059406,
+    "defects_caught": 0.81,
+    "false_alarms": 0.1188118811881188,
+    "cost_per_image_usd": 0.0058806828358208925
+   }
+  },
+  "pcb4": {
+   "few_false_alarms": {
+    "n": 201,
+    "normal": 101,
+    "anomaly": 100,
+    "accuracy": 0.9651741293532339,
+    "accuracy_ci95": 0.02534614238245209,
+    "balanced_accuracy": 0.9650000000000001,
+    "defects_caught": 0.93,
+    "false_alarms": 0.0,
+    "cost_per_image_usd": 0.00356512910447761
+   },
+   "catch_everything": {
+    "n": 201,
+    "normal": 101,
+    "anomaly": 100,
+    "accuracy": 0.8955223880597015,
+    "accuracy_ci95": 0.04228709828486411,
+    "balanced_accuracy": 0.8958910891089109,
+    "defects_caught": 0.97,
+    "false_alarms": 0.1782178217821782,
+    "cost_per_image_usd": 0.010803711194029848
+   },
+   "lite_ref": {
+    "n": 201,
+    "normal": 101,
+    "anomaly": 100,
+    "accuracy": 0.945273631840796,
+    "accuracy_ci95": 0.03144380745903702,
+    "balanced_accuracy": 0.9452970297029702,
+    "defects_caught": 0.95,
+    "false_alarms": 0.0594059405940594,
+    "cost_per_image_usd": 0.0007890432835820901
+   },
+   "flash_single": {
+    "n": 201,
+    "normal": 101,
+    "anomaly": 100,
+    "accuracy": 0.9154228855721394,
+    "accuracy_ci95": 0.03846762355854523,
+    "balanced_accuracy": 0.9155940594059406,
+    "defects_caught": 0.95,
+    "false_alarms": 0.1188118811881188,
+    "cost_per_image_usd": 0.010014667910447757
+   }
+  }
+ }
+}

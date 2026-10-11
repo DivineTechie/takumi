@@ -123,13 +123,12 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
 
     // Any authenticated user
     {
+      // Public: the evidence page needs no sign-in (aggregates only)
       path: '/evals',
       element: (
-        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
-          <Suspense fallback={<LoadingFallback />}>
-            <EvalsScreen />
-          </Suspense>
-        </RoleGuard>
+        <Suspense fallback={<LoadingFallback />}>
+          <EvalsScreen />
+        </Suspense>
       ),
     },
 
