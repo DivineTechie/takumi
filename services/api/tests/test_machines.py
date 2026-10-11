@@ -484,6 +484,17 @@ def test_read_count_sanity(mock_firestore):
     assert machines_db[mach_id]["last_count"] == 0
 
 
+def test_read_counter_reset_accepted_when_next_read_follows_on(mock_firestore):
+    """A running counter that restarted at 0: the second low read is a little higher, not equal."""
+    mock_db, machines_db, _ = mock_firestore
+    crop = _make_dummy_image_b64(200, 200)
+    _seed_machine(machines_db, "mach_reset", last_count=300)
+    counter = {"counter_b64": crop}
+    assert _read(mock_db, "mach_reset", _gemini("unclear", count=4), counter).json()["count"] == 300
+    assert _read(mock_db, "mach_reset", _gemini("unclear", count=6), counter).json()["count"] == 6
+    assert machines_db["mach_reset"]["last_count"] == 6
+
+
 def test_read_prompt_labels_included_crops(mock_firestore):
     """Each crop is labelled in contents and the prompt names which crops are present."""
     from services.api import machines as machines_mod

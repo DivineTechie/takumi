@@ -1,6 +1,6 @@
 """Tests for the soak-run scorer with a synthetic fixture (no Firestore, no fake results files)."""
 
-from evals.machine_watch.score_soak import Event, cost, detection_events, score, truth_events
+from evals.machine_watch.score_soak import Event, cost, detection_events, score, truth_events, watch_start, while_watched
 
 
 def test_truth_skips_starting_state_and_keeps_changes():
@@ -70,3 +70,13 @@ def test_cost_per_machine_month():
     assert abs(c["usd_per_read"] - per_read) < 1e-12
     assert abs(c["usd_per_machine_month"] - 60 * 24 * 30 * per_read) < 1e-9
     assert cost({}, 0, 0, 1.0, 1)["usd_per_machine_month"] is None
+
+
+def test_truth_before_the_machine_was_watched_is_not_counted():
+    rows = [{"machine_id": "mach_a", "event_type": "state_change", "to_state": "running", "run_s": 300},
+            {"machine_id": "mach_a", "event_type": "count", "count": 5, "run_s": 900}]
+    starts = watch_start(rows, {"mach_a": 1})
+    assert starts == {"bench_1": 300}
+    truth = [Event("bench_1", "stopped", 120), Event("bench_1", "stopped", 320), Event("bench_1", "stopped", 600),
+             Event("bench_2", "stopped", 600)]
+    assert while_watched(truth, starts) == [Event("bench_1", "stopped", 600)]  # 320 is inside the 30 s warm-up

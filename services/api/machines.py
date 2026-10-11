@@ -662,7 +662,10 @@ async def read_machine(
             if 0 <= delta <= max_delta:
                 accepted_count = raw_count
             elif delta < 0:
-                if last_misread_count == raw_count:
+                # A lower count is a reset (counter cleared, shift change) when the previous read was
+                # also lower and this one follows on plausibly from it; one odd read is a misread.
+                follows = last_misread_count is not None and 0 <= raw_count - last_misread_count <= max_delta
+                if follows and last_misread_count < last_count:
                     accepted_count = raw_count
                 else:
                     accepted_count = last_count

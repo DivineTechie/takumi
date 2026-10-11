@@ -9,8 +9,9 @@ live run and a recorded video replayed later are scored the same way.
 
 Matching: each truth event (state change to X, alarm, alarm cleared) is matched to the earliest unused
 detection of the same kind on the same bench machine within [truth - 2 s, truth + window]. The first
-truth event per machine is the starting state, not a change, and detections in the first 30 s
-(warm-up, while the watcher learns each machine's state) are ignored.
+truth event per machine is the starting state, not a change. Truth events from before a machine was
+being watched (plus a 30 s warm-up after its first reading) are not counted, and detections in the
+first 30 s of the run are ignored.
 """
 
 from __future__ import annotations
@@ -76,6 +77,23 @@ def detection_events(rows: list[dict[str, Any]], slot_by_machine: dict[str, int]
         elif etype in ("alarm", "alarm_cleared"):
             out.append(Event(machine, etype, float(run_s)))
     return sorted(out, key=lambda e: e.run_s)
+
+
+def watch_start(rows: list[dict[str, Any]], slot_by_machine: dict[str, int]) -> dict[str, float]:
+    """run_s of each bench machine's first stored reading: before it, the watcher was not running yet."""
+    starts: dict[str, float] = {}
+    for r in rows:
+        slot = slot_by_machine.get(r.get("machine_id", ""))
+        if slot is None or r.get("run_s") is None:
+            continue
+        key = f"bench_{slot}"
+        starts[key] = min(starts.get(key, float("inf")), float(r["run_s"]))
+    return starts
+
+
+def while_watched(truth: list[Event], starts: dict[str, float]) -> list[Event]:
+    """Drops truth events on a machine before it was watched (they could not be detected)."""
+    return [t for t in truth if t.machine in starts and t.run_s >= starts[t.machine] + WARMUP_S]
 
 
 def score(truth: list[Event], detections: list[Event], window_s: float = 120.0) -> dict[str, Any]:
@@ -193,7 +211,7 @@ def main() -> None:
         m.get("id"): m.get("bench_slot") for m in (d.to_dict() for d in db.collection("machines").stream()) if m.get("bench_slot")
     }
 
-    truth = truth_events(truth_rows)
+    truth = while_watched(truth_events(truth_rows), watch_start(det_rows, slot_by_machine))
     detections = detection_events(det_rows, slot_by_machine)
     result = score(truth, detections, args.window)
 

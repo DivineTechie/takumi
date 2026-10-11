@@ -128,6 +128,17 @@ export const MachineWatchScreen: React.FC = () => {
     refreshLists();
   }, [refreshLists]);
 
+  /** Reloads the caller's soak runs and picks the newest running one if none is chosen yet. */
+  const refreshRuns = useCallback(async () => {
+    try {
+      const rs = await fetchMySoakRuns();
+      setRuns(rs);
+      setRunId((current) => current || rs.find((r) => r.status === 'running')?.id || '');
+    } catch {
+      // keep the current list
+    }
+  }, []);
+
   useEffect(() => saveSelected(selected), [selected]);
 
   // Keep the screen awake: a phone that locks stops watching.
@@ -580,8 +591,20 @@ export const MachineWatchScreen: React.FC = () => {
               </div>
 
               <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-2">
-                <h2 className="font-bold">Soak run (optional)</h2>
-                <select value={runId} onChange={(e) => setRunId(e.target.value)} disabled={mode === 'watching'} className="min-h-[44px] rounded-lg bg-surface-container-high px-2 text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-bold">Soak run (optional)</h2>
+                  <button type="button" onClick={refreshRuns} disabled={mode === 'watching'} className="min-h-[44px] px-3 rounded-lg bg-surface-container-high text-sm font-bold">
+                    Refresh
+                  </button>
+                </div>
+                <select
+                  value={runId}
+                  onChange={(e) => setRunId(e.target.value)}
+                  onFocus={refreshRuns}
+                  disabled={mode === 'watching'}
+                  aria-label="Soak run"
+                  className="min-h-[44px] rounded-lg bg-surface-container-high px-2 text-sm"
+                >
                   <option value="">No soak run</option>
                   {runs.map((r) => (
                     <option key={r.id} value={r.id}>
