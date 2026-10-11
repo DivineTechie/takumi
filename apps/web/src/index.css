@@ -234,6 +234,16 @@ body {
 }
 .tk-draw { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: tk-draw 1.2s ease-out forwards; }
 .tk-flow { stroke-dasharray: 6 6; animation: tk-flow 0.8s linear infinite; }
+@keyframes tk-bar {
+  0%, 100% { transform: scaleY(0.25); }
+  50% { transform: scaleY(1); }
+}
+@keyframes tk-halo {
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.tk-bar { animation: tk-bar 0.9s ease-in-out infinite; transform-origin: center; }
+.tk-halo { animation: tk-halo 1.8s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .tk-rise, .tk-pop, .tk-ring, .tk-shimmer, .tk-draw, .tk-flow { animation: none; opacity: 1; stroke-dashoffset: 0; }
+  .tk-rise, .tk-pop, .tk-ring, .tk-shimmer, .tk-draw, .tk-flow, .tk-bar, .tk-halo { animation: none; opacity: 1; stroke-dashoffset: 0; }
 }

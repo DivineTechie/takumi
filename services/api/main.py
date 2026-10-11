@@ -138,7 +138,7 @@ class MeResponse(BaseModel):
 
 
 class LiveTokenRequest(BaseModel):
-    purpose: Literal["interview", "coach"]
+    purpose: Literal["interview", "coach", "copilot"]
 
 
 class CommonMistakeItem(BaseModel):
@@ -384,6 +384,13 @@ async def issue_live_token(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: purpose 'coach' requires role 'trainee', 'supervisor', or 'master'",
+            )
+    elif req.purpose == "copilot":
+        # Voice operations copilot in the control tower; its tools read supervisor-only data.
+        if user.role != "supervisor":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: purpose 'copilot' requires role 'supervisor'",
             )
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid purpose")

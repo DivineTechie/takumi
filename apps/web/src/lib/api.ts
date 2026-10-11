@@ -185,7 +185,7 @@ export async function getMe(): Promise<MeResponse> {
 }
 
 export async function liveToken(
-  purpose: 'interview' | 'coach' = 'coach'
+  purpose: 'interview' | 'coach' | 'copilot' = 'coach'
 ): Promise<LiveTokenResponse> {
   return await apiFetch<LiveTokenResponse>('/api/live-token', {
     method: 'POST',

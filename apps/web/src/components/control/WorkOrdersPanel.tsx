@@ -20,6 +20,8 @@ export interface DraftRequest {
   machineId: string;
   name: string;
   nonce: number;
+  /** Called with the draft (or null on failure), e.g. by the voice copilot waiting for the answer. */
+  onDone?: (wo: WorkOrder | null) => void;
 }
 
 const LANGS: { code: SpeechLanguage; label: string }[] = [
@@ -260,7 +262,9 @@ export const WorkOrdersPanel: React.FC<{
       const wo = await draftWorkOrder(next.machineId);
       setFreshId(wo.existing ? null : wo.id);
       setOrders((prev) => [wo, ...prev.filter((o) => o.id !== wo.id)]);
+      next.onDone?.(wo);
     } catch (e) {
+      next.onDone?.(null);
       setError(e instanceof ApiError && e.status === 409 ? `${next.name} is running again; no work order needed.` : `Could not draft a work order for ${next.name}.`);
     } finally {
       busy.current = false;
@@ -272,7 +276,7 @@ export const WorkOrdersPanel: React.FC<{
   useEffect(() => {
     if (!request || request.nonce === lastNonce.current) return;
     lastNonce.current = request.nonce;
-    if (!queue.current.some((q) => q.machineId === request.machineId)) queue.current.push(request);
+    if (request.onDone || !queue.current.some((q) => q.machineId === request.machineId)) queue.current.push(request);
     void runNext();
   }, [request, runNext]);
 

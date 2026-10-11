@@ -5,7 +5,8 @@ import { describe } from '../lib/controlEvents';
 import { OrdersPanel } from '../components/control/OrdersPanel';
 import { MachinesNow } from '../components/control/MachinesNow';
 import { WorkOrdersPanel, type DraftRequest } from '../components/control/WorkOrdersPanel';
-import type { Machine } from '../lib/api';
+import type { Machine, WorkOrder } from '../lib/api';
+import { CopilotPanel } from '../components/control/CopilotPanel';
 
 /**
  * Control tower (P18): the whole factory from one event stream. Cloud Run publishes every event to
@@ -63,6 +64,12 @@ export const ControlTowerScreen: React.FC = () => {
   const [draftRequest, setDraftRequest] = useState<DraftRequest | null>(null);
   const [autoDraft, setAutoDraft] = useState(false);
   const requestDraft = useCallback((m: Machine) => setDraftRequest({ machineId: m.id, name: m.name, nonce: Date.now() + Math.random() }), []);
+  // The voice copilot waits for the visible maintenance agent run to finish.
+  const draftForCopilot = useCallback(
+    (m: Machine) =>
+      new Promise<WorkOrder | null>((resolve) => setDraftRequest({ machineId: m.id, name: m.name, nonce: Date.now() + Math.random(), onDone: resolve })),
+    []
+  );
 
   const load = useCallback(async () => {
     try {
@@ -99,6 +106,7 @@ export const ControlTowerScreen: React.FC = () => {
 
       <main className="max-w-6xl mx-auto p-4 grid gap-4 lg:grid-cols-[1fr_380px]">
         <div className="space-y-4 min-w-0">
+          <CopilotPanel draftWorkOrder={draftForCopilot} />
           <MachinesNow onDraft={requestDraft} onNewStop={autoDraft ? requestDraft : undefined} />
           <WorkOrdersPanel request={draftRequest} autoDraft={autoDraft} onAutoDraftChange={setAutoDraft} />
           <OrdersPanel />
