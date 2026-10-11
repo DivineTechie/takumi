@@ -473,10 +473,33 @@ def create_machine(
 def list_machines(
     user: AuthUser = Depends(verify_auth_token),
 ) -> list[dict[str, Any]]:
-    """Returns all machines configured in the facility."""
+    """Returns the machines in use (removed machines are left out), oldest first."""
     db = get_firestore_client()
-    docs = db.collection("machines").stream()
-    return [doc.to_dict() for doc in docs]
+    machines = [doc.to_dict() or {} for doc in db.collection("machines").stream()]
+    machines = [m for m in machines if not m.get("archived")]
+    machines.sort(key=lambda m: str(m.get("created_at") or ""))
+    return machines
+
+
+@router.post("/machines/{machine_id}/remove")
+def remove_machine(
+    machine_id: str,
+    user: AuthUser = Depends(require_role("trainee", "supervisor", "master")),
+) -> dict[str, Any]:
+    """Hides a machine from lists (for example a duplicate setup). Its events and history are kept.
+
+    Allowed for supervisors and for the user who set the machine up.
+    """
+    db = get_firestore_client()
+    ref = db.collection("machines").document(machine_id)
+    snap = ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Machine {machine_id} not found")
+    data = snap.to_dict() or {}
+    if user.role != "supervisor" and data.get("created_by") != user.uid:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only a supervisor or the person who set it up can remove it")
+    ref.update({"archived": True, "archived_at": datetime.now(timezone.utc).isoformat(), "archived_by": user.uid})
+    return {"id": machine_id, "archived": True}
 
 
 @router.get("/machines/summary")
@@ -500,7 +523,7 @@ def machines_summary(
     day_end = min(day_start + timedelta(days=1), now)
 
     db = get_firestore_client()
-    machines = [d.to_dict() or {} for d in db.collection("machines").stream()]
+    machines = [m for m in (d.to_dict() or {} for d in db.collection("machines").stream()) if not m.get("archived")]
     events_by_machine: dict[str, list[dict[str, Any]]] = {}
     for d in db.collection("machine_events").where("ts", ">=", day_start.isoformat()).stream():
         ev = d.to_dict() or {}

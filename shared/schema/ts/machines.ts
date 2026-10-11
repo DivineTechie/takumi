@@ -75,6 +75,12 @@ export interface Machine {
    * Last counter reading rejected as a misread (a lower value confirmed twice is a reset)
    */
   last_misread_count?: number | null;
+  /**
+   * Removed from lists (e.g. a duplicate setup); history is kept
+   */
+  archived?: boolean;
+  archived_at?: string | null;
+  archived_by?: string | null;
 }
 export interface NormalizedRoi {
   x: number;

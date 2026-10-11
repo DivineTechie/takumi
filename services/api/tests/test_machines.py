@@ -709,3 +709,18 @@ def test_status_words_on_the_hmi_are_never_alarms(mock_firestore):
     assert resp.json()["alarm_text"] is None
     types = [e["event_type"] for e in mock_db.events_db.values()]
     assert "alarm" not in types and "alarm_cleared" in types
+
+
+
+def test_remove_hides_machine_and_is_limited_to_owner_or_supervisor(mock_firestore):
+    mock_db, machines_db, _ = mock_firestore
+    _seed_machine(machines_db, "mach_dup", created_by="trainee_1")
+    _seed_machine(machines_db, "mach_keep", created_by="trainee_1")
+    with patch("services.api.machines.get_firestore_client", return_value=mock_db):
+        with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_2", "role": "trainee"}):
+            assert client.post("/api/machines/mach_dup/remove", headers={"Authorization": "Bearer t"}).status_code == 403
+        with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}):
+            assert client.post("/api/machines/mach_dup/remove", headers={"Authorization": "Bearer t"}).status_code == 200
+            ids = [m["id"] for m in client.get("/api/machines", headers={"Authorization": "Bearer t"}).json()]
+    assert machines_db["mach_dup"]["archived"] is True
+    assert ids == ["mach_keep"]

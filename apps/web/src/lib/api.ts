@@ -949,6 +949,10 @@ export async function fetchMachines(): Promise<Machine[]> {
   return await apiFetch<Machine[]>('/api/machines');
 }
 
+export async function removeMachine(id: string): Promise<{ id: string; archived: boolean }> {
+  return await apiFetch(`/api/machines/${encodeURIComponent(id)}/remove`, { method: 'POST' });
+}
+
 export async function fetchMachine(id: string): Promise<Machine> {
   return await apiFetch<Machine>(`/api/machines/${encodeURIComponent(id)}`);
 }

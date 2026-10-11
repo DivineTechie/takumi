@@ -79,3 +79,8 @@ class Machine(BaseModel):
         None,
         description='Last counter reading rejected as a misread (a lower value confirmed twice is a reset)',
     )
+    archived: bool | None = Field(
+        None, description='Removed from lists (e.g. a duplicate setup); history is kept'
+    )
+    archived_at: AwareDatetime | None = None
+    archived_by: str | None = None

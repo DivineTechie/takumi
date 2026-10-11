@@ -54,8 +54,8 @@ This inventory records the deployment status and ownership for all Google AI mod
 - Watch page `/machines/watch`: one Gemini Robotics-ER call per setup, then the browser checks the regions every 500 ms and calls Gemini Flash-Lite only on a stable change. Only region crops (max 512 px) leave the device; the setup frame is never stored. A recorded video can replace the camera with `?debug=1` (labelled "Simulated input").
 - Dashboard "Machines" tab: today's state timeline, availability, stops, downtime, top alarms, parts and availability x performance, labelled LIVE or HOME RIG.
 - Scoring: `python -m evals.machine_watch.score_soak <run_id>` writes detection rate, delays, false alarms and cost per machine. First HOME RIG run (Oct 11, 15 min, 3 machines, fast x10 schedule, phone camera on the test bench): 61/61 state changes and alarms detected, median delay 4.1 s, 3 false alarms (fixed since). Published on /evals with its caveats.
-- On the phone, a stop or new alarm raises a red banner with a beep and vibration; the control tower shows live machine states with optional stop alerts. Full-screen watch mode; portrait phones get a "turn sideways" hint (Android also locks landscape).
-- Cost controls: counters are re-read at most every 5 minutes with only the counter crop, full check-ins every 10 minutes, and a pixel-change fallback on the light region catches changes the colour check misses.
+- On the phone, a stop or new alarm raises a red banner with a beep and vibration; the control tower shows live machine states with optional stop alerts. Duplicate or old machines can be removed from lists (history kept). Full-screen watch mode; portrait phones get a "turn sideways" hint (Android also locks landscape).
+- Cost controls: counters are re-read every 2 minutes with only the counter crop (the phone shows when each count was read), full check-ins every 10 minutes, and a pixel-change fallback on the light region catches changes the colour check misses.
 
 ## 4. Unit records and quality trace-back: **In progress**
 

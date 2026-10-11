@@ -120,6 +120,23 @@
         "null"
       ],
       "description": "Last counter reading rejected as a misread (a lower value confirmed twice is a reset)"
+    },
+    "archived": {
+      "type": "boolean",
+      "description": "Removed from lists (e.g. a duplicate setup); history is kept"
+    },
+    "archived_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "archived_by": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

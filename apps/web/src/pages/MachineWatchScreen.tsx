@@ -6,6 +6,7 @@ import {
   fetchMachines,
   fetchMySoakRuns,
   readMachine,
+  removeMachine,
   setupMachine,
   type Machine,
   type NormalizedRoi,
@@ -59,6 +60,8 @@ interface MachineView {
   edgeLight: string;
   state: string | null;
   count: number | null;
+  /** When the counter was last read by Gemini (counters are read periodically, not every frame). */
+  countAt: number | null;
   alarm: string | null;
   lastReadAt: number | null;
   readsPerHour: number;
@@ -280,6 +283,14 @@ export const MachineWatchScreen: React.FC = () => {
     return out.toDataURL('image/jpeg', 0.85).split(',')[1];
   };
 
+  // Re-render every 10 s while watching so "counted … ago" and "last read" stay current.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (mode !== 'watching') return;
+    const t = setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => clearInterval(t);
+  }, [mode]);
+
   // Restart the camera when the phone is rotated before watching, so the frame matches the new orientation.
   const startCameraRef = useRef(startCamera);
   startCameraRef.current = startCamera;
@@ -442,6 +453,7 @@ export const MachineWatchScreen: React.FC = () => {
             ...(prev[m.id] ?? { edgeLight: 'off' }),
             state: res.state,
             count: res.count,
+            countAt: crops.counter_b64 ? Date.now() : (prev[m.id]?.countAt ?? null),
             alarm: res.alarm_text,
             lastReadAt: Date.now(),
             readsPerHour: w.reads / hours,
@@ -686,6 +698,7 @@ export const MachineWatchScreen: React.FC = () => {
                       <div key={m.id} className={`${colour} text-white rounded-xl px-3 py-2 text-sm shadow`} data-testid={`watch-chip-${m.id}`}>
                         <span className="font-bold">{m.name}</span> · {v?.state ?? '…'}
                         {v?.count !== null && v?.count !== undefined && ` · ${v.count}`}
+                        {v?.countAt && <span className="block text-[11px] opacity-80">counted {sinceText(v.countAt)}</span>}
                         {v?.alarm && <span className="block text-xs">{v.alarm}</span>}
                       </div>
                     );
@@ -782,11 +795,32 @@ export const MachineWatchScreen: React.FC = () => {
                 <h2 className="font-bold">Machines this camera watches</h2>
                 {machines.length === 0 && <p className="text-sm text-on-surface-variant">No machines yet.</p>}
                 {machines.map((m) => (
-                  <label key={m.id} className="flex items-center gap-2 text-sm min-h-[44px]">
-                    <input type="checkbox" checked={selected.includes(m.id)} onChange={() => toggle(m.id)} disabled={mode === 'watching'} />
-                    <span className="flex-1">{m.name}</span>
-                    <span className="text-xs text-on-surface-variant">{m.source === 'VIRTUAL' ? 'HOME RIG' : 'LIVE'}</span>
-                  </label>
+                  <div key={m.id} className="flex items-center gap-2 text-sm min-h-[44px]">
+                    <label className="flex flex-1 items-center gap-2 min-h-[44px]">
+                      <input type="checkbox" checked={selected.includes(m.id)} onChange={() => toggle(m.id)} disabled={mode === 'watching'} />
+                      <span className="flex-1">{m.name}</span>
+                      <span className="text-xs text-on-surface-variant">
+                        {m.source === 'VIRTUAL' ? 'HOME RIG' : 'LIVE'} · {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${m.name}`}
+                      disabled={mode === 'watching'}
+                      onClick={async () => {
+                        try {
+                          await removeMachine(m.id);
+                          setSelected((prev) => prev.filter((x) => x !== m.id));
+                          await refreshLists();
+                        } catch {
+                          setMessage('Could not remove that machine.');
+                        }
+                      }}
+                      className="min-w-[44px] min-h-[44px] rounded-lg text-on-surface-variant disabled:opacity-40"
+                    >
+                      <span className="material-symbols-outlined">delete</span>
+                    </button>
+                  </div>
                 ))}
               </div>
 
@@ -835,6 +869,7 @@ export const MachineWatchScreen: React.FC = () => {
                     </div>
                     <div className="text-sm text-on-surface-variant mt-1">
                       Edge light: {v?.edgeLight ?? '…'} · Count: {v?.count ?? '—'}
+                      {v?.countAt ? ` (counted ${sinceText(v.countAt)})` : ''}
                     </div>
                     {v?.alarm && <div className="text-sm text-red-300 font-bold">{v.alarm}</div>}
                     <div className="text-xs text-on-surface-variant mt-1">
@@ -853,7 +888,12 @@ export const MachineWatchScreen: React.FC = () => {
 };
 
 function emptyView(): MachineView {
-  return { edgeLight: 'off', state: null, count: null, alarm: null, lastReadAt: null, readsPerHour: 0, error: null };
+  return { edgeLight: 'off', state: null, count: null, countAt: null, alarm: null, lastReadAt: null, readsPerHour: 0, error: null };
+}
+
+function sinceText(t: number): string {
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  return s < 60 ? `${s}s ago` : `${Math.round(s / 60)} min ago`;
 }
 
 export default MachineWatchScreen;
