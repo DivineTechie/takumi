@@ -18,4 +18,14 @@ describe('MachinesNow', () => {
     expect(screen.getByText(/HOME RIG/)).toBeInTheDocument();
     expect(screen.getByText('Turn on stop alerts')).toBeInTheDocument();
   });
+
+  it('treats a machine with no recent reading as off camera, not stopped', async () => {
+    vi.mocked(apiModule.fetchMachines).mockResolvedValue([
+      { id: 'm1', name: 'Press 2', state: 'stopped', last_alarm: 'E-221', source: 'VIRTUAL', last_seen_at: new Date(Date.now() - 20 * 60_000).toISOString() },
+    ] as unknown as apiModule.Machine[]);
+    render(<MachinesNow />);
+    expect(await screen.findByText('no camera (last: stopped)')).toBeInTheDocument();
+    expect(screen.queryByText(/stopped$/)).toBeNull();
+    expect(screen.getByTestId('machine-now-m1').className).not.toContain('bg-red-600');
+  });
 });

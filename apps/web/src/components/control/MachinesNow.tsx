@@ -8,6 +8,16 @@ import { fetchMachines, type Machine } from '../../lib/api';
  */
 
 const POLL_MS = 5_000;
+/** Longer than the 10-minute check-in: after this the last state is stale, not a live stop. */
+const STALE_MS = 15 * 60_000;
+
+function isStale(m: Machine): boolean {
+  return !m.last_seen_at || Date.now() - Date.parse(m.last_seen_at) > STALE_MS;
+}
+
+function liveState(m: Machine): string | null {
+  return isStale(m) ? null : (m.state ?? null);
+}
 
 function ago(iso: string | null | undefined): string {
   if (!iso) return 'no reading yet';
@@ -39,7 +49,7 @@ export const MachinesNow: React.FC = () => {
   const load = useCallback(async () => {
     try {
       const ms = await fetchMachines();
-      const nowStopped = new Set(ms.filter((m) => m.state === 'stopped').map((m) => m.id));
+      const nowStopped = new Set(ms.filter((m) => liveState(m) === 'stopped').map((m) => m.id));
       const newlyStopped = [...nowStopped].some((id) => !stoppedRef.current.has(id));
       if (newlyStopped && alertsOn && stoppedRef.current.size + nowStopped.size > 0) beep();
       stoppedRef.current = nowStopped;
@@ -68,7 +78,7 @@ export const MachinesNow: React.FC = () => {
   };
 
   if (!machines || machines.length === 0) return null;
-  const stopped = machines.filter((m) => m.state === 'stopped');
+  const stopped = machines.filter((m) => liveState(m) === 'stopped');
 
   return (
     <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 space-y-3" aria-labelledby="machines-now">
@@ -83,13 +93,14 @@ export const MachinesNow: React.FC = () => {
       </div>
       <div className="flex flex-wrap gap-2">
         {machines.map((m) => {
+          const state = liveState(m);
           const colour =
-            m.state === 'stopped' ? 'bg-red-600 text-white' : m.state === 'idle' ? 'bg-amber-400 text-black' : m.state === 'running' ? 'bg-green-600 text-white' : 'bg-surface-container-high';
+            state === 'stopped' ? 'bg-red-600 text-white' : state === 'idle' ? 'bg-amber-400 text-black' : state === 'running' ? 'bg-green-600 text-white' : 'bg-surface-container-high';
           return (
             <div key={m.id} className={`${colour} rounded-xl px-3 py-2 text-sm min-w-[150px]`} data-testid={`machine-now-${m.id}`}>
               <div className="font-bold">{m.name}</div>
-              <div>{m.state ?? 'unknown'}</div>
-              {m.state === 'stopped' && m.last_alarm && <div className="text-xs font-bold">{m.last_alarm}</div>}
+              <div>{state ?? (isStale(m) ? `no camera (last: ${m.state ?? 'unknown'})` : 'unknown')}</div>
+              {state === 'stopped' && m.last_alarm && <div className="text-xs font-bold">{m.last_alarm}</div>}
               <div className="text-[11px] opacity-80">
                 {m.source === 'VIRTUAL' ? 'HOME RIG' : 'LIVE'} · {ago(m.last_seen_at)}
               </div>
