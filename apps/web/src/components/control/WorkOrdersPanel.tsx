@@ -59,14 +59,15 @@ const PRIORITY_TONE: Record<string, string> = {
   low: 'bg-surface-container-high text-on-surface-variant',
 };
 
-function readLang(): SpeechLanguage {
+function readLang(fallback: string): SpeechLanguage {
   try {
     const v = localStorage.getItem('takumi.alertLang');
     if (v && LANGS.some((l) => l.code === v)) return v as SpeechLanguage;
   } catch {
     // storage unavailable
   }
-  return 'en';
+  // No saved choice: speak in the language the app is shown in.
+  return LANGS.some((l) => l.code === fallback) ? (fallback as SpeechLanguage) : 'en';
 }
 
 const WorkOrderCard: React.FC<{
@@ -242,12 +243,12 @@ export const WorkOrdersPanel: React.FC<{
   autoDraft: boolean;
   onAutoDraftChange: (v: boolean) => void;
 }> = ({ request, autoDraft, onAutoDraftChange }) => {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [orders, setOrders] = useState<WorkOrder[]>([]);
   const [running, setRunning] = useState<{ name: string; startedAt: number } | null>(null);
   const [freshId, setFreshId] = useState<string | null>(null);
   const [error, setError] = useState<{ key: string; name: string } | null>(null);
-  const [lang, setLang] = useState<SpeechLanguage>(readLang);
+  const [lang, setLang] = useState<SpeechLanguage>(() => readLang(language));
   const queue = useRef<DraftRequest[]>([]);
   const busy = useRef(false);
   const lastNonce = useRef<number | null>(null);

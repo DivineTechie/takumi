@@ -37,8 +37,8 @@ export const ChooseLessonScreen: React.FC = () => {
   return (
     <div className="bg-background text-on-surface font-body-md min-h-screen antialiased flex flex-col justify-between selection:bg-primary-container selection:text-on-primary-container">
       {/* Top App Bar */}
-      <header className="w-full bg-surface-container-low min-h-[64px] flex items-center justify-between px-4 sticky top-0 z-40 border-b border-outline-variant">
-        <div className="flex items-center gap-3">
+      <header className="w-full bg-surface-container-low min-h-[64px] flex items-center justify-between gap-2 px-4 sticky top-0 z-40 border-b border-outline-variant">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => navigate('/')}
             aria-label={t('back')}
@@ -60,12 +60,12 @@ export const ChooseLessonScreen: React.FC = () => {
         </div>
 
         {/* Language selector */}
-        <div className="relative flex items-center">
+        <div className="relative flex items-center min-w-0 shrink">
           <select
             aria-label={t('station.choose_language_aria')}
             value={language}
             onChange={(e) => setLanguage(e.target.value as LanguageCode)}
-            className="appearance-none bg-surface-container-high text-on-surface font-label-md text-sm pl-3 pr-8 py-2 rounded-lg border border-outline-variant focus:outline-none focus:border-primary-container transition-colors cursor-pointer"
+            className="appearance-none max-w-[42vw] truncate min-h-[44px] bg-surface-container-high text-on-surface font-label-md text-sm pl-3 pr-8 py-2 rounded-lg border border-outline-variant focus:outline-none focus:border-primary-container transition-colors cursor-pointer"
           >
             {SUPPORTED_LANGUAGES.map((lang) => (
               <option key={lang.code} value={lang.code}>
