@@ -57,6 +57,7 @@ from services.api.model_armor import screen_text
 from services.api.storage_client import (
     download_blob_bytes,
     get_signed_url_for_gs_uri,
+    upload_blob_bytes,
     upload_frame_jpeg,
     upload_inspection_jpeg,
 )
@@ -1887,6 +1888,48 @@ async def create_product(
         "created_at": now_iso,
     }
     doc_ref.set(data)
+    return data
+
+
+class CreateProductWithImagesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(..., min_length=2, max_length=80)
+    description: str = Field(..., min_length=3, max_length=300)
+    defect_types: list[str] = Field(default_factory=list, max_length=12)
+    images_b64: list[str] = Field(..., min_length=3, max_length=3)
+
+
+@app.post("/api/products/with-images", status_code=status.HTTP_201_CREATED)
+async def create_product_with_images(
+    req: CreateProductWithImagesRequest,
+    user: AuthUser = Depends(require_role("supervisor")),
+) -> dict[str, Any]:
+    """Registers a LIVE product from 3 photos of known-good units (supervisor only).
+
+    The photos become the inspection references (resized like every inspection image).
+    """
+    slug = re.sub(r"[^a-z0-9]+", "_", req.name.lower()).strip("_")[:40] or "product"
+    product_id = f"{slug}_{secrets.token_hex(2)}"
+    paths = []
+    for i, b64 in enumerate(req.images_b64, start=1):
+        decode_and_validate_image(b64)
+        raw = base64.b64decode(b64.split(",", 1)[1] if "," in b64 else b64)
+        jpeg = resize_inspection_image(raw)
+        path = f"products/{product_id}/ref_{i}.jpg"
+        upload_blob_bytes(path, jpeg)
+        paths.append(path)
+    data = {
+        "id": product_id,
+        "name": req.name.strip(),
+        "description": req.description.strip(),
+        "defect_types": [d.strip() for d in req.defect_types if d.strip()],
+        "reference_image_paths": paths,
+        "default_mode": "few_false_alarms",
+        "source": "LIVE",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user.uid,
+    }
+    get_firestore_client().collection("products").document(product_id).set(data)
     return data
 
 

@@ -10,6 +10,7 @@ import {
 } from '../lib/api';
 import { resizeImageForUpload } from '../lib/imageResize';
 import logoSvg from '../assets/logo.svg';
+import { NewProductForm } from '../components/inspect/NewProductForm';
 
 interface StationHistoryItem {
   inspection_id: string;
@@ -29,6 +30,7 @@ export const InspectScreen: React.FC = () => {
 
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [showNewProduct, setShowNewProduct] = useState(false);
   const [unitId, setUnitId] = useState<string>('');
   const [unitIdError, setUnitIdError] = useState<string | null>(null);
   const [mode, setMode] = useState<'few_false_alarms' | 'catch_everything'>('few_false_alarms');
@@ -276,9 +278,30 @@ export const InspectScreen: React.FC = () => {
               Product & Inspection Mode
             </h2>
             <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              LIVE RIG
+              LIVE
             </span>
           </div>
+
+          {role === 'supervisor' &&
+            (showNewProduct ? (
+              <NewProductForm
+                onCancel={() => setShowNewProduct(false)}
+                onCreated={(p) => {
+                  setProducts((prev) => [p, ...prev]);
+                  setSelectedProductId(p.id);
+                  setMode(p.default_mode || 'few_false_alarms');
+                  setShowNewProduct(false);
+                }}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowNewProduct(true)}
+                className="min-h-[48px] px-4 rounded-xl bg-surface-container-high text-on-surface text-sm font-bold"
+              >
+                + New product from photos
+              </button>
+            ))}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>

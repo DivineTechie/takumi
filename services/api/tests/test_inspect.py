@@ -720,3 +720,31 @@ def test_supervisor_insights_inspections(mock_firestore):
         assert insights["gallery"]["trials_count"] == 1
         assert insights["gallery"]["hits_count"] == 1
         assert insights["gallery"]["hit_rate"] == 100.0
+
+
+def test_create_product_with_images_uploads_references_as_live():
+    import base64 as _b64
+    import io as _io
+    from PIL import Image as _Image
+
+    buf = _io.BytesIO()
+    _Image.new("RGB", (1600, 1200), (200, 200, 200)).save(buf, format="JPEG")
+    img = _b64.b64encode(buf.getvalue()).decode()
+    uploaded = {}
+    db = MagicMock()
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup", "role": "supervisor"}), \
+         patch("services.api.main.get_firestore_client", return_value=db), \
+         patch("services.api.main.upload_blob_bytes", side_effect=lambda p, b: uploaded.setdefault(p, b) and p):
+        res = client.post("/api/products/with-images", headers={"Authorization": "Bearer t"},
+                          json={"name": "Charger kit", "description": "a phone charger kit", "defect_types": ["label missing", " "],
+                                "images_b64": [img, img, img]})
+    assert res.status_code == 201
+    data = res.json()
+    assert data["source"] == "LIVE" and data["id"].startswith("charger_kit_")
+    assert data["defect_types"] == ["label missing"]
+    assert len(uploaded) == 3 and all(p.startswith(f"products/{data['id']}/ref_") for p in uploaded)
+    assert max(_Image.open(_io.BytesIO(next(iter(uploaded.values())))).size) == 1024
+
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "t", "role": "trainee"}):
+        assert client.post("/api/products/with-images", headers={"Authorization": "Bearer t"},
+                           json={"name": "X kit", "description": "abc", "images_b64": [img, img, img]}).status_code == 403

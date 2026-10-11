@@ -623,6 +623,18 @@ export async function fetchProducts(): Promise<ProductItem[]> {
   return await apiFetch<ProductItem[]>('/api/products');
 }
 
+export async function createProductWithImages(req: {
+  name: string;
+  description: string;
+  defect_types: string[];
+  images_b64: string[];
+}): Promise<ProductItem> {
+  return await apiFetch<ProductItem>('/api/products/with-images', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
 export async function fetchProduct(productId: string): Promise<ProductItem> {
   return await apiFetch<ProductItem>(`/api/products/${encodeURIComponent(productId)}`);
 }

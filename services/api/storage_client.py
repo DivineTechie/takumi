@@ -119,3 +119,10 @@ def upload_machine_evidence_jpeg(machine_id: str, event_id: str, jpeg_bytes: byt
     return blob_path
 
 
+
+
+def upload_blob_bytes(path: str, jpeg_bytes: bytes) -> str:
+    """Uploads a JPEG to the bucket at `path` and returns the path."""
+    client = get_storage_client()
+    client.bucket(STORAGE_BUCKET).blob(path).upload_from_string(jpeg_bytes, content_type="image/jpeg")
+    return path
