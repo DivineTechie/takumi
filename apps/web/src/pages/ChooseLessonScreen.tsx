@@ -50,7 +50,7 @@ export const ChooseLessonScreen: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <img
               src={logoSvg}
-              alt="TAKUMI Logo"
+              alt={t('station.common_logo_alt')}
               className="w-8 h-8 rounded-lg shrink-0 object-contain shadow-sm"
               width={32}
               height={32}
@@ -62,7 +62,7 @@ export const ChooseLessonScreen: React.FC = () => {
         {/* Language selector */}
         <div className="relative flex items-center">
           <select
-            aria-label="Select Language"
+            aria-label={t('station.choose_language_aria')}
             value={language}
             onChange={(e) => setLanguage(e.target.value as LanguageCode)}
             className="appearance-none bg-surface-container-high text-on-surface font-label-md text-sm pl-3 pr-8 py-2 rounded-lg border border-outline-variant focus:outline-none focus:border-primary-container transition-colors cursor-pointer"
@@ -128,7 +128,9 @@ export const ChooseLessonScreen: React.FC = () => {
                     {skill.title}
                   </h2>
                   <p className="font-body-md text-slate-300 mt-2 font-normal">
-                    {skill.master ? `${skill.master.display_name}, ${skill.master.role}` : 'Master Instructor'}
+                    {skill.master
+                      ? t('station.choose_master_line', { name: skill.master.display_name, role: skill.master.role })
+                      : t('station.choose_master_fallback')}
                   </p>
                   <div className="flex items-center gap-2 mt-3 text-on-surface-variant font-label-md text-sm">
                     <span className="material-symbols-outlined text-[20px]">schedule</span>
@@ -152,7 +154,7 @@ export const ChooseLessonScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => navigate(`/coach/${skill.id}`)}
-                    className="w-full min-h-[56px] h-14 bg-primary-container text-on-primary-container font-label-lg font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer"
+                    className="w-full min-h-[56px] px-3 py-2 bg-primary-container text-on-primary-container font-label-lg font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer"
                   >
                     <span>{t('start_btn')}</span>
                     <span className="material-symbols-outlined text-[22px]">play_arrow</span>

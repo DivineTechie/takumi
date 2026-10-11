@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useI18n } from '../i18n';
 
 export interface ClipPlayerProps {
   url: string;
@@ -24,6 +25,7 @@ export const ClipPlayer: React.FC<ClipPlayerProps> = ({
   onClose,
   isDesktopInline = false,
 }) => {
+  const { t } = useI18n();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [needsUserUnmute, setNeedsUserUnmute] = useState(false);
@@ -119,7 +121,7 @@ export const ClipPlayer: React.FC<ClipPlayerProps> = ({
   return (
     <div
       role="dialog"
-      aria-label={isMaster ? "Master demonstration" : "Mistake demonstration"}
+      aria-label={isMaster ? t('station.clip_master_aria') : t('station.clip_mistake_aria')}
       className={`z-40 bg-zinc-900/95 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden backdrop-blur-md flex flex-col ${
         isDesktopInline
           ? 'w-full'
@@ -128,14 +130,14 @@ export const ClipPlayer: React.FC<ClipPlayerProps> = ({
     >
       {/* Header with badge & large 44px close button */}
       <div className="flex items-center justify-between px-3 py-2 bg-zinc-950/80 border-b border-zinc-800">
-        <div className="flex items-center gap-1.5 overflow-hidden">
+        <div className="flex items-center gap-1.5 overflow-hidden min-w-0">
           {isMaster ? (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 truncate">
-              Master's own demonstration
+              {t('station.clip_master_badge')}
             </span>
           ) : (
             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-red-950/80 text-red-300 border border-red-500 truncate">
-              {label || 'AI-generated example of the wrong way'}
+              {label || t('station.clip_mistake_badge_default')}
             </span>
           )}
         </div>
@@ -143,7 +145,7 @@ export const ClipPlayer: React.FC<ClipPlayerProps> = ({
           type="button"
           onClick={() => handleFinish()}
           className="min-w-[44px] min-h-[44px] w-11 h-11 flex items-center justify-center rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
-          aria-label="Close clip"
+          aria-label={t('station.clip_close_aria')}
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -166,10 +168,10 @@ export const ClipPlayer: React.FC<ClipPlayerProps> = ({
           <button
             type="button"
             onClick={unmuteAudio}
-            className="absolute inset-0 m-auto w-fit h-fit px-3 py-2 bg-black/80 hover:bg-black text-white text-xs font-bold rounded-lg border border-amber-400/60 shadow-lg flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
+            className="absolute inset-0 m-auto w-fit h-fit max-w-[90%] min-h-[44px] px-3 py-2 bg-black/80 hover:bg-black text-white text-xs font-bold rounded-lg border border-amber-400/60 shadow-lg flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-amber-400"
           >
-            <span>🔊</span>
-            <span>Tap for sound</span>
+            <span aria-hidden="true">🔊</span>
+            <span>{t('station.clip_tap_for_sound')}</span>
           </button>
         )}
 
@@ -188,7 +190,7 @@ export const ClipPlayer: React.FC<ClipPlayerProps> = ({
           <div className="flex items-center gap-2">
             {!translated && (
               <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700 uppercase tracking-wider">
-                translated
+                {t('station.clip_translated_badge')}
               </span>
             )}
           </div>

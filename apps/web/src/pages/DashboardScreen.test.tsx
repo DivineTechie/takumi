@@ -29,19 +29,26 @@ vi.mock('../lib/api', () => ({
 }));
 
 // Mock Translation and Theme providers
-vi.mock('../i18n', () => ({
-  useTranslation: () => ({
+vi.mock('../i18n', () => {
+  const useTranslation = () => ({
     t: (key: string, params?: Record<string, unknown>) => {
       if (params?.n !== undefined && params?.total !== undefined) {
         return `Step ${params.n} of ${params.total}`;
+      }
+      if (key === 'app.dashboard_seconds') {
+        return `${params?.value}s`;
       }
       return key;
     },
     language: 'en',
     setLanguage: vi.fn(),
-  }),
-  SUPPORTED_LANGUAGES: [{ code: 'en', label: 'English', native: 'English' }],
-}));
+  });
+  return {
+    useTranslation,
+    useI18n: useTranslation,
+    SUPPORTED_LANGUAGES: [{ code: 'en', label: 'English', native: 'English' }],
+  };
+});
 
 vi.mock('../lib/theme', () => ({
   useTheme: () => ({
@@ -300,7 +307,7 @@ describe('DashboardScreen', () => {
     // Step 3 was never reached: displays dash "—" with "No data yet" title
     const dashes = screen.getAllByText('—');
     expect(dashes.length).toBeGreaterThanOrEqual(1);
-    expect(dashes[0]).toHaveAttribute('title', 'No data yet');
+    expect(dashes[0]).toHaveAttribute('title', 'dashboard_no_data');
 
     // Totals
     expect(screen.getByText('10')).toBeInTheDocument(); // total sessions
@@ -332,7 +339,7 @@ describe('DashboardScreen', () => {
     });
 
     // Image frame rendered
-    const img = screen.getByAltText('Event snapshot frame');
+    const img = screen.getByAltText('app.replay_frame_alt');
     expect(img).toBeInTheDocument();
     expect(img).toHaveAttribute(
       'src',

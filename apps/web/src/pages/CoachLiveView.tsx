@@ -54,6 +54,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   handleTranscript: externalHandleTranscript,
 }) => {
   const { t } = useTranslation();
+  const tRef = useRef(t);
+  tRef.current = t;
   const navigate = useNavigate();
   const location = useLocation();
   const isDebug = new URLSearchParams(location.search || window.location.search).get('debug') === '1';
@@ -62,7 +64,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [connectionState, setConnectionState] = useState<LiveConnectionState>('connecting');
-  const [connectionErrorText, setConnectionErrorText] = useState<string>("Couldn't connect");
+  // Holds a translation key so the message follows the UI language.
+  const [connectionErrorKey, setConnectionErrorKey] = useState<string>('station.live_error_couldnt_connect');
   const [isCoachSpeaking, setIsCoachSpeaking] = useState<boolean>(false);
   const [latestCoachTranscript, setLatestCoachTranscript] = useState<string>('');
   const [latestTraineeTranscript, setLatestTraineeTranscript] = useState<string>('');
@@ -585,7 +588,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   errStr.includes('resource_exhausted')
                 ) {
                   setConnectionState('error');
-                  setConnectionErrorText('Coaching is temporarily unavailable, please try again later');
+                  setConnectionErrorKey('station.live_error_unavailable');
                 }
                 const errResult: Record<string, unknown> = {
                   passed: false,
@@ -664,7 +667,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   errStr.includes('resource_exhausted')
                 ) {
                   setConnectionState('error');
-                  setConnectionErrorText('Coaching is temporarily unavailable, please try again later');
+                  setConnectionErrorKey('station.live_error_unavailable');
                 }
                 return { result: { status: 'no visible target' } };
               }
@@ -747,7 +750,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                     setActiveClip({
                       url: media.url,
                       kind: 'mistake_clip',
-                      label: media.label || 'AI-generated example of the wrong way',
+                      // ClipPlayer shows the translated default label when the API sends none.
+                      label: media.label,
                       onFinish: (playedSeconds) => {
                         setActiveClip(null);
                         isClipPlayingRef.current = false;
@@ -831,11 +835,11 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         onError: (err) => {
           console.error('Live client error:', err);
           if (err.message && err.message.includes('temporarily unavailable')) {
-            setConnectionErrorText('Coaching is temporarily unavailable, please try again later');
+            setConnectionErrorKey('station.live_error_unavailable');
           } else if (err.message && err.message.includes('keeps dropping')) {
-            setConnectionErrorText('Connection keeps dropping');
+            setConnectionErrorKey('station.live_error_dropping');
           } else {
-            setConnectionErrorText("Couldn't connect");
+            setConnectionErrorKey('station.live_error_couldnt_connect');
           }
         },
         onClose: (code, reason) => {
@@ -958,7 +962,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         setSessionWarning(true);
       },
       onTimeout: () => {
-        alert('Session time limit of 10 minutes reached.');
+        alert(tRef.current('station.live_session_time_limit'));
         onEndRef.current();
       },
       onTick: (sec) => {
@@ -1299,7 +1303,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
   // Handle "End" button action
   const handleEndSession = () => {
-    if (window.confirm('Are you sure you want to end this coaching session?')) {
+    if (window.confirm(t('station.live_end_confirm'))) {
       if (sessionIdRef.current) {
         const currentSkill = skillRef.current;
         const finalStatus =
@@ -1358,7 +1362,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 onEndRef.current();
                 navigate('/coach');
               }}
-              aria-label="Back to lessons"
+              aria-label={t('station.common_back_to_lessons')}
               className="w-12 h-12 -ml-2 flex items-center justify-center text-on-surface hover:bg-surface-container-high rounded transition-transform active:scale-95 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[28px]">arrow_back</span>
@@ -1377,20 +1381,20 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               </span>
             </div>
             <h1 className="text-[28px] leading-[34px] font-extrabold text-on-surface mb-2">
-              All {skill.steps.length} steps done
+              {t('station.complete_all_steps_done', { count: skill.steps.length })}
             </h1>
             <p className="text-[16px] text-on-surface-variant max-w-[320px]">
-              {skill.title} completed
+              {t('station.complete_skill_completed', { title: skill.title })}
             </p>
-            <div className="mt-4 inline-flex items-center gap-2 bg-surface-container-low px-4 py-1.5 rounded-full border border-secondary/40">
+            <div className="mt-4 inline-flex items-center gap-2 bg-surface-container-low px-4 py-1.5 rounded-full border border-secondary/40 max-w-full">
               <span
                 className="material-symbols-outlined text-secondary text-[20px]"
                 style={{ fontVariationSettings: "'FILL' 1" }}
               >
                 verified
               </span>
-              <span className="text-[13px] text-secondary tracking-wide uppercase font-bold">
-                {skill.steps.length} OF {skill.steps.length} STEPS VERIFIED
+              <span className="text-[13px] text-secondary tracking-wide uppercase font-bold min-w-0 break-words">
+                {t('station.complete_steps_verified', { n: skill.steps.length, total: skill.steps.length })}
               </span>
             </div>
 
@@ -1399,32 +1403,32 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               <div className="mt-5 w-full p-4 rounded-2xl bg-primary-container/15 border-2 border-primary-container/60 flex flex-col items-center gap-2.5 text-center shadow-md">
                 <div className="flex items-center gap-2 text-primary-container font-extrabold text-[17px]">
                   <span className="material-symbols-outlined text-[24px]">verified</span>
-                  <span>You earned your Skill Passport!</span>
+                  <span>{t('station.complete_passport_earned')}</span>
                 </div>
                 <p className="text-xs text-on-surface-variant max-w-[280px]">
-                  Well done: 3 clean runs completed.
+                  {t('station.complete_passport_well_done', { count: 3 })}
                 </p>
                 <button
                   type="button"
                   onClick={() => navigate(`/passport/${earnedPassportId}`)}
-                  className="w-full h-11 bg-primary-container text-on-primary-container font-bold text-sm rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-95 transition-all shadow cursor-pointer mt-1"
+                  className="w-full min-h-[44px] px-3 py-2 bg-primary-container text-on-primary-container font-bold text-sm rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-95 transition-all shadow cursor-pointer mt-1"
                 >
-                  <span>View Skill Passport</span>
+                  <span>{t('station.complete_view_passport')}</span>
                   <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                 </button>
               </div>
             ) : (
-              <div className="mt-5 w-full p-3 rounded-xl bg-surface-container border border-outline-variant/60 flex items-center justify-between text-left">
-                <div className="flex items-center gap-2.5">
+              <div className="mt-5 w-full p-3 rounded-xl bg-surface-container border border-outline-variant/60 flex items-center justify-between gap-2 text-left">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <span className="material-symbols-outlined text-primary-container text-[22px]">
                     workspace_premium
                   </span>
                   <div>
                     <p className="text-xs uppercase tracking-wider font-extrabold text-primary-container">
-                      Skill Passport Progress
+                      {t('station.complete_passport_progress')}
                     </p>
                     <p className="text-sm font-semibold text-on-surface">
-                      {cleanRunsProgress} of 3 clean runs toward your Skill Passport
+                      {t('station.complete_clean_runs_progress', { count: cleanRunsProgress, total: 3 })}
                     </p>
                   </div>
                 </div>
@@ -1439,10 +1443,12 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-outline-variant/30">
               <div className="flex items-center gap-2 text-on-surface-variant">
                 <span className="material-symbols-outlined text-[22px]">timer</span>
-                <span className="text-[15px]">Time taken</span>
+                <span className="text-[15px]">{t('station.complete_time_taken')}</span>
               </div>
               <span className="text-[17px] font-bold text-on-surface font-mono">
-                {elapsedMin > 0 ? `${elapsedMin} min ${elapsedSec} s` : `${elapsedSec} s`}
+                {elapsedMin > 0
+                  ? t('station.complete_duration_min_sec', { min: elapsedMin, sec: elapsedSec })
+                  : t('station.complete_duration_sec', { sec: elapsedSec })}
               </span>
             </div>
 
@@ -1451,20 +1457,20 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 <span className="material-symbols-outlined text-primary-container text-[22px]">
                   shield_with_heart
                 </span>
-                <span className="text-[15px]">Mistakes caught</span>
+                <span className="text-[15px]">{t('station.complete_mistakes_caught')}</span>
               </div>
               <div className="flex items-center gap-1.5 bg-surface-container-high px-2.5 py-1 rounded border border-primary-container/40">
                 <span className="material-symbols-outlined text-primary-container text-[16px]">
                   check
                 </span>
-                <span className="text-[13px] text-primary-fixed-dim font-bold">0 mistakes</span>
+                <span className="text-[13px] text-primary-fixed-dim font-bold">{t('station.complete_mistakes_none')}</span>
               </div>
             </div>
 
             <div className="flex items-center justify-between pt-1">
               <div className="flex items-center gap-2 text-on-surface-variant">
                 <span className="material-symbols-outlined text-[22px]">school</span>
-                <span className="text-[15px]">Instructor</span>
+                <span className="text-[15px]">{t('station.complete_instructor')}</span>
               </div>
               <div className="text-right">
                 <div className="text-[15px] font-bold text-on-surface">Master K.</div>
@@ -1482,7 +1488,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               }}
               className="w-full min-h-[56px] h-14 bg-primary-container hover:brightness-105 active:scale-[0.98] text-on-primary-container rounded-xl font-bold text-[17px] flex items-center justify-center gap-2 shadow-md cursor-pointer transition-transform"
             >
-              <span>Back to skills</span>
+              <span>{t('station.complete_back_to_skills')}</span>
               <span className="material-symbols-outlined text-[22px]">arrow_forward</span>
             </button>
             <button
@@ -1491,7 +1497,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               className="w-full min-h-[56px] h-14 bg-surface-container-high hover:bg-surface-bright active:scale-[0.98] text-on-surface border border-outline-variant rounded-xl font-semibold text-[17px] flex items-center justify-center gap-2 cursor-pointer transition-transform"
             >
               <span className="material-symbols-outlined text-[22px]">replay</span>
-              <span>Practise again</span>
+              <span>{t('station.complete_practise_again')}</span>
             </button>
           </footer>
         </div>
@@ -1531,17 +1537,17 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         {/* 10-Minute Warning Banner */}
         {sessionWarning && (
           <div className="absolute top-16 left-4 right-4 z-30 p-2.5 rounded-xl bg-amber-500/90 text-black text-center font-bold text-xs tracking-wide shadow-lg">
-            Session will end in {remainingSeconds}s (10-minute cap)
+            {t('station.live_session_warning', { seconds: remainingSeconds })}
           </div>
         )}
 
         {/* Coaching Temporarily Unavailable Banner */}
-        {connectionErrorText === 'Coaching is temporarily unavailable, please try again later' && (
+        {connectionErrorKey === 'station.live_error_unavailable' && (
           <div
             role="alert"
             className="absolute top-16 left-4 right-4 z-40 p-3 rounded-xl bg-red-950/95 border border-red-500/70 text-white text-center font-bold text-sm tracking-wide shadow-2xl backdrop-blur-md"
           >
-            Coaching is temporarily unavailable, please try again later
+            {t('station.live_error_unavailable')}
           </div>
         )}
 
@@ -1549,7 +1555,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         <div className="lg:hidden absolute bottom-[180px] left-0 right-0 z-30 px-4">
           {showCaption && (latestCoachTranscript || latestTraineeTranscript) && (
             <section
-              aria-label="Coach voice guidance"
+              aria-label={t('station.live_caption_aria')}
               className="backdrop-blur-md bg-black/85 border border-white/10 px-4 py-2.5 rounded-xl flex items-center gap-3 shadow-xl max-h-[18vh] overflow-hidden transition-opacity duration-300"
             >
               <div className="w-9 h-9 rounded-lg bg-primary-container/20 border border-primary-container/40 flex items-center justify-center shrink-0 text-primary-container">
@@ -1565,7 +1571,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 )}
                 {latestTraineeTranscript && (
                   <p className="text-[13px] leading-[18px] text-on-surface-variant font-medium truncate mt-0.5">
-                    You: {latestTraineeTranscript}
+                    {t('station.live_caption_you', { text: latestTraineeTranscript })}
                   </p>
                 )}
               </div>
@@ -1585,7 +1591,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           <button
             type="button"
             onClick={handleEndSession}
-            aria-label="Back to lessons"
+            aria-label={t('station.common_back_to_lessons')}
             className="w-11 h-11 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white active:scale-95 transition-transform cursor-pointer"
           >
             <span className="material-symbols-outlined text-[24px]">arrow_back</span>
@@ -1593,7 +1599,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
           <div className="flex flex-col items-center justify-center">
             <span className="text-[14px] font-semibold tracking-wide text-white">
-              Step {currentStep} of {skill.steps.length}
+              {t('dashboard_step_n_of_m', { n: currentStep, total: skill.steps.length })}
             </span>
             <div className="flex items-center gap-1.5 mt-1">
               {skill.steps.map((step) => {
@@ -1797,7 +1803,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         <div className="hidden lg:block px-5 py-3">
           {showCaption && (latestCoachTranscript || latestTraineeTranscript) && (
             <section
-              aria-label="Coach voice guidance"
+              aria-label={t('station.live_caption_aria')}
               className="backdrop-blur-md bg-black/60 border border-white/10 p-3.5 rounded-xl flex items-center gap-3 shadow-md"
             >
               <div className="w-8 h-8 rounded-lg bg-primary-container/20 border border-primary-container/40 flex items-center justify-center shrink-0 text-primary-container">
@@ -1813,7 +1819,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 )}
                 {latestTraineeTranscript && (
                   <p className="text-[12px] leading-[16px] text-on-surface-variant font-medium truncate mt-1">
-                    You: {latestTraineeTranscript}
+                    {t('station.live_caption_you', { text: latestTraineeTranscript })}
                   </p>
                 )}
               </div>
@@ -1835,11 +1841,11 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               <div className="relative w-[76px] h-[76px] lg:w-[92px] lg:h-[92px] shrink-0 rounded-lg border border-white/20 overflow-hidden bg-surface-container-high shadow-md">
                 <img
                   src={refImage}
-                  alt={`Reference diagram for step ${currentStep}`}
+                  alt={t('station.live_ref_image_alt', { step: currentStep })}
                   className="w-full h-full object-cover"
                 />
                 <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-black/80 border border-white/20 rounded text-[10px] font-bold text-primary tracking-wider uppercase">
-                  REF
+                  {t('station.live_ref_badge')}
                 </span>
               </div>
             )}
@@ -1851,45 +1857,45 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
                     <span className="text-[13px] text-amber-300 uppercase tracking-wider font-bold">
-                      Connecting…
+                      {t('station.live_status_connecting')}
                     </span>
                   </>
                 ) : connectionState === 'reconnecting' ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
                     <span className="text-[13px] text-amber-300 uppercase tracking-wider font-bold">
-                      Reconnecting…
+                      {t('station.live_status_reconnecting')}
                     </span>
                   </>
                 ) : connectionState === 'error' ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
                     <span className="text-[13px] text-red-300 uppercase tracking-wider font-bold">
-                      {connectionErrorText}
+                      {t(connectionErrorKey)}
                     </span>
                     <button
                       type="button"
                       onClick={() => {
-                        setConnectionErrorText("Couldn't connect");
+                        setConnectionErrorKey('station.live_error_couldnt_connect');
                         clientRef.current?.manualRetry();
                       }}
-                      className="px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 active:scale-95 text-white text-[12px] font-bold tracking-wide uppercase border border-white/20 transition-all cursor-pointer"
+                      className="min-h-[44px] px-3 py-1 rounded bg-white/10 hover:bg-white/20 active:scale-95 text-white text-[12px] font-bold tracking-wide uppercase border border-white/20 transition-all cursor-pointer"
                     >
-                      Retry
+                      {t('dashboard_retry')}
                     </button>
                   </>
                 ) : isCoachSpeaking ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-primary-container animate-pulse shrink-0" />
                     <span className="text-[13px] text-primary-fixed-dim uppercase tracking-wider font-bold">
-                      Coach speaking
+                      {t('station.live_status_coach_speaking')}
                     </span>
                   </>
                 ) : (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-[#22c55e] animate-pulse shrink-0" />
                     <span className="text-[13px] text-emerald-400 uppercase tracking-wider font-bold">
-                      Listening
+                      {t('station.live_status_listening')}
                     </span>
                   </>
                 )}
@@ -1901,7 +1907,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                     className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-primary-container/20 text-primary-fixed-dim border border-primary-container/40 animate-pulse"
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-primary-container animate-ping" />
-                    Checking…
+                    {t('station.live_tool_checking')}
                   </span>
                 )}
 
@@ -1933,7 +1939,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
                 {isTranslatedLive && (
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-surface-container-high border border-outline-variant text-on-surface-variant">
-                    Translated live
+                    {t('station.live_translated_badge')}
                   </span>
                 )}
               </div>
@@ -1951,20 +1957,20 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             <button
               type="button"
               onClick={handleAskWhy}
-              className="h-14 w-1/2 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-white font-semibold text-[17px] flex items-center justify-center gap-2 border border-white/15 transition-all shadow-md cursor-pointer"
+              className="min-h-[56px] py-2 px-2 w-1/2 min-w-0 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-white font-semibold text-[17px] flex items-center justify-center gap-2 border border-white/15 transition-all shadow-md cursor-pointer"
             >
               <span className="material-symbols-outlined text-[22px] text-white/80">help</span>
-              <span>Why?</span>
+              <span className="min-w-0 break-words">{t('station.live_why_btn')}</span>
             </button>
 
             {/* "End" Button (Amber outline, distinct from Safety Stop) */}
             <button
               type="button"
               onClick={handleEndSession}
-              className="h-14 w-1/2 rounded-xl border-2 border-primary-container text-primary-container bg-primary-container/10 hover:bg-primary-container/20 active:scale-95 font-bold text-[17px] flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+              className="min-h-[56px] py-2 px-2 w-1/2 min-w-0 rounded-xl border-2 border-primary-container text-primary-container bg-primary-container/10 hover:bg-primary-container/20 active:scale-95 font-bold text-[17px] flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
             >
               <span className="material-symbols-outlined text-[22px]">stop_circle</span>
-              <span>End</span>
+              <span className="min-w-0 break-words">{t('station.live_end_btn')}</span>
             </button>
           </div>
         </section>

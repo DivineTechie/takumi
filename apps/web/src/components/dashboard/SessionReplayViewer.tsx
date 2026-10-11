@@ -32,7 +32,15 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
   onSelectSession,
   onClose,
 }) => {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const statusLabel = (status: string) =>
+    status === 'abandoned'
+      ? t('dashboard_abandoned')
+      : status === 'completed'
+        ? t('app.replay_status_completed')
+        : status === 'live'
+          ? t('app.replay_status_live')
+          : status;
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [manualSessionId, setManualSessionId] = useState('');
 
@@ -74,7 +82,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
             </h4>
             <div className="divide-y divide-outline-variant/40 bg-surface-container rounded-xl border border-outline-variant overflow-hidden">
               {recentSessions.map((s) => {
-                const sTrainee = traineesMap[s.trainee_uid] || s.first_name || 'Trainee';
+                const sTrainee = traineesMap[s.trainee_uid] || s.first_name || t('dashboard_trainee');
                 const sSkill = skillsMap[s.skill_id]?.title || s.skill_id;
                 const sAbandoned =
                   s.status === 'abandoned' ||
@@ -90,7 +98,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
                     className="w-full p-3.5 flex items-center justify-between gap-3 hover:bg-surface-container-high transition-colors text-left cursor-pointer group"
                   >
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
+                      <div className="flex flex-wrap items-center gap-2 mb-0.5">
                         <span className="font-bold text-[15px] text-on-surface truncate">
                           {sTrainee}
                         </span>
@@ -103,7 +111,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
                               : 'bg-surface-container-high text-on-surface-variant border-outline-variant'
                           }`}
                         >
-                          {sStatus === 'abandoned' ? t('dashboard_abandoned') : sStatus}
+                          {statusLabel(sStatus)}
                         </span>
                         {s.language && (
                           <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface border border-outline-variant">
@@ -112,7 +120,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
                         )}
                       </div>
                       <div className="text-[13px] text-on-surface-variant truncate">
-                        {sSkill} • {new Date(s.started_at).toLocaleString()}
+                        {sSkill} • {new Date(s.started_at).toLocaleString(language)}
                         {isDebug && ` • ID: ${s.id}`}
                       </div>
                     </div>
@@ -141,7 +149,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
               type="text"
               value={manualSessionId}
               onChange={(e) => setManualSessionId(e.target.value)}
-              placeholder="Session ID (e.g. ses_1f136365e52d71cd)…"
+              placeholder={t('app.replay_debug_placeholder')}
               className="w-full bg-surface-container border border-outline-variant rounded-xl px-3.5 py-2 text-[14px] font-mono text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-container placeholder:text-on-surface-variant/60"
             />
             <button
@@ -149,7 +157,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
               disabled={!manualSessionId.trim()}
               className="w-full sm:w-auto px-4 py-2 rounded-xl bg-primary-container text-on-primary-container font-bold text-[14px] hover:opacity-90 disabled:opacity-50 transition-opacity cursor-pointer shrink-0"
             >
-              Load Replay
+              {t('app.replay_debug_load')}
             </button>
           </form>
         )}
@@ -179,55 +187,55 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
       case 'step_done':
         return {
           icon: 'check_circle',
-          label: 'Step Done',
+          label: t('app.replay_event_step_done'),
           color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
         };
       case 'mistake':
         return {
           icon: 'cancel',
-          label: 'Mistake',
+          label: t('app.replay_event_mistake'),
           color: 'bg-amber-400/15 text-amber-500 border-amber-400/30',
         };
       case 'safety_stop':
         return {
           icon: 'shield_with_heart',
-          label: 'Safety Stop',
+          label: t('app.replay_event_safety_stop'),
           color: 'bg-error/15 text-error border-error/30 font-bold',
         };
       case 'blocked':
         return {
           icon: 'visibility_off',
-          label: 'Blocked',
+          label: t('app.replay_event_blocked'),
           color: 'bg-surface-container-high text-on-surface-variant border-outline-variant',
         };
       case 'ask_why':
         return {
           icon: 'help_outline',
-          label: 'Ask Why',
+          label: t('app.replay_event_ask_why'),
           color: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
         };
       case 'point':
         return {
           icon: 'touch_app',
-          label: 'Point At',
+          label: t('app.replay_event_point'),
           color: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
         };
       case 'verify':
         return {
           icon: 'fact_check',
-          label: 'Verify Step',
+          label: t('app.replay_event_verify'),
           color: 'bg-teal-500/15 text-teal-400 border-teal-500/30',
         };
       case 'coach_line':
         return {
           icon: 'smart_toy',
-          label: 'Coach Line',
+          label: t('app.replay_event_coach_line'),
           color: 'bg-primary-container/20 text-primary-container border-primary-container/30',
         };
       case 'trainee_line':
         return {
           icon: 'person',
-          label: 'Trainee Line',
+          label: t('app.replay_event_trainee_line'),
           color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
         };
       default:
@@ -244,7 +252,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
       {/* Header bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-outline-variant">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
             <span className="text-[17px] font-bold text-on-surface">
               {session.first_name}
             </span>
@@ -257,14 +265,14 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
                   : 'bg-surface-container-high text-on-surface-variant border-outline-variant'
               }`}
             >
-              {displayStatus === 'abandoned' ? t('dashboard_abandoned') : displayStatus}
+              {statusLabel(displayStatus)}
             </span>
             <span className="text-[11px] font-semibold uppercase px-2 py-0.5 rounded-md bg-surface-container text-on-surface border border-outline-variant">
               {session.language}
             </span>
           </div>
           <span className="text-[13px] text-on-surface-variant font-mono">
-            {new Date(session.started_at).toLocaleString()}
+            {new Date(session.started_at).toLocaleString(language)}
             {isDebug && ` • ID: ${session.id}`}
           </span>
         </div>
@@ -274,7 +282,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
             type="button"
             onClick={onClose}
             className="w-10 h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant cursor-pointer self-start sm:self-auto"
-            aria-label="Close"
+            aria-label={t('dashboard_close')}
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
@@ -284,12 +292,12 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
       {/* Events Timeline */}
       <div className="space-y-3">
         <h4 className="text-[13px] font-bold text-on-surface-variant uppercase tracking-wider">
-          Timeline Events ({events.length})
+          {t('app.replay_timeline_title', { count: events.length })}
         </h4>
 
         {events.length === 0 ? (
           <div className="py-6 text-center text-on-surface-variant text-[14px]">
-            No events recorded for this session.
+            {t('app.replay_no_events')}
           </div>
         ) : (
           <div className="relative pl-6 space-y-4 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-outline-variant/60">
@@ -305,7 +313,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
 
                   <div className="bg-surface-container border border-outline-variant rounded-xl p-3 sm:p-3.5 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span className="text-[12px] font-mono font-bold text-on-surface-variant bg-surface-container-high px-2 py-0.5 rounded-md">
                           {offset}
                         </span>
@@ -321,14 +329,14 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
 
                         {ev.step && (
                           <span className="text-[11px] font-medium text-on-surface-variant">
-                            Step #{ev.step}
+                            {t('app.replay_step_number', { n: ev.step })}
                           </span>
                         )}
                       </div>
 
                       {ev.latency_ms !== undefined && ev.latency_ms > 0 && (
                         <span className="text-[11px] font-mono text-on-surface-variant">
-                          {ev.latency_ms}ms
+                          {t('app.replay_latency_ms', { value: ev.latency_ms })}
                         </span>
                       )}
                     </div>
@@ -343,7 +351,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
                         }`}
                       >
                         <span className="text-[11px] font-bold uppercase block text-on-surface-variant mb-0.5">
-                          {ev.type === 'coach_line' ? 'Coach' : 'Trainee'}
+                          {ev.type === 'coach_line' ? t('app.replay_speaker_coach') : t('dashboard_trainee')}
                         </span>
                         {ev.reason}
                       </div>
@@ -365,7 +373,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
                         >
                           <img
                             src={ev.frame_uri}
-                            alt="Event snapshot frame"
+                            alt={t('app.replay_frame_alt')}
                             className="w-40 h-28 object-cover"
                             loading="lazy"
                           />
@@ -373,7 +381,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
                             <span className="material-symbols-outlined text-[18px] mr-1">
                               zoom_in
                             </span>
-                            View
+                            {t('app.replay_frame_view')}
                           </span>
                         </button>
                       </div>
@@ -405,6 +413,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
               <button
                 type="button"
                 onClick={() => setPreviewImage(null)}
+                aria-label={t('dashboard_close')}
                 className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-surface-container-high text-on-surface cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">close</span>
@@ -413,7 +422,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
             <div className="p-2 bg-black flex items-center justify-center">
               <img
                 src={previewImage}
-                alt="Full preview"
+                alt={t('app.replay_full_preview_alt')}
                 className="max-h-[70vh] w-auto object-contain rounded"
               />
             </div>

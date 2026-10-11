@@ -4,6 +4,7 @@ import { collection, query, orderBy, onSnapshot, doc, getDoc } from 'firebase/fi
 import { db } from '../../lib/firebase';
 import { fetchForgeJob, ApiError } from '../../lib/api';
 import { getVideoObjectUrl } from './mediaStorage';
+import { useI18n } from '../../i18n';
 import {
   Sparkles,
   CheckCircle2,
@@ -49,15 +50,16 @@ interface AssembledStep {
   motion_cue?: string;
 }
 
+// Name and description are translation keys: app.trace_agent_<id>_name / app.trace_agent_<id>_desc.
 const AGENT_NODES = [
-  { id: 'segmenter', name: 'Segmenter', icon: Layers, desc: 'Video to Steps' },
-  { id: 'why', name: 'Why Extractor', icon: Sparkles, desc: 'Craftsman Rationale' },
-  { id: 'spatial', name: 'Spatial Annotator', icon: Play, desc: 'Robotics-ER Points' },
-  { id: 'verifier', name: 'Verifier', icon: FileCheck, desc: 'Safety Compliance' },
-  { id: 'localizer', name: 'Localizer', icon: Languages, desc: '6 JAPAC Languages & TTS' },
-  { id: 'illustrator', name: 'Illustrator', icon: ImageIcon, desc: 'Visual Cards', parallel: true },
-  { id: 'mistakes', name: 'Mistake Simulator', icon: AlertTriangle, desc: 'Wrong-Way Clips', parallel: true },
-  { id: 'publisher', name: 'Publisher', icon: CheckCircle2, desc: 'Final Packaging' },
+  { id: 'segmenter', icon: Layers },
+  { id: 'why', icon: Sparkles },
+  { id: 'spatial', icon: Play },
+  { id: 'verifier', icon: FileCheck },
+  { id: 'localizer', icon: Languages },
+  { id: 'illustrator', icon: ImageIcon, parallel: true },
+  { id: 'mistakes', icon: AlertTriangle, parallel: true },
+  { id: 'publisher', icon: CheckCircle2 },
 ];
 
 function formatTimestamp(secs: number): string {
@@ -390,6 +392,7 @@ const TRANSLATIONS_MAP: Record<string, Record<string, { instruction: string; why
 export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavigateToReview }) => {
   const { jobId: paramJobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const jobId = propJobId || paramJobId || '';
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [activeAgent, setActiveAgent] = useState<string>('segmenter');
@@ -827,11 +830,13 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
           padding: '0.85rem 1.5rem',
           backgroundColor: '#18181b',
           display: 'flex',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1rem' }}>
           <div
             style={{
               backgroundColor: 'rgba(245, 158, 11, 0.15)',
@@ -847,10 +852,10 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
             }}
           >
             <Sparkles size={16} />
-            <span>TAKUMI 匠 · Live Agent Trace</span>
+            <span>TAKUMI 匠 · {t('app.trace_eyebrow')}</span>
           </div>
           <span style={{ color: '#a1a1aa', fontSize: '0.85rem' }}>
-            Job: <code style={{ color: '#ffffff', backgroundColor: '#27272a', padding: '0.15rem 0.4rem', borderRadius: '0.25rem' }}>{jobId}</code>
+            {t('app.trace_job_label')} <code style={{ color: '#ffffff', backgroundColor: '#27272a', padding: '0.15rem 0.4rem', borderRadius: '0.25rem' }}>{jobId}</code>
           </span>
         </div>
 
@@ -871,10 +876,10 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
-              title="Fast-forward multi-agent graph progression"
+              title={t('app.trace_fast_forward_title')}
             >
               <FastForward size={14} />
-              <span>Fast-Forward</span>
+              <span>{t('app.trace_fast_forward')}</span>
             </button>
           )}
 
@@ -902,7 +907,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                 boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
               }}
             >
-              <span>Review Lesson</span>
+              <span>{t('app.trace_review_lesson')}</span>
               <ArrowRight size={16} />
             </button>
           )}
@@ -933,7 +938,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fbbf24', fontWeight: 700, marginBottom: '0.75rem' }}>
               <Video size={18} />
-              <span>Master Recording</span>
+              <span>{t('app.trace_master_recording')}</span>
             </div>
 
             {/* Video Player */}
@@ -964,7 +969,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                         {formatTimestamp(currentTime)} / {formatTimestamp(videoDuration)}
                       </span>
                       <span style={{ color: '#fbbf24', fontWeight: 600 }}>
-                        {activeStepIndex >= 0 ? `Step ${steps[activeStepIndex].n} Active` : 'Ready'}
+                        {activeStepIndex >= 0 ? t('app.trace_step_active', { n: steps[activeStepIndex].n }) : t('app.trace_ready')}
                       </span>
                     </div>
 
@@ -996,7 +1001,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                         return (
                           <div
                             key={s.n}
-                            title={`Step ${s.n}: ${segStart.toFixed(1)}s - ${segEnd.toFixed(1)}s`}
+                            title={t('app.trace_segment_title', { n: s.n, start: segStart.toFixed(1), end: segEnd.toFixed(1) })}
                             style={{
                               width: `${widthPct}%`,
                               backgroundColor: isCurrent ? baseColor : `${baseColor}55`,
@@ -1011,7 +1016,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                               transition: 'background-color 0.2s',
                             }}
                           >
-                            {widthPct > 14 ? `S${s.n}` : ''}
+                            {widthPct > 14 ? t('app.trace_segment_short', { n: s.n }) : ''}
                           </div>
                         );
                       })}
@@ -1052,9 +1057,9 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                 }}
               >
                 <VideoOff size={32} style={{ marginBottom: '0.5rem', opacity: 0.6 }} />
-                <span style={{ fontSize: '0.85rem', color: '#d4d4d8', fontWeight: 600 }}>Master Recording</span>
+                <span style={{ fontSize: '0.85rem', color: '#d4d4d8', fontWeight: 600 }}>{t('app.trace_master_recording')}</span>
                 <span style={{ fontSize: '0.75rem', color: '#71717a', marginTop: '0.25rem' }}>
-                  Video uploaded to Cloud Storage
+                  {t('app.trace_video_uploaded')}
                 </span>
               </div>
             )}
@@ -1062,11 +1067,11 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
 
           {/* Segmented Clip Markers */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#d4d4d8', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Segmented Clip Markers</span>
+            <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#d4d4d8', marginBottom: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>{t('app.trace_clip_markers')}</span>
               {isSegmenterDone && (
                 <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
-                  {steps.length} Clips · {videoDuration.toFixed(1)}s (100% video-based)
+                  {t('app.trace_clips_summary', { count: steps.length, seconds: videoDuration.toFixed(1) })}
                 </span>
               )}
             </div>
@@ -1087,9 +1092,9 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                 }}
               >
                 <Clock size={22} style={{ color: '#fbbf24' }} />
-                <div style={{ fontSize: '0.85rem', color: '#f4f4f5', fontWeight: 600 }}>Analyzing Master Video...</div>
+                <div style={{ fontSize: '0.85rem', color: '#f4f4f5', fontWeight: 600 }}>{t('app.trace_analyzing')}</div>
                 <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.4 }}>
-                  Segmenter agent is identifying physical action boundaries from motion and speech.
+                  {t('app.trace_analyzing_desc')}
                 </div>
               </div>
             ) : (
@@ -1145,7 +1150,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                         {hasThumbnail ? (
                           <img
                             src={clipThumbnails[s.n]}
-                            alt={`Step ${s.n} keyframe`}
+                            alt={t('app.trace_keyframe_alt', { n: s.n })}
                             style={{
                               width: '100%',
                               height: '100%',
@@ -1182,13 +1187,13 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                             fontVariantNumeric: 'tabular-nums',
                           }}
                         >
-                          {startS.toFixed(1)}s
+                          {t('app.trace_seconds', { value: startS.toFixed(1) })}
                         </div>
                       </div>
 
                       {/* Right: Clip Details & Progress */}
                       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                             <span
                               style={{
@@ -1200,17 +1205,17 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                                 borderRadius: '0.25rem',
                               }}
                             >
-                              STEP {s.n}
+                              {t('app.trace_step_badge', { n: s.n })}
                             </span>
                             {isPlaying && (
                               <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 800 }}>
-                                ● PLAYING
+                                ● {t('app.trace_playing')}
                               </span>
                             )}
                           </div>
                           <span style={{ color: '#fbbf24', fontVariantNumeric: 'tabular-nums', fontSize: '0.75rem', fontWeight: 600 }}>
                             {formatTimestamp(startS)} - {formatTimestamp(endS)}
-                            <span style={{ color: '#71717a', fontSize: '0.7rem', marginLeft: '0.25rem' }}>({duration}s)</span>
+                            <span style={{ color: '#71717a', fontSize: '0.7rem', marginLeft: '0.25rem' }}>({t('app.trace_seconds', { value: duration })})</span>
                           </span>
                         </div>
 
@@ -1262,7 +1267,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                               />
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#fbbf24', marginTop: '0.15rem' }}>
-                              <span>{(currentTime - startS).toFixed(1)}s elapsed</span>
+                              <span>{t('app.trace_elapsed', { value: (currentTime - startS).toFixed(1) })}</span>
                               <span>{clipProgressPct.toFixed(0)}%</span>
                             </div>
                           </div>
@@ -1288,7 +1293,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
         >
           <div style={{ width: '100%', maxWidth: '640px' }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 1.25rem 0', color: '#ffffff' }}>
-              ADK Workflow Pipeline
+              {t('app.trace_pipeline_title')}
             </h2>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', width: '100%' }}>
@@ -1299,7 +1304,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
 
                 // Find latest message for this agent
                 const agentEvents = events.filter((e) => e.agent === node.id);
-                const latestMsg = agentEvents.length > 0 ? agentEvents[agentEvents.length - 1].message : node.desc;
+                const latestMsg = agentEvents.length > 0 ? agentEvents[agentEvents.length - 1].message : t(`app.trace_agent_${node.id}_desc`);
                 const durationMs = agentEvents.find((e) => e.ms !== undefined)?.ms;
 
                 return (
@@ -1332,9 +1337,9 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                         </div>
                         <div>
                           <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '0.95rem' }}>
-                            {node.name}
+                            {t(`app.trace_agent_${node.id}_name`)}
                           </div>
-                          <div style={{ fontSize: '0.75rem', color: '#71717a' }}>{node.desc}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#71717a' }}>{t(`app.trace_agent_${node.id}_desc`)}</div>
                         </div>
                       </div>
 
@@ -1342,7 +1347,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                         {durationMs !== undefined && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#a1a1aa', fontSize: '0.75rem' }}>
                             <Clock size={13} />
-                            <span>{durationMs}ms</span>
+                            <span>{t('app.replay_latency_ms', { value: durationMs })}</span>
                           </div>
                         )}
                         {isDone ? (
@@ -1358,7 +1363,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                             }}
                           />
                         ) : (
-                          <span style={{ fontSize: '0.7rem', color: '#52525b', fontWeight: 600 }}>QUEUED</span>
+                          <span style={{ fontSize: '0.7rem', color: '#52525b', fontWeight: 600 }}>{t('app.trace_queued')}</span>
                         )}
                       </div>
                     </div>
@@ -1394,8 +1399,8 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
             gap: '1rem',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '0.95rem' }}>Live Assembled Lesson</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ fontWeight: 700, color: '#ffffff', fontSize: '0.95rem' }}>{t('app.trace_assembled_title')}</div>
             <select
               value={selectedLanguage}
               onChange={(e) => setSelectedLanguage(e.target.value)}
@@ -1435,9 +1440,9 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
               }}
             >
               <Sparkles size={28} style={{ color: '#fbbf24' }} />
-              <div style={{ fontSize: '0.95rem', color: '#f4f4f5', fontWeight: 600 }}>Lesson Assembling In Progress</div>
+              <div style={{ fontSize: '0.95rem', color: '#f4f4f5', fontWeight: 600 }}>{t('app.trace_assembling')}</div>
               <div style={{ fontSize: '0.8rem', color: '#71717a', lineHeight: 1.5 }}>
-                Steps will progressively populate here as the multi-agent pipeline extracts instructions, craftsman rationale, and spatial points.
+                {t('app.trace_assembling_desc')}
               </div>
             </div>
           ) : (
@@ -1464,8 +1469,8 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                       boxShadow: isPlaying ? '0 0 20px rgba(245, 158, 11, 0.25)' : 'none',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem' }}>
                         <span
                           style={{
                             backgroundColor: isPlaying ? '#f59e0b' : '#3f3f46',
@@ -1477,7 +1482,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                             transition: 'background-color 0.2s ease',
                           }}
                         >
-                          STEP {step.n}
+                          {t('app.trace_step_badge', { n: step.n })}
                         </span>
                         {step.clip && (
                           <button
@@ -1494,15 +1499,15 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                               alignItems: 'center',
                               gap: '0.25rem',
                             }}
-                            title="Seek master video to this clip"
+                            title={t('app.trace_seek_title')}
                           >
                             <Play size={10} />
-                            <span>{step.clip.start_s.toFixed(1)}s - {step.clip.end_s.toFixed(1)}s</span>
+                            <span>{t('app.trace_clip_range', { start: step.clip.start_s.toFixed(1), end: step.clip.end_s.toFixed(1) })}</span>
                           </button>
                         )}
                         {isPlaying && (
                           <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 700 }}>
-                            • ACTIVE PLAYHEAD
+                            • {t('app.trace_active_playhead')}
                           </span>
                         )}
                       </div>
@@ -1514,7 +1519,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                         </span>
                       ) : !isSpatialDone ? (
                         <span style={{ fontSize: '0.7rem', color: '#52525b', fontStyle: 'italic' }}>
-                          Detecting coordinates...
+                          {t('app.trace_detecting')}
                         </span>
                       ) : null}
                     </div>
@@ -1537,7 +1542,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                           borderLeft: '3px solid #f59e0b',
                         }}
                       >
-                        <strong style={{ color: '#fbbf24' }}>Why: </strong>
+                        <strong style={{ color: '#fbbf24' }}>{t('app.trace_why_label')} </strong>
                         {displayWhy}
                       </div>
                     ) : !isWhyDone ? (
@@ -1555,7 +1560,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                         }}
                       >
                         <Sparkles size={12} style={{ color: '#fbbf24' }} />
-                        <span>Extracting craftsman rationale...</span>
+                        <span>{t('app.trace_extracting_why')}</span>
                       </div>
                     ) : null}
                   </div>

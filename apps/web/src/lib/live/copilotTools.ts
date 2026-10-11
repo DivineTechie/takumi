@@ -8,6 +8,7 @@ import {
   type WorkOrder,
 } from '../api';
 import type { CopilotTool } from './copilot';
+import { visibleMachines } from '../machinesView';
 
 /** Readings older than this are reported as "no camera", the same rule as the control tower. */
 const STALE_MS = 15 * 60_000;
@@ -53,7 +54,7 @@ export function buildCopilotTools(draftWorkOrder: (machine: Machine) => Promise<
     {
       name: 'get_machines_now',
       description: 'Current state of every watched machine: running, idle, stopped or no camera; alarm text; parts counted; source label.',
-      run: async () => ({ machines: summariseMachines(await fetchMachines()) }),
+      run: async () => ({ machines: summariseMachines(visibleMachines(await fetchMachines()).shown) }),
     },
     {
       name: 'get_orders',

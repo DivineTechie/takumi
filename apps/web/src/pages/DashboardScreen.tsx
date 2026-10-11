@@ -32,6 +32,12 @@ export const DashboardScreen: React.FC = () => {
   const { t, language, setLanguage } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  // Enum values from the API shown as labels; unknown values are shown as they are.
+  const enumLabel = (prefix: string, value: string) => {
+    const key = `${prefix}${value}`;
+    const text = t(key);
+    return text === key ? value : text;
+  };
 
   const [activeTab, setActiveTab] = useState<DashboardTab>('inspections');
   const [matrixData, setMatrixData] = useState<InsightsMatrixResponse | null>(null);
@@ -221,14 +227,14 @@ export const DashboardScreen: React.FC = () => {
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <img
               src={logoSvg}
-              alt="TAKUMI Logo"
+              alt={t('app.home_logo_alt')}
               className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg shrink-0 object-contain shadow-sm"
               width={28}
               height={28}
             />
             <h1 className="text-[17px] sm:text-[20px] font-bold text-on-surface tracking-tight truncate whitespace-nowrap">
               <span className="hidden md:inline">{t('dashboard_title')}</span>
-              <span className="md:hidden">Dashboard</span>
+              <span className="md:hidden">{t('app.dashboard_title_short')}</span>
             </h1>
           </div>
         </div>
@@ -239,7 +245,7 @@ export const DashboardScreen: React.FC = () => {
           <button
             onClick={() => loadMatrix()}
             disabled={matrixLoading}
-            aria-label="Refresh dashboard data"
+            aria-label={t('app.dashboard_refresh')}
             className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer disabled:opacity-50 shrink-0"
             type="button"
           >
@@ -264,7 +270,7 @@ export const DashboardScreen: React.FC = () => {
             </span>
             <select
               id="dashboard-lang-select"
-              aria-label="Select language"
+              aria-label={t('app.home_select_language')}
               value={language}
               onChange={(e) => setLanguage(e.target.value as LanguageCode)}
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
@@ -279,8 +285,8 @@ export const DashboardScreen: React.FC = () => {
 
           <Link
             to="/control"
-            aria-label="Control tower"
-            title="Control tower"
+            aria-label={t('app.home_team_control_btn')}
+            title={t('app.home_team_control_btn')}
             className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors shrink-0"
           >
             <span className="material-symbols-outlined text-[19px] sm:text-[20px]">monitoring</span>
@@ -328,7 +334,7 @@ export const DashboardScreen: React.FC = () => {
         {/* Tabs: 2x2 grid on phones (no horizontal scroll), one row from sm up */}
         <div
           role="tablist"
-          aria-label="Dashboard sections"
+          aria-label={t('app.dashboard_sections')}
           className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 sm:gap-2 bg-surface-container-low p-1.5 rounded-2xl border border-outline-variant w-full sm:w-fit"
         >
           {(
@@ -344,7 +350,7 @@ export const DashboardScreen: React.FC = () => {
               role="tab"
               aria-selected={activeTab === tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`min-h-[48px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
+              className={`min-h-[48px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer min-w-0 text-center break-words ${
                 activeTab === tab.id
                   ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
                   : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
@@ -399,33 +405,33 @@ export const DashboardScreen: React.FC = () => {
             {/* Top Metrics Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
-                <span className="text-xs uppercase font-bold text-on-surface-variant">Today's Units (LIVE)</span>
+                <span className="text-xs uppercase font-bold text-on-surface-variant">{t('app.dashboard_quality_today_units', { evidence: 'LIVE' })}</span>
                 <span className="text-[28px] font-bold font-mono text-on-surface mt-2">
                   {inspectionInsights ? inspectionInsights.live.today_count : '—'}
                 </span>
-                <span className="text-[11px] text-on-surface-variant mt-1">Live Factory Station</span>
+                <span className="text-[11px] text-on-surface-variant mt-1">{t('app.dashboard_quality_live_station')}</span>
               </div>
 
               <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
-                <span className="text-xs uppercase font-bold text-on-surface-variant">First-Pass Rate (LIVE)</span>
+                <span className="text-xs uppercase font-bold text-on-surface-variant">{t('app.dashboard_quality_first_pass', { evidence: 'LIVE' })}</span>
                 <span className="text-[28px] font-bold font-mono text-on-surface mt-2">
                   {inspectionInsights && inspectionInsights.live.first_pass_rate !== null
                     ? `${inspectionInsights.live.first_pass_rate}%`
                     : '—'}
                 </span>
-                <span className="text-[11px] text-on-surface-variant mt-1">Passed on First Check</span>
+                <span className="text-[11px] text-on-surface-variant mt-1">{t('app.dashboard_quality_first_pass_desc')}</span>
               </div>
 
               <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
-                <span className="text-xs uppercase font-bold text-on-surface-variant">Awaiting Review</span>
+                <span className="text-xs uppercase font-bold text-on-surface-variant">{t('app.dashboard_quality_awaiting')}</span>
                 <span className="text-[28px] font-bold font-mono text-amber-600 dark:text-amber-400 mt-2">
                   {inspectionInsights ? inspectionInsights.live.flagged_awaiting_count : '—'}
                 </span>
-                <span className="text-[11px] text-on-surface-variant mt-1">Supervisor Decision Gate</span>
+                <span className="text-[11px] text-on-surface-variant mt-1">{t('app.dashboard_quality_awaiting_desc')}</span>
               </div>
 
               <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
-                <span className="text-xs uppercase font-bold text-on-surface-variant">Judge Benchmark Trials</span>
+                <span className="text-xs uppercase font-bold text-on-surface-variant">{t('app.dashboard_quality_trials')}</span>
                 <span className="text-[28px] font-bold font-mono text-primary-container mt-2">
                   {inspectionInsights && inspectionInsights.gallery.trials_count > 0
                     ? `${inspectionInsights.gallery.trials_count}`
@@ -433,7 +439,7 @@ export const DashboardScreen: React.FC = () => {
                 </span>
                 <span className="text-[11px] text-on-surface-variant mt-1">
                   {inspectionInsights && inspectionInsights.gallery.hit_rate !== null
-                    ? `${inspectionInsights.gallery.hit_rate}% hit rate (VisA CC BY 4.0)`
+                    ? t('app.dashboard_quality_hit_rate', { rate: inspectionInsights.gallery.hit_rate })
                     : 'PUBLIC DATA: VisA'}
                 </span>
               </div>
@@ -447,10 +453,10 @@ export const DashboardScreen: React.FC = () => {
                 <div>
                   <h3 className="text-[18px] font-bold text-on-surface flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary-container text-[22px]">factory</span>
-                    Live End-of-Line Inspections
+                    {t('app.dashboard_live_title')}
                   </h3>
                   <p className="text-xs text-on-surface-variant mt-0.5">
-                    Multimodal inspections recorded at factory stations. Supervisors confirm or override flagged units.
+                    {t('app.dashboard_live_desc')}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -463,7 +469,7 @@ export const DashboardScreen: React.FC = () => {
                     className="min-h-[40px] px-3 rounded-lg bg-primary-container text-on-primary-container font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     <span className="material-symbols-outlined text-[16px]">add_a_photo</span>
-                    <span>Open Station</span>
+                    <span>{t('app.dashboard_live_open_station')}</span>
                   </button>
                 </div>
               </div>
@@ -471,7 +477,7 @@ export const DashboardScreen: React.FC = () => {
               {/* Top Defect Types Strip */}
               {inspectionInsights && inspectionInsights.live.top_defect_types.length > 0 && (
                 <div className="p-3 bg-surface rounded-xl border border-outline-variant flex flex-wrap items-center gap-2 text-xs">
-                  <span className="font-bold text-on-surface">Top Defects:</span>
+                  <span className="font-bold text-on-surface">{t('app.dashboard_live_top_defects')}</span>
                   {inspectionInsights.live.top_defect_types.map((d, i) => (
                     <span key={i} className="px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 font-medium">
                       {d.defect} ({d.count})
@@ -518,16 +524,22 @@ export const DashboardScreen: React.FC = () => {
                             </span>
                           </div>
                           <p className="text-xs text-on-surface-variant mt-0.5">
-                            {item.defect ? `Defect: ${item.defect}` : 'Clean unit'}
-                            {item.where ? ` (${item.where})` : ''} • {(item.confidence * 100).toFixed(0)}% conf
+                            {item.defect
+                              ? item.where
+                                ? t('app.dashboard_live_defect_where', { defect: item.defect, where: item.where })
+                                : t('app.dashboard_live_defect', { defect: item.defect })
+                              : item.where
+                                ? t('app.dashboard_live_clean_where', { where: item.where })
+                                : t('app.dashboard_live_clean')}{' '}
+                            • {t('app.dashboard_live_confidence', { pct: (item.confidence * 100).toFixed(0) })}
                           </p>
                           <span className="text-[11px] text-on-surface-variant/80">
-                            {new Date(item.created_at).toLocaleString()}
+                            {new Date(item.created_at).toLocaleString(language)}
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 self-end sm:self-center">
+                      <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
                         <span
                           className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
                             item.ai_verdict === 'ok'
@@ -537,12 +549,12 @@ export const DashboardScreen: React.FC = () => {
                               : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
                           }`}
                         >
-                          {item.ai_verdict}
+                          {enumLabel('app.dashboard_verdict_', item.ai_verdict)}
                         </span>
 
                         {item.human_decision ? (
                           <span className="text-xs font-semibold px-2 py-0.5 rounded bg-surface-container text-on-surface">
-                            {item.human_decision}
+                            {enumLabel('app.dashboard_decision_', item.human_decision)}
                           </span>
                         ) : item.ai_verdict === 'defective' ? (
                           <div className="flex gap-1.5">
@@ -550,19 +562,19 @@ export const DashboardScreen: React.FC = () => {
                               type="button"
                               onClick={() => handleDecision(item.id, 'confirmed_defect')}
                               className="min-h-[36px] px-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
-                              title="Confirm Defect (Sets unit to Failed)"
+                              title={t('app.dashboard_live_confirm_title')}
                             >
                               <span className="material-symbols-outlined text-[14px]">thumb_down</span>
-                              <span>Confirm</span>
+                              <span>{t('app.dashboard_live_confirm')}</span>
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDecision(item.id, 'overridden_ok')}
                               className="min-h-[36px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
-                              title="Override OK (Sets unit to Passed)"
+                              title={t('app.dashboard_live_override_title')}
                             >
                               <span className="material-symbols-outlined text-[14px]">thumb_up</span>
-                              <span>Override</span>
+                              <span>{t('app.dashboard_live_override')}</span>
                             </button>
                           </div>
                         ) : null}
@@ -572,21 +584,21 @@ export const DashboardScreen: React.FC = () => {
                 </div>
               ) : (
                 <div className="p-8 text-center text-xs text-on-surface-variant bg-surface rounded-xl border border-outline-variant">
-                  No live factory units inspected yet today.
+                  {t('app.dashboard_live_empty')}
                 </div>
               )}
             </div>
 
             {/* Section 2: Judges Benchmark Trials (PUBLIC DATA) */}
             <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-[18px] font-bold text-on-surface flex items-center gap-2">
                     <span className="material-symbols-outlined text-primary-container text-[22px]">science</span>
-                    Judge Benchmark Trials on PUBLIC DATA
+                    {t('app.dashboard_trials_title', { evidence: 'PUBLIC DATA' })}
                   </h3>
                   <p className="text-xs text-on-surface-variant mt-0.5">
-                    Judges and evaluators testing the model against the public Amazon VisA test benchmark.
+                    {t('app.dashboard_trials_desc')}
                   </p>
                 </div>
                 <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
@@ -597,15 +609,15 @@ export const DashboardScreen: React.FC = () => {
               <div className="p-4 bg-surface rounded-xl border border-outline-variant flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                   <p className="text-xs text-on-surface-variant">
-                    Total Public Benchmark Trials:{' '}
+                    {t('app.dashboard_trials_total')}{' '}
                     <strong className="text-on-surface">
                       {inspectionInsights ? inspectionInsights.gallery.trials_count : '—'}
                     </strong>{' '}
-                    • Hits:{' '}
+                    • {t('app.dashboard_trials_hits')}{' '}
                     <strong className="text-on-surface">
                       {inspectionInsights ? inspectionInsights.gallery.hits_count : '—'}
                     </strong>{' '}
-                    • Hit Rate:{' '}
+                    • {t('app.dashboard_trials_hit_rate')}{' '}
                     <strong className="text-emerald-600 dark:text-emerald-400">
                       {inspectionInsights && inspectionInsights.gallery.hit_rate !== null
                         ? `${inspectionInsights.gallery.hit_rate}%`
@@ -613,7 +625,7 @@ export const DashboardScreen: React.FC = () => {
                     </strong>
                   </p>
                   <p className="text-[11px] text-on-surface-variant/80 mt-1">
-                    Dataset: Amazon VisA (Visual Anomaly Benchmark), CC BY 4.0
+                    {t('app.dashboard_trials_dataset')}
                   </p>
                 </div>
 
@@ -623,7 +635,7 @@ export const DashboardScreen: React.FC = () => {
                   className="min-h-[44px] px-4 rounded-xl border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[18px]">photo_library</span>
-                  <span>Try VisA Gallery</span>
+                  <span>{t('app.dashboard_trials_gallery_btn')}</span>
                 </button>
               </div>
             </div>
@@ -633,7 +645,7 @@ export const DashboardScreen: React.FC = () => {
 
       {/* Footer */}
       <footer className="w-full border-t border-outline-variant bg-surface-container-low py-4 px-6 text-center text-[13px] text-on-surface-variant">
-        TAKUMI • AI quality and operations for every factory
+        TAKUMI • {t('tagline')}
       </footer>
     </div>
   );

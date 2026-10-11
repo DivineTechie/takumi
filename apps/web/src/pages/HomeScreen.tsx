@@ -48,7 +48,7 @@ export const HomeScreen: React.FC = () => {
           <div className="flex items-center gap-3 shrink-0">
             <img
               src={logoSvg}
-              alt="TAKUMI Logo"
+              alt={t('app.home_logo_alt')}
               className="w-8 h-8 rounded-lg shrink-0 object-contain shadow-sm"
               width={32}
               height={32}
@@ -63,7 +63,7 @@ export const HomeScreen: React.FC = () => {
             {/* Language Selector: Globe icon + native script name */}
             <div className="relative flex items-center">
               <label className="sr-only" htmlFor="header-language-select">
-                Select language
+                {t('app.home_select_language')}
               </label>
               <span className="material-symbols-outlined absolute left-2 pointer-events-none text-on-surface-variant text-[18px]">
                 language
@@ -91,7 +91,7 @@ export const HomeScreen: React.FC = () => {
                 type="button"
                 onClick={() => setMenuOpen(!menuOpen)}
                 className="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
-                aria-label="User menu"
+                aria-label={t('app.home_user_menu')}
               >
                 <span className="material-symbols-outlined text-[24px]">more_vert</span>
               </button>
@@ -99,10 +99,10 @@ export const HomeScreen: React.FC = () => {
               {menuOpen && (
                 <div className="absolute right-0 mt-2 w-52 bg-surface-container-high border border-outline-variant rounded-xl shadow-xl py-2 z-50">
                   <div className="px-4 py-2 border-b border-outline-variant">
-                    <p className="text-xs text-on-surface-variant">Signed in as</p>
+                    <p className="text-xs text-on-surface-variant">{t('app.home_signed_in_as')}</p>
                     <p className="text-sm font-bold text-on-surface truncate">{user?.displayName || user?.email}</p>
                     <span className="inline-block px-2 py-0.5 text-[11px] font-bold uppercase rounded bg-primary-container/20 text-primary-container mt-1">
-                      {role || 'trainee'}
+                      {t(`app.home_role_${role || 'trainee'}`)}
                     </span>
                   </div>
                   <button
@@ -156,11 +156,11 @@ export const HomeScreen: React.FC = () => {
             <div className="mb-5">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-[24px] leading-[32px] font-bold text-on-surface">
-                  Quality Inspection
+                  {t('app.home_inspection_title')}
                 </h2>
               </div>
               <p className="text-[16px] sm:text-[18px] leading-[24px] sm:leading-[26px] text-on-surface-variant">
-                Photograph each finished unit; Gemini flags defects and a person confirms. Try it on real public-dataset parts.
+                {t('app.home_inspection_desc')}
               </p>
             </div>
 
@@ -171,7 +171,7 @@ export const HomeScreen: React.FC = () => {
                 className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[20px]">photo_camera</span>
-                <span>Inspect Station</span>
+                <span>{t('app.home_inspection_station_btn')}</span>
               </button>
               <button
                 type="button"
@@ -179,7 +179,7 @@ export const HomeScreen: React.FC = () => {
                 className="w-full min-h-[56px] py-3.5 px-4 bg-surface border border-outline-variant hover:bg-surface-container text-on-surface rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[20px]">photo_library</span>
-                <span>Try real parts (VisA)</span>
+                <span>{t('app.home_inspection_gallery_btn')}</span>
               </button>
             </div>
           </section>
@@ -189,11 +189,11 @@ export const HomeScreen: React.FC = () => {
             <div className="mb-5">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-[24px] leading-[32px] font-bold text-on-surface">
-                  Machine Watch
+                  {t('app.home_machines_title')}
                 </h2>
               </div>
               <p className="text-[16px] sm:text-[18px] leading-[24px] sm:leading-[26px] text-on-surface-variant">
-                A camera you already have reads stack lights, counters and alarm screens. No wiring.
+                {t('app.home_machines_desc')}
               </p>
             </div>
 
@@ -204,7 +204,7 @@ export const HomeScreen: React.FC = () => {
                 className="w-full min-h-[56px] py-3.5 px-4 bg-primary-container text-on-primary-container rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[20px]">videocam</span>
-                <span>Watch machines</span>
+                <span>{t('app.home_machines_watch_btn')}</span>
               </button>
               <button
                 type="button"
@@ -212,7 +212,7 @@ export const HomeScreen: React.FC = () => {
                 className="w-full min-h-[56px] py-3.5 px-4 bg-surface-container-high text-on-surface rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[20px]">precision_manufacturing</span>
-                <span>Machine test bench</span>
+                <span>{t('app.home_machines_bench_btn')}</span>
               </button>
             </div>
           </section>
@@ -248,7 +248,7 @@ export const HomeScreen: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary-container text-[24px]">verified</span>
-                  <h2 className="text-[20px] font-bold text-on-surface">My Certificates</h2>
+                  <h2 className="text-[20px] font-bold text-on-surface">{t('app.home_certificates_title')}</h2>
                 </div>
                 <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-primary-container/20 text-primary-container">
                   {myPassports.length}
@@ -278,7 +278,10 @@ export const HomeScreen: React.FC = () => {
                           {p.skill_title}
                         </p>
                         <p className="text-xs text-on-surface-variant">
-                          Taught by {p.master_display_name} • {new Date(p.issued_at).toLocaleDateString()}
+                          {t('app.home_certificates_meta', {
+                            master: p.master_display_name,
+                            date: new Date(p.issued_at).toLocaleDateString(language),
+                          })}
                         </p>
                       </div>
                     </div>
@@ -307,7 +310,7 @@ export const HomeScreen: React.FC = () => {
               </div>
             ) : !isCaptureAvailable ? (
               <div className="w-full min-h-[56px] py-3.5 px-5 bg-surface-container text-on-surface-variant rounded-xl font-medium text-[16px] flex items-center justify-center border border-outline-variant">
-                Coming soon
+                {t('app.home_teach_coming_soon')}
               </div>
             ) : (
               <button
@@ -348,7 +351,7 @@ export const HomeScreen: React.FC = () => {
                 className="mt-3 w-full min-h-[56px] py-3.5 px-5 bg-surface border border-outline-variant hover:bg-surface-container text-on-surface rounded-xl font-bold text-[17px] flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[22px]">monitoring</span>
-                <span>Control tower</span>
+                <span>{t('app.home_team_control_btn')}</span>
               </button>
             ) : (
               <div className="w-full min-h-[56px] py-3.5 px-5 bg-surface-container text-on-surface-variant rounded-xl font-medium text-[16px] flex items-center justify-center border border-outline-variant">

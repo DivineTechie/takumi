@@ -7,24 +7,28 @@ import {
   type InspectResponse,
 } from '../lib/api';
 import logoSvg from '../assets/logo.svg';
+import { useI18n } from '../i18n';
 
 const CATEGORIES = [
-  { id: 'candle', label: 'Candle' },
-  { id: 'capsules', label: 'Capsules' },
-  { id: 'cashew', label: 'Cashew' },
-  { id: 'chewinggum', label: 'Chewing Gum' },
-  { id: 'fryum', label: 'Fryum' },
-  { id: 'macaroni1', label: 'Macaroni 1' },
-  { id: 'macaroni2', label: 'Macaroni 2' },
-  { id: 'pcb1', label: 'PCB 1' },
-  { id: 'pcb2', label: 'PCB 2' },
-  { id: 'pcb3', label: 'PCB 3' },
-  { id: 'pcb4', label: 'PCB 4' },
-  { id: 'pipe_fryum', label: 'Pipe Fryum' },
+  { id: 'candle', label: 'quality.gallery_cat_candle' },
+  { id: 'capsules', label: 'quality.gallery_cat_capsules' },
+  { id: 'cashew', label: 'quality.gallery_cat_cashew' },
+  { id: 'chewinggum', label: 'quality.gallery_cat_chewinggum' },
+  { id: 'fryum', label: 'quality.gallery_cat_fryum' },
+  { id: 'macaroni1', label: 'quality.gallery_cat_macaroni1' },
+  { id: 'macaroni2', label: 'quality.gallery_cat_macaroni2' },
+  { id: 'pcb1', label: 'quality.gallery_cat_pcb1' },
+  { id: 'pcb2', label: 'quality.gallery_cat_pcb2' },
+  { id: 'pcb3', label: 'quality.gallery_cat_pcb3' },
+  { id: 'pcb4', label: 'quality.gallery_cat_pcb4' },
+  { id: 'pipe_fryum', label: 'quality.gallery_cat_pipe_fryum' },
 ];
 
 export const GalleryScreen: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
+  const verdictLabel = (v: string) =>
+    ({ ok: t('quality.gallery_verdict_ok'), defective: t('quality.gallery_verdict_defective'), needs_review: t('quality.gallery_verdict_needs_review') })[v] ?? v;
 
   const [activeCategory, setActiveCategory] = useState<string>('candle');
   const [mode, setMode] = useState<'few_false_alarms' | 'catch_everything'>('few_false_alarms');
@@ -45,7 +49,7 @@ export const GalleryScreen: React.FC = () => {
       })
       .catch((err) => {
         console.error('Failed to load gallery:', err);
-        setError('Failed to load VisA benchmark gallery items.');
+        setError('quality.gallery_error_load');
       })
       .finally(() => {
         setLoading(false);
@@ -63,7 +67,7 @@ export const GalleryScreen: React.FC = () => {
     } catch (err: unknown) {
       console.error('Gallery inspection error:', err);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const msg = (err as any)?.data?.detail || 'Failed to inspect gallery image';
+      const msg = (err as any)?.data?.detail || t('quality.gallery_error_inspect');
       alert(msg);
     } finally {
       setInspectingIds((prev) => ({ ...prev, [galleryId]: false }));
@@ -77,34 +81,34 @@ export const GalleryScreen: React.FC = () => {
 
     if (isNormal && verdict === 'ok') {
       return {
-        label: 'HIT — Clean unit verified',
+        label: t('quality.gallery_tag_hit_clean'),
         color: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40',
         icon: 'check_circle',
       };
     }
     if (!isNormal && verdict === 'defective') {
       return {
-        label: `HIT — Defect caught (${resp.defect || resp.dataset_label})`,
+        label: t('quality.gallery_tag_hit_defect', { defect: resp.defect || resp.dataset_label || '' }),
         color: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/40',
         icon: 'task_alt',
       };
     }
     if (!isNormal && verdict === 'ok') {
       return {
-        label: 'MISS — Anomaly missed',
+        label: t('quality.gallery_tag_miss'),
         color: 'bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/40',
         icon: 'cancel',
       };
     }
     if (isNormal && verdict === 'defective') {
       return {
-        label: 'FALSE ALARM — Flagged clean unit',
+        label: t('quality.gallery_tag_false_alarm'),
         color: 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-500/40',
         icon: 'warning',
       };
     }
     return {
-      label: 'REVIEW / TIMEOUT',
+      label: t('quality.gallery_tag_review'),
       color: 'bg-surface-container text-on-surface-variant border-outline-variant',
       icon: 'hourglass_empty',
     };
@@ -120,15 +124,15 @@ export const GalleryScreen: React.FC = () => {
               type="button"
               onClick={() => navigate('/inspect')}
               className="w-10 h-10 rounded-lg flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors cursor-pointer"
-              aria-label="Back to inspect station"
-              title="Back to inspect station"
+              aria-label={t('quality.gallery_back')}
+              title={t('quality.gallery_back')}
             >
               <span className="material-symbols-outlined text-[24px]">arrow_back</span>
             </button>
             <img src={logoSvg} alt="TAKUMI" className="w-7 h-7 rounded-lg object-contain shrink-0" />
             <div className="min-w-0">
               <h1 className="text-[17px] font-bold text-on-surface leading-tight">
-                Judges' Benchmark Gallery
+                {t('quality.gallery_title')}
               </h1>
               <p className="text-[11px] text-on-surface-variant uppercase tracking-wider font-semibold">
                 PUBLIC DATA: VisA (Amazon), CC BY 4.0
@@ -138,13 +142,13 @@ export const GalleryScreen: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <select
-              aria-label="Inspection mode"
+              aria-label={t('quality.gallery_mode_label')}
               value={mode}
               onChange={(e) => setMode(e.target.value as 'few_false_alarms' | 'catch_everything')}
               className="bg-surface border border-outline-variant rounded-lg text-xs font-bold px-3 py-1.5 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary-container cursor-pointer"
             >
-              <option value="few_false_alarms">Few false alarms (default)</option>
-              <option value="catch_everything">Catch everything</option>
+              <option value="few_false_alarms">{t('quality.gallery_mode_few_false_alarms')}</option>
+              <option value="catch_everything">{t('quality.gallery_mode_catch_everything')}</option>
             </select>
           </div>
         </div>
@@ -158,7 +162,7 @@ export const GalleryScreen: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary-container text-[24px]">science</span>
               <h2 className="text-[16px] font-bold text-on-surface">
-                Real Benchmark Evaluation Test Units
+                {t('quality.gallery_banner_title')}
               </h2>
             </div>
             <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
@@ -166,8 +170,7 @@ export const GalleryScreen: React.FC = () => {
             </span>
           </div>
           <p className="text-xs text-on-surface-variant max-w-3xl leading-relaxed">
-            Test the live Gemini multimodal inspection engine against authentic industrial images from the VisA dataset.
-            Labels are concealed until you inspect the part to verify hit and miss decisions honestly without bias.
+            {t('quality.gallery_banner_desc')}
           </p>
         </section>
 
@@ -184,7 +187,7 @@ export const GalleryScreen: React.FC = () => {
                   : 'bg-surface-container-low text-on-surface-variant border-outline-variant hover:bg-surface-container'
               }`}
             >
-              {cat.label}
+              {t(cat.label)}
             </button>
           ))}
         </section>
@@ -193,11 +196,11 @@ export const GalleryScreen: React.FC = () => {
         {loading ? (
           <div className="p-16 flex flex-col items-center justify-center gap-3 bg-surface-container-low rounded-2xl border border-outline-variant">
             <div className="w-8 h-8 border-3 border-primary-container border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs font-semibold text-on-surface-variant">Loading VisA test images...</span>
+            <span className="text-xs font-semibold text-on-surface-variant">{t('quality.gallery_loading')}</span>
           </div>
         ) : error ? (
           <div className="p-8 text-center text-error bg-error/10 border border-error/20 rounded-2xl text-sm font-semibold">
-            {error}
+            {t(error)}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -214,7 +217,7 @@ export const GalleryScreen: React.FC = () => {
                   <div className="relative aspect-square bg-black/90 flex items-center justify-center overflow-hidden">
                     <img
                       src={item.image_url}
-                      alt={`VisA ${item.category} test part`}
+                      alt={t('quality.gallery_image_alt', { category: item.category })}
                       className="w-full h-full object-contain"
                       loading="lazy"
                     />
@@ -227,7 +230,7 @@ export const GalleryScreen: React.FC = () => {
                     <div>
                       <div className="flex items-center justify-between text-xs mb-1">
                         <span className="font-mono font-bold text-on-surface truncate">
-                          {resp ? item.id : 'Test part'}
+                          {resp ? item.id : t('quality.gallery_test_part')}
                         </span>
                         <span className="text-[10px] uppercase font-semibold text-on-surface-variant">
                           {item.category}
@@ -248,13 +251,13 @@ export const GalleryScreen: React.FC = () => {
 
                           <div className="bg-surface rounded-lg p-2 text-[11px] space-y-1 border border-outline-variant">
                             <p className="text-on-surface-variant">
-                              <strong className="text-on-surface">Dataset Label:</strong>{' '}
+                              <strong className="text-on-surface">{t('quality.gallery_dataset_label')}</strong>{' '}
                               <span className="font-semibold capitalize text-primary-container">
                                 {resp.dataset_label || 'normal'}
                               </span>
                             </p>
                             <p className="text-on-surface-variant">
-                              <strong className="text-on-surface">AI Verdict:</strong>{' '}
+                              <strong className="text-on-surface">{t('quality.gallery_ai_verdict')}</strong>{' '}
                               <span
                                 className={`font-bold uppercase ${
                                   resp.ai_verdict === 'ok'
@@ -264,15 +267,15 @@ export const GalleryScreen: React.FC = () => {
                                     : 'text-amber-600'
                                 }`}
                               >
-                                {resp.ai_verdict}
+                                {verdictLabel(resp.ai_verdict)}
                               </span>{' '}
-                              ({(resp.confidence * 100).toFixed(0)}% • {resp.total_ms} ms)
+                              ({t('quality.gallery_confidence_ms', { confidence: (resp.confidence * 100).toFixed(0), ms: resp.total_ms })})
                             </p>
                           </div>
                         </div>
                       ) : (
                         <p className="text-[11px] text-on-surface-variant italic pt-1">
-                          Ground truth concealed until inspected.
+                          {t('quality.gallery_concealed')}
                         </p>
                       )}
                     </div>
@@ -291,14 +294,14 @@ export const GalleryScreen: React.FC = () => {
                       {isInspecting ? (
                         <>
                           <div className="w-5 h-5 border-2 border-primary-container border-t-transparent rounded-full animate-spin" />
-                          <span>Inspecting...</span>
+                          <span>{t('quality.gallery_inspecting')}</span>
                         </>
                       ) : (
                         <>
                           <span className="material-symbols-outlined text-[18px]">
                             {resp ? 'refresh' : 'search'}
                           </span>
-                          <span>{resp ? 'Re-inspect' : 'Inspect Unit'}</span>
+                          <span>{resp ? t('quality.gallery_reinspect') : t('quality.gallery_inspect_unit')}</span>
                         </>
                       )}
                     </button>
@@ -313,7 +316,7 @@ export const GalleryScreen: React.FC = () => {
       {/* Attribution Footer */}
       <footer className="w-full border-t border-outline-variant bg-surface-container-low py-4 px-6 text-center text-xs text-on-surface-variant space-y-1">
         <p>
-          Images: VisA dataset (Amazon),{' '}
+          {t('quality.gallery_footer_images')}{' '}
           <a
             href="https://creativecommons.org/licenses/by/4.0/"
             target="_blank"
@@ -329,11 +332,11 @@ export const GalleryScreen: React.FC = () => {
             rel="noopener noreferrer"
             className="underline text-primary-container ml-1"
           >
-            Dataset Source Link
+            {t('quality.gallery_footer_source')}
           </a>
         </p>
         <p className="text-[11px] opacity-75">
-          TAKUMI • Dual-Stage Visual Quality Inspection Engine
+          {t('quality.gallery_footer_tagline')}
         </p>
       </footer>
     </div>

@@ -15,6 +15,7 @@ const PassportScreen = lazy(() => import('./pages/PassportScreen'));
 const StatusScreen = lazy(() => import('./pages/StatusScreen'));
 const DashboardScreen = lazy(() => import('./pages/DashboardScreen'));
 const EvalsScreen = lazy(() => import('./pages/EvalsScreen'));
+const TourScreen = lazy(() => import('./pages/TourScreen'));
 const InspectScreen = lazy(() => import('./pages/InspectScreen'));
 const GalleryScreen = lazy(() => import('./pages/GalleryScreen'));
 const VirtualMachineScreen = lazy(() => import('./pages/VirtualMachineScreen'));
@@ -124,6 +125,15 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
     },
 
     // Any authenticated user
+    {
+      // Public: the tour needs no sign-in
+      path: '/tour',
+      element: (
+        <Suspense fallback={<LoadingFallback />}>
+          <TourScreen />
+        </Suspense>
+      ),
+    },
     {
       // Public: the evidence page needs no sign-in (aggregates only)
       path: '/evals',

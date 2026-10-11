@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { fetchPublicPassport, type PublicPassport } from '../lib/api';
-import { getTranslation, type LanguageCode } from '../i18n';
+import { getTranslation, useI18n, type LanguageCode } from '../i18n';
 import logoSvg from '../assets/logo.svg';
 
 const NATIVE_LANGUAGE_NAMES: Record<string, string> = {
@@ -23,6 +23,7 @@ const SUPPORTED_LANG_CODES: LanguageCode[] = ['en', 'ja', 'vi', 'hi', 'id', 'fil
 
 export const PassportScreen: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { t } = useI18n();
   const [passport, setPassport] = useState<PublicPassport | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [notFound, setNotFound] = useState<boolean>(false);
@@ -70,7 +71,7 @@ export const PassportScreen: React.FC = () => {
         if (err?.status === 404 || err?.message?.includes('not be found')) {
           setNotFound(true);
         } else {
-          setError(err?.message || 'Failed to load certificate');
+          setError(err?.message || 'app.passport_load_failed');
         }
       });
 
@@ -98,7 +99,7 @@ export const PassportScreen: React.FC = () => {
       <main className="min-h-screen bg-surface flex flex-col items-center justify-center p-4">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
-          <span className="text-on-surface-variant font-medium">Verifying Skill Passport...</span>
+          <span className="text-on-surface-variant font-medium">{t('app.passport_verifying')}</span>
         </div>
       </main>
     );
@@ -112,18 +113,17 @@ export const PassportScreen: React.FC = () => {
           <span className="material-symbols-outlined text-[44px]">search_off</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold mb-3 text-on-surface">
-          {error ? 'Failed to load certificate' : 'This certificate could not be found.'}
+          {error ? t('app.passport_load_failed') : t('app.passport_not_found_title')}
         </h1>
         <p className="text-on-surface-variant max-w-md mb-8 text-[16px]">
-          {error ||
-            'The requested passport ID may be invalid or does not exist. Please check the URL or scan the QR code again.'}
+          {error ? t(error) : t('app.passport_not_found_desc')}
         </p>
         <Link
           to="/"
           className="min-h-[52px] px-8 py-3.5 bg-primary-container text-on-primary-container font-bold rounded-xl flex items-center gap-2 hover:brightness-105 active:scale-95 transition-all shadow cursor-pointer"
         >
           <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-          <span>Return to TAKUMI</span>
+          <span>{t('app.passport_return')}</span>
         </Link>
       </main>
     );
@@ -156,7 +156,7 @@ export const PassportScreen: React.FC = () => {
         month: 'long',
         day: 'numeric',
       })
-    : 'Recently';
+    : tCert('app.passport_recently');
 
   const issuedDateEnStr = passport.issued_at
     ? new Date(passport.issued_at).toLocaleDateString('en-US', {
@@ -164,7 +164,7 @@ export const PassportScreen: React.FC = () => {
         month: 'long',
         day: 'numeric',
       })
-    : 'Recently';
+    : tEn('app.passport_recently');
 
   const nativeLanguageName = getNativeLanguageName(passport.language);
 
@@ -203,18 +203,18 @@ export const PassportScreen: React.FC = () => {
         <Link
           to="/"
           className="inline-flex items-center gap-2 text-on-surface-variant hover:text-on-surface font-semibold text-sm transition-colors"
-          aria-label="Back to TAKUMI"
+          aria-label={t('app.passport_back')}
         >
           <span className="material-symbols-outlined text-[20px]">arrow_back</span>
           <img src={logoSvg} alt="" className="w-6 h-6 object-contain" width={24} height={24} />
           <span className="hidden sm:inline font-bold">TAKUMI</span>
         </Link>
 
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           <button
             type="button"
             onClick={handleCopyLink}
-            className="h-10 px-3 sm:px-3.5 rounded-lg border border-outline-variant bg-surface hover:bg-surface-container text-on-surface text-sm font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+            className="min-h-[44px] px-3 sm:px-3.5 rounded-lg border border-outline-variant bg-surface hover:bg-surface-container text-on-surface text-sm font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">
               {copied ? 'check' : 'share'}
@@ -225,10 +225,10 @@ export const PassportScreen: React.FC = () => {
           <button
             type="button"
             onClick={handlePrint}
-            className="h-10 px-3.5 sm:px-4 rounded-lg bg-primary-container text-on-primary-container hover:brightness-105 active:scale-95 text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer whitespace-nowrap"
+            className="min-h-[44px] px-3.5 sm:px-4 rounded-lg bg-primary-container text-on-primary-container hover:brightness-105 active:scale-95 text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer whitespace-nowrap"
           >
             <span className="material-symbols-outlined text-[18px]">download</span>
-            <span>PDF</span>
+            <span>{tCert('passport_pdf')}</span>
           </button>
         </div>
       </header>
@@ -236,7 +236,7 @@ export const PassportScreen: React.FC = () => {
       {/* Main Certificate Card (Printable) */}
       <main
         role="region"
-        aria-label="Skill Passport Certificate"
+        aria-label={t('app.passport_certificate_region')}
         className="certificate-card w-full max-w-4xl bg-surface border-2 border-primary-container/40 rounded-3xl p-6 sm:p-10 shadow-2xl relative overflow-hidden flex flex-col justify-between selection:bg-primary-container selection:text-on-primary-container"
       >
         {/* Subtle decorative background watermark */}
@@ -252,7 +252,7 @@ export const PassportScreen: React.FC = () => {
           <div className="flex items-center gap-3">
             <img
               src={logoSvg}
-              alt="TAKUMI Logo"
+              alt={t('app.home_logo_alt')}
               className="w-12 h-12 rounded-xl object-contain shadow-sm border border-outline-variant/40"
               width={48}
               height={48}
@@ -279,7 +279,7 @@ export const PassportScreen: React.FC = () => {
 
           {/* Verified Badge Tag */}
           <div className="flex flex-col items-end">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/40 text-emerald-600 dark:text-emerald-400 font-bold text-xs uppercase tracking-wide whitespace-nowrap">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/40 text-emerald-600 dark:text-emerald-400 font-bold text-xs uppercase tracking-wide text-center">
               <span className="material-symbols-outlined text-[18px]">verified</span>
               <span>{tCert('passport_verified_tag')}</span>
             </div>
@@ -380,7 +380,7 @@ export const PassportScreen: React.FC = () => {
             </div>
 
             <p className="text-[11px] font-mono text-on-surface-variant/70">
-              ID: {passport.id}
+              {tCert('passport_id_label')}: {passport.id}
             </p>
           </div>
 
@@ -389,7 +389,7 @@ export const PassportScreen: React.FC = () => {
             {passport.badge_url ? (
               <img
                 src={passport.badge_url}
-                alt="Skill Seal Badge"
+                alt={t('app.passport_badge_alt')}
                 onLoad={() => setBadgeLoaded(true)}
                 onError={() => setBadgeLoaded(false)}
                 className="w-20 h-20 sm:w-24 sm:h-24 object-contain rounded-full border-2 border-red-700/60 shadow-md"
@@ -397,11 +397,11 @@ export const PassportScreen: React.FC = () => {
             ) : (
               /* Fallback traditional CSS Hanko seal - NO SynthID label */
               <div
-                aria-label="Traditional Hanko Seal"
+                aria-label={t('app.passport_hanko_label')}
                 className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-red-700/80 bg-red-600/10 flex flex-col items-center justify-center text-red-700 shadow-sm rotate-[-3deg]"
               >
                 <span className="font-serif font-black text-2xl sm:text-3xl leading-none">匠</span>
-                <span className="text-[9px] uppercase tracking-wider font-extrabold mt-0.5">VERIFIED</span>
+                <span className="text-[9px] uppercase tracking-wider font-extrabold mt-0.5">{tCert('app.passport_seal_verified')}</span>
               </div>
             )}
 
@@ -426,7 +426,7 @@ export const PassportScreen: React.FC = () => {
               <div
                 className="w-20 h-20 sm:w-24 sm:h-24 p-1 bg-white rounded-lg border border-outline-variant shadow-sm flex items-center justify-center"
                 dangerouslySetInnerHTML={{ __html: qrSvg }}
-                aria-label="Scan QR Code to verify passport"
+                aria-label={t('app.passport_qr_label')}
               />
             ) : (
               <div className="w-20 h-20 sm:w-24 sm:h-24 bg-surface-container rounded-lg border border-outline-variant animate-pulse" />

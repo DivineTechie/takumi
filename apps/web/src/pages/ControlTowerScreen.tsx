@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchControlSummary, type ControlSourceKpis, type ControlSummary } from '../lib/api';
-import { describe } from '../lib/controlEvents';
+import { agoText, describe, type TFn } from '../lib/controlEvents';
+import { useI18n } from '../i18n';
 import { OrdersPanel } from '../components/control/OrdersPanel';
 import { MachinesNow } from '../components/control/MachinesNow';
 import { WorkOrdersPanel, type DraftRequest } from '../components/control/WorkOrdersPanel';
@@ -20,47 +21,48 @@ function pct(v: number | null): string {
   return v === null ? '—' : `${Math.round(v * 100)}%`;
 }
 
-function ago(iso: string | null): string {
-  if (!iso) return 'no events yet';
-  const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
-  if (s < 90) return `${s}s ago`;
-  if (s < 5400) return `${Math.round(s / 60)} min ago`;
-  return `${Math.round(s / 3600)} h ago`;
+function ago(t: TFn, iso: string | null): string {
+  if (!iso) return t('ops.tower_no_events_yet');
+  return agoText(t, (Date.now() - Date.parse(iso)) / 1000, true);
 }
 
 const KIND_ICON: Record<string, string> = { station: 'front_hand', inspection: 'verified', machine: 'precision_manufacturing', unit: 'inventory_2' };
 
 const Kpi: React.FC<{ label: string; value: string | number; tone?: string }> = ({ label, value, tone }) => (
-  <div className="bg-surface-container rounded-xl p-3">
-    <div className="text-xs text-on-surface-variant">{label}</div>
+  <div className="bg-surface-container rounded-xl p-3 min-w-0">
+    <div className="text-xs text-on-surface-variant break-words">{label}</div>
     <div className={`text-2xl font-bold ${tone ?? ''}`}>{value}</div>
   </div>
 );
 
-const SourceBlock: React.FC<{ source: string; k: ControlSourceKpis }> = ({ source, k }) => (
-  <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 space-y-3" data-testid={`source-${source}`}>
-    <div className="flex items-center justify-between">
-      <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-surface-container-high">{source}</span>
-      <span className="text-xs text-on-surface-variant">{k.events} {k.events === 1 ? 'event' : 'events'}</span>
-    </div>
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-      <Kpi label="Inspected" value={k.inspected} />
-      <Kpi label="First-pass rate" value={pct(k.first_pass_rate)} />
-      <Kpi label="Defects confirmed" value={k.confirmed_defects} tone={k.confirmed_defects ? 'text-red-400' : ''} />
-      <Kpi label="Units on hold" value={k.units_held} tone={k.units_held ? 'text-purple-400' : ''} />
-      <Kpi label="Stations finished" value={k.stations_completed} />
-      <Kpi label="Mistakes caught" value={k.mistakes} tone={k.mistakes ? 'text-amber-400' : ''} />
-      <Kpi label="Safety stops" value={k.safety_stops} tone={k.safety_stops ? 'text-red-400' : ''} />
-      <Kpi label="Machine stops / alarms" value={`${k.machine_stops} / ${k.machine_alarms}`} />
-    </div>
-  </section>
-);
+const SourceBlock: React.FC<{ source: string; k: ControlSourceKpis }> = ({ source, k }) => {
+  const { t } = useI18n();
+  return (
+    <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 space-y-3" data-testid={`source-${source}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-surface-container-high">{source}</span>
+        <span className="text-xs text-on-surface-variant">{t(k.events === 1 ? 'ops.tower_events_one' : 'ops.tower_events_other', { n: k.events })}</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Kpi label={t('ops.tower_kpi_inspected')} value={k.inspected} />
+        <Kpi label={t('ops.tower_kpi_first_pass')} value={pct(k.first_pass_rate)} />
+        <Kpi label={t('ops.tower_kpi_defects')} value={k.confirmed_defects} tone={k.confirmed_defects ? 'text-red-400' : ''} />
+        <Kpi label={t('ops.tower_kpi_on_hold')} value={k.units_held} tone={k.units_held ? 'text-purple-400' : ''} />
+        <Kpi label={t('ops.tower_kpi_stations')} value={k.stations_completed} />
+        <Kpi label={t('ops.tower_kpi_mistakes')} value={k.mistakes} tone={k.mistakes ? 'text-amber-400' : ''} />
+        <Kpi label={t('ops.tower_kpi_safety_stops')} value={k.safety_stops} tone={k.safety_stops ? 'text-red-400' : ''} />
+        <Kpi label={t('ops.tower_kpi_machine_stops')} value={`${k.machine_stops} / ${k.machine_alarms}`} />
+      </div>
+    </section>
+  );
+};
 
 export const ControlTowerScreen: React.FC = () => {
   const navigate = useNavigate();
+  const { t, language } = useI18n();
   const [hours, setHours] = useState(24);
   const [data, setData] = useState<ControlSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
   const [draftRequest, setDraftRequest] = useState<DraftRequest | null>(null);
   const [autoDraft, setAutoDraft] = useState(false);
   const requestDraft = useCallback((m: Machine) => setDraftRequest({ machineId: m.id, name: m.name, nonce: Date.now() + Math.random() }), []);
@@ -74,9 +76,9 @@ export const ControlTowerScreen: React.FC = () => {
   const load = useCallback(async () => {
     try {
       setData(await fetchControlSummary(hours));
-      setError(null);
+      setError(false);
     } catch {
-      setError('Could not load the control tower.');
+      setError(true);
     }
   }, [hours]);
 
@@ -91,16 +93,16 @@ export const ControlTowerScreen: React.FC = () => {
   return (
     <div className="min-h-screen bg-surface text-on-surface">
       <header className="px-4 py-3 border-b border-outline-variant flex flex-wrap items-center gap-3">
-        <button type="button" onClick={() => navigate(-1)} aria-label="Back" className="min-w-[44px] min-h-[44px]">
+        <button type="button" onClick={() => navigate(-1)} aria-label={t('back')} className="min-w-[44px] min-h-[44px]">
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-bold">Control tower</h1>
-          <p className="text-xs text-on-surface-variant">Cloud Run → Pub/Sub → BigQuery · last event {ago(data?.last_event_at ?? null)}</p>
+          <h1 className="text-lg font-bold">{t('ops.tower_title')}</h1>
+          <p className="text-xs text-on-surface-variant">Cloud Run → Pub/Sub → BigQuery · {t('ops.tower_last_event', { ago: ago(t, data?.last_event_at ?? null) })}</p>
         </div>
-        <select value={hours} onChange={(e) => setHours(Number(e.target.value))} aria-label="Time window" className="min-h-[44px] rounded-lg bg-surface-container px-2">
-          <option value={24}>Last 24 hours</option>
-          <option value={168}>Last 7 days</option>
+        <select value={hours} onChange={(e) => setHours(Number(e.target.value))} aria-label={t('ops.tower_time_window')} className="min-h-[44px] rounded-lg bg-surface-container px-2">
+          <option value={24}>{t('ops.tower_last_24h')}</option>
+          <option value={168}>{t('ops.tower_last_7d')}</option>
         </select>
       </header>
 
@@ -110,27 +112,27 @@ export const ControlTowerScreen: React.FC = () => {
           <MachinesNow onDraft={requestDraft} onNewStop={autoDraft ? requestDraft : undefined} />
           <WorkOrdersPanel request={draftRequest} autoDraft={autoDraft} onAutoDraftChange={setAutoDraft} />
           <OrdersPanel />
-          {error && <p className="text-red-400">{error}</p>}
-          {!data && !error && <p className="text-on-surface-variant">Loading…</p>}
+          {error && <p className="text-red-400">{t('ops.tower_load_error')}</p>}
+          {!data && !error && <p className="text-on-surface-variant">{t('ops.common_loading')}</p>}
           {data && sources.length === 0 && (
             <p className="text-on-surface-variant bg-surface-container-low border border-outline-variant rounded-2xl p-4">
-              No events in this window yet. Events appear as stations, inspections and machines report.
+              {t('ops.tower_no_events')}
             </p>
           )}
           {data && sources.map((s) => <SourceBlock key={s} source={s} k={data.by_source[s]} />)}
         </div>
 
         <aside className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 min-w-0">
-          <h2 className="font-bold mb-2">Live feed</h2>
-          {data && data.feed.length === 0 && <p className="text-sm text-on-surface-variant">Nothing yet.</p>}
+          <h2 className="font-bold mb-2">{t('ops.tower_live_feed')}</h2>
+          {data && data.feed.length === 0 && <p className="text-sm text-on-surface-variant">{t('ops.tower_nothing_yet')}</p>}
           <ul className="space-y-2" data-testid="control-feed">
             {data?.feed.map((e, i) => (
               <li key={i} className="flex gap-2 text-sm">
                 <span className="material-symbols-outlined text-[18px] text-on-surface-variant shrink-0">{KIND_ICON[e.kind] ?? 'circle'}</span>
                 <div className="min-w-0">
-                  <div className="truncate">{describe(e)}</div>
+                  <div className="break-words">{describe(e, t)}</div>
                   <div className="text-xs text-on-surface-variant">
-                    {new Date(e.ts).toLocaleTimeString()} · {e.source}
+                    {new Date(e.ts).toLocaleTimeString(language)} · {e.source}
                     {e.unit_id && (
                       <>
                         {' · '}

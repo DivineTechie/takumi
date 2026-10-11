@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ApiError, createProductWithImages, type ProductItem } from '../../lib/api';
 import { resizeImageForUpload } from '../../lib/imageResize';
+import { useI18n } from '../../i18n';
 
 /**
  * Supervisor form: register a product for end-of-line inspection from 3 photos of good units.
@@ -10,6 +11,7 @@ export const NewProductForm: React.FC<{ onCreated: (p: ProductItem) => void; onC
   onCreated,
   onCancel,
 }) => {
+  const { t } = useI18n();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [defects, setDefects] = useState('');
@@ -26,7 +28,7 @@ export const NewProductForm: React.FC<{ onCreated: (p: ProductItem) => void; onC
       setPhotos((p) => p.map((x, j) => (j === i ? r.base64 : x)));
       setPreviews((p) => p.map((x, j) => (j === i ? r.dataUrl : x)));
     } catch {
-      setError('Could not read that photo.');
+      setError(t('quality.newproduct_error_photo'));
     }
   };
 
@@ -34,7 +36,7 @@ export const NewProductForm: React.FC<{ onCreated: (p: ProductItem) => void; onC
     e.preventDefault();
     setError(null);
     if (name.trim().length < 2 || description.trim().length < 3 || photos.some((p) => !p)) {
-      setError('Add a name, a short description and 3 photos of good units.');
+      setError(t('quality.newproduct_error_incomplete'));
       return;
     }
     setBusy(true);
@@ -50,7 +52,7 @@ export const NewProductForm: React.FC<{ onCreated: (p: ProductItem) => void; onC
       });
       onCreated(product);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save the product.');
+      setError(err instanceof ApiError ? err.message : t('quality.newproduct_error_save'));
     } finally {
       setBusy(false);
     }
@@ -59,32 +61,32 @@ export const NewProductForm: React.FC<{ onCreated: (p: ProductItem) => void; onC
   const inputClass = 'w-full min-h-[48px] mt-1 rounded-lg bg-surface border border-outline-variant px-3 text-on-surface';
 
   return (
-    <form onSubmit={submit} className="bg-surface-container rounded-2xl p-4 space-y-3" aria-label="New product">
-      <h3 className="font-bold text-on-surface">New product</h3>
+    <form onSubmit={submit} className="bg-surface-container rounded-2xl p-4 space-y-3" aria-label={t('quality.newproduct_title')}>
+      <h3 className="font-bold text-on-surface">{t('quality.newproduct_title')}</h3>
       <label className="block text-sm text-on-surface-variant">
-        Name
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Charger kit" className={inputClass} />
+        {t('quality.newproduct_name')}
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('quality.newproduct_name_placeholder')} className={inputClass} />
       </label>
       <label className="block text-sm text-on-surface-variant">
-        What a finished unit is (one line)
+        {t('quality.newproduct_description')}
         <input
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="e.g. charger adapter with cable plugged in, coiled and banded, label on the adapter"
+          placeholder={t('quality.newproduct_description_placeholder')}
           className={inputClass}
         />
       </label>
       <label className="block text-sm text-on-surface-variant">
-        Known defects (comma separated, optional)
+        {t('quality.newproduct_defects')}
         <input
           value={defects}
           onChange={(e) => setDefects(e.target.value)}
-          placeholder="e.g. label on the cable, cable not banded, plug not fully in"
+          placeholder={t('quality.newproduct_defects_placeholder')}
           className={inputClass}
         />
       </label>
       <div>
-        <div className="text-sm text-on-surface-variant mb-1">3 photos of good units (same angle and distance you will inspect from)</div>
+        <div className="text-sm text-on-surface-variant mb-1">{t('quality.newproduct_photos_hint')}</div>
         <div className="grid grid-cols-3 gap-2">
           {[0, 1, 2].map((i) => (
             <label
@@ -92,16 +94,16 @@ export const NewProductForm: React.FC<{ onCreated: (p: ProductItem) => void; onC
               className="aspect-square rounded-xl bg-surface border border-dashed border-outline-variant flex items-center justify-center cursor-pointer overflow-hidden"
             >
               {previews[i] ? (
-                <img src={previews[i] as string} alt={`Good unit ${i + 1}`} className="w-full h-full object-cover" />
+                <img src={previews[i] as string} alt={t('quality.newproduct_good_unit_alt', { n: i + 1 })} className="w-full h-full object-cover" />
               ) : (
-                <span className="text-xs text-on-surface-variant text-center px-1">Photo {i + 1}</span>
+                <span className="text-xs text-on-surface-variant text-center px-1 break-words">{t('quality.newproduct_photo_n', { n: i + 1 })}</span>
               )}
               <input
                 type="file"
                 accept="image/*"
                 capture="environment"
                 className="hidden"
-                aria-label={`Photo ${i + 1}`}
+                aria-label={t('quality.newproduct_photo_n', { n: i + 1 })}
                 onChange={(e) => pick(i, e.target.files?.[0])}
               />
             </label>
@@ -115,10 +117,10 @@ export const NewProductForm: React.FC<{ onCreated: (p: ProductItem) => void; onC
       )}
       <div className="flex gap-2">
         <button type="submit" disabled={busy} className="min-h-[56px] flex-1 rounded-xl bg-primary text-on-primary font-bold disabled:opacity-50">
-          {busy ? 'Saving…' : 'Save product'}
+          {busy ? t('quality.newproduct_saving') : t('quality.newproduct_save')}
         </button>
         <button type="button" onClick={onCancel} className="min-h-[56px] px-4 rounded-xl bg-surface-container-high text-on-surface">
-          Cancel
+          {t('quality.newproduct_cancel')}
         </button>
       </div>
     </form>

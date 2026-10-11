@@ -14,6 +14,8 @@ import {
 } from '../lib/api';
 import { RateCap, RegionChange, StableValue, roiToPixels, stackLightLit, type Roi } from '../lib/machineVision';
 import { MACHINE_WATCH } from '../config';
+import { useI18n } from '../i18n';
+import { agoText, stateLabel, type TFn } from '../lib/controlEvents';
 
 /**
  * Machine Watch (P17): a fixed camera (old phone or webcam) watches stack lights, counters and HMI
@@ -25,7 +27,9 @@ import { MACHINE_WATCH } from '../config';
 type RoiKind = 'stack_light' | 'counter' | 'hmi';
 const ROI_KINDS: RoiKind[] = ['stack_light', 'counter', 'hmi'];
 const ROI_COLOUR: Record<RoiKind, string> = { stack_light: '#22c55e', counter: '#38bdf8', hmi: '#c084fc' };
-const ROI_LABEL: Record<RoiKind, string> = { stack_light: 'light', counter: 'counter', hmi: 'screen' };
+/** Translation keys for the box labels. */
+const ROI_LABEL: Record<RoiKind, string> = { stack_light: 'ops.watch_roi_light', counter: 'ops.watch_roi_counter', hmi: 'ops.watch_roi_screen' };
+const RUN_STATUSES = ['running', 'completed', 'cancelled'];
 
 interface DraftMachine {
   name: string;
@@ -52,7 +56,8 @@ interface Watcher {
 
 interface StopAlert {
   name: string;
-  text: string;
+  /** Alarm text from the machine, or null when it simply stopped. */
+  text: string | null;
   at: number;
 }
 
@@ -65,6 +70,7 @@ interface MachineView {
   alarm: string | null;
   lastReadAt: number | null;
   readsPerHour: number;
+  /** Translation key of the last read error. */
   error: string | null;
 }
 
@@ -101,6 +107,9 @@ function clamp01(v: number) {
 
 export const MachineWatchScreen: React.FC = () => {
   const navigate = useNavigate();
+  const { t, language } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
   const debug = useMemo(() => new URLSearchParams(window.location.search).get('debug') === '1', []);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const frameCanvas = useRef<HTMLCanvasElement | null>(null);
@@ -177,7 +186,7 @@ export const MachineWatchScreen: React.FC = () => {
       setMachines(ms);
       setRuns(rs);
     } catch {
-      setMessage('Could not load machines. Check that you are signed in.');
+      setMessage(tRef.current('ops.watch_load_error'));
     }
   }, []);
 
@@ -236,7 +245,7 @@ export const MachineWatchScreen: React.FC = () => {
       }
       setSource('camera');
     } catch {
-      setSourceError('Camera not available. Allow camera access and try again.');
+      setSourceError(t('ops.watch_camera_error'));
     }
   };
 
@@ -316,7 +325,7 @@ export const MachineWatchScreen: React.FC = () => {
   const beginSetup = async () => {
     const ctx = grabFrame();
     if (!ctx) {
-      setMessage('Start the camera (or a video) first.');
+      setMessage(t('ops.watch_start_camera_first'));
       return;
     }
     const frame = ctx.canvas.toDataURL('image/jpeg', 0.9);
@@ -326,7 +335,7 @@ export const MachineWatchScreen: React.FC = () => {
     const b64 = frame.split(',')[1];
     const next: DraftMachine[] = [];
     for (let i = 1; i <= setupCount; i++) {
-      setBusy(`Finding machine ${i} of ${setupCount} with Gemini…`);
+      setBusy(t('ops.watch_finding_machine', { i, n: setupCount }));
       const name = benchMachines ? ['CNC Mill 1', 'Press 2', 'Packer 3'][i - 1] ?? `Machine ${i}` : `Machine ${i}`;
       try {
         const res = await setupMachine(b64, { machine_count: setupCount, machine_index: i });
@@ -336,8 +345,8 @@ export const MachineWatchScreen: React.FC = () => {
           rois: { stack_light: res.rois.stack_light, counter: res.rois.counter ?? undefined, hmi: res.rois.hmi ?? undefined },
         });
       } catch (e) {
-        const detail = e instanceof ApiError ? e.message : 'Setup failed.';
-        setMessage(`Machine ${i}: ${detail} Drag the box to the stack light by hand.`);
+        const detail = e instanceof ApiError ? e.message : t('ops.watch_setup_failed');
+        setMessage(t('ops.watch_setup_failed_detail', { i, detail }));
         next.push({ name, idealCycleS: 10, rois: { stack_light: { x: 0.1 + 0.3 * (i - 1), y: 0.1, w: 0.1, h: 0.3 } } });
       }
     }
@@ -346,7 +355,7 @@ export const MachineWatchScreen: React.FC = () => {
   };
 
   const saveSetup = async () => {
-    setBusy('Saving…');
+    setBusy(t('ops.watch_saving'));
     try {
       const created: Machine[] = [];
       for (const [i, d] of drafts.entries()) {
@@ -365,9 +374,9 @@ export const MachineWatchScreen: React.FC = () => {
       setSelected(created.map((m) => m.id));
       setMode('idle');
       setSetupFrame(null);
-      setMessage(`Saved ${created.length} machine(s). Press Start watching.`);
+      setMessage(t('ops.watch_saved', { n: created.length }));
     } catch {
-      setMessage('Could not save the machines.');
+      setMessage(t('ops.watch_save_error'));
     } finally {
       setBusy(null);
     }
@@ -439,7 +448,7 @@ export const MachineWatchScreen: React.FC = () => {
           if (stoppedNow || newAlarm) {
             setAlerts((prev) => ({
               ...prev,
-              [m.id]: { name: m.name, text: res.alarm_text ?? 'Stopped', at: Date.now() },
+              [m.id]: { name: m.name, text: res.alarm_text ?? null, at: Date.now() },
             }));
             signalStop();
           } else if (res.state === 'running' || res.state === 'idle') {
@@ -468,7 +477,7 @@ export const MachineWatchScreen: React.FC = () => {
           },
         }));
       } catch (e) {
-        const msg = e instanceof ApiError && e.status === 429 ? 'Read limit reached, waiting' : 'Read failed, will retry';
+        const msg = e instanceof ApiError && e.status === 429 ? 'ops.watch_read_limit' : 'ops.watch_read_failed';
         setViews((prev) => ({ ...prev, [m.id]: { ...(prev[m.id] as MachineView), error: msg } }));
       } finally {
         w.inFlight = false;
@@ -479,7 +488,7 @@ export const MachineWatchScreen: React.FC = () => {
 
   const startWatching = () => {
     if (!watched.length) {
-      setMessage('Pick at least one machine (or set up new ones).');
+      setMessage(t('ops.watch_pick_machine'));
       return;
     }
     const now = Date.now();
@@ -569,18 +578,18 @@ export const MachineWatchScreen: React.FC = () => {
   return (
     <div className="min-h-screen bg-surface text-on-surface flex flex-col">
       <header className="px-4 py-3 border-b border-outline-variant flex items-center gap-3">
-        <button type="button" onClick={() => navigate('/')} aria-label="Back to home" className="min-w-[44px] min-h-[44px]">
+        <button type="button" onClick={() => navigate('/')} aria-label={t('ops.common_back_home')} className="min-w-[44px] min-h-[44px]">
           <span className="material-symbols-outlined">arrow_back</span>
         </button>
-        <div className="flex-1">
-          <h1 className="text-lg font-bold">Machine Watch</h1>
-          <p className="text-xs text-on-surface-variant">Only small crops of the light, counter and screen leave this device.</p>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold">{t('ops.watch_title')}</h1>
+          <p className="text-xs text-on-surface-variant">{t('ops.watch_subtitle')}</p>
         </div>
       </header>
 
       {source === 'file' && (
         <div className="bg-amber-500/20 text-amber-200 text-sm px-4 py-2" role="status">
-          Simulated input: a recorded video file, not a live camera.
+          {t('ops.watch_simulated_input')}
         </div>
       )}
 
@@ -588,7 +597,7 @@ export const MachineWatchScreen: React.FC = () => {
         <section className="flex flex-col gap-3 min-w-0">
           {portrait && source && mode !== 'watching' && (
             <div className="bg-amber-500/20 text-amber-100 rounded-xl px-4 py-3 text-sm" role="status">
-              Turn the phone sideways: machines usually stand side by side, so landscape fits more of them.
+              {t('ops.watch_rotate_hint')}
             </div>
           )}
           <div
@@ -621,7 +630,7 @@ export const MachineWatchScreen: React.FC = () => {
               {mode === 'setup' && setupFrame && (
                 <img
                   src={setupFrame}
-                  alt="Setup frame"
+                  alt={t('ops.watch_setup_frame_alt')}
                   className="w-full h-full object-contain"
                   onLoad={(e) => {
                     const img = e.currentTarget;
@@ -641,7 +650,7 @@ export const MachineWatchScreen: React.FC = () => {
                       onPointerDown={(e) => onPointerDown(e, idx, kind, false)}
                     >
                       <span className="absolute -top-5 left-0 text-[11px] font-bold px-1 rounded" style={{ background: ROI_COLOUR[kind], color: '#000' }}>
-                        M{idx + 1} {ROI_LABEL[kind]}
+                        M{idx + 1} {t(ROI_LABEL[kind])}
                       </span>
                       <span
                         className="absolute -right-2 -bottom-2 w-5 h-5 rounded-full border-2 border-white cursor-se-resize"
@@ -669,7 +678,7 @@ export const MachineWatchScreen: React.FC = () => {
             </div>
             {!source && (
               <div className="absolute inset-0 flex items-center justify-center text-on-surface-variant text-sm p-4 text-center">
-                Mount the phone so the machines' lights, counters and screens are in view, then start the camera.
+                {t('ops.watch_mount_hint')}
               </div>
             )}
             {watching && (
@@ -678,23 +687,23 @@ export const MachineWatchScreen: React.FC = () => {
                   <div className="flex flex-col gap-2 pointer-events-auto">
                     {Object.entries(alerts).map(([id, a]) => (
                       <div key={id} className="bg-red-600 text-white rounded-xl px-4 py-3 shadow-lg animate-pulse" role="alert" data-testid="stop-alert">
-                        <div className="text-lg font-bold">{a.name} stopped</div>
-                        <div className="text-sm">{a.text}</div>
+                        <div className="text-lg font-bold">{t('ops.watch_alert_title', { name: a.name })}</div>
+                        <div className="text-sm">{a.text ?? t('ops.watch_alert_stopped')}</div>
                       </div>
                     ))}
                   </div>
                   <div className="flex gap-2 pointer-events-auto">
-                    <button type="button" onClick={() => setSoundOn((v) => !v)} aria-label={soundOn ? 'Mute stop alerts' : 'Sound on for stop alerts'} className="min-w-[48px] min-h-[48px] rounded-xl bg-black/60 text-white">
+                    <button type="button" onClick={() => setSoundOn((v) => !v)} aria-label={soundOn ? t('ops.watch_mute_alerts') : t('ops.watch_unmute_alerts')} className="min-w-[48px] min-h-[48px] rounded-xl bg-black/60 text-white">
                       <span className="material-symbols-outlined">{soundOn ? 'volume_up' : 'volume_off'}</span>
                     </button>
                     <button type="button" onClick={stopWatching} className="min-h-[48px] px-4 rounded-xl bg-red-700 text-white font-bold">
-                      Stop watching
+                      {t('ops.watch_stop')}
                     </button>
                   </div>
                 </div>
                 {portrait && (
                   <div className="absolute inset-x-4 top-20 bg-amber-500/90 text-black rounded-xl px-4 py-3 text-sm font-bold text-center">
-                    Turn the phone sideways to fit all machines.
+                    {t('ops.watch_rotate_hint_short')}
                   </div>
                 )}
                 <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-2 justify-center">
@@ -703,9 +712,9 @@ export const MachineWatchScreen: React.FC = () => {
                     const colour = v?.state === 'stopped' ? 'bg-red-600' : v?.state === 'idle' ? 'bg-amber-500 text-black' : v?.state === 'running' ? 'bg-green-600' : 'bg-neutral-700';
                     return (
                       <div key={m.id} className={`${colour} text-white rounded-xl px-3 py-2 text-sm shadow`} data-testid={`watch-chip-${m.id}`}>
-                        <span className="font-bold">{m.name}</span> · {v?.state ?? '…'}
+                        <span className="font-bold">{m.name}</span> · {v?.state ? stateLabel(t, v.state) : '…'}
                         {v?.count !== null && v?.count !== undefined && ` · ${v.count}`}
-                        {v?.countAt && <span className="block text-[11px] opacity-80">counted {sinceText(v.countAt)}</span>}
+                        {v?.countAt && <span className="block text-[11px] opacity-80">{t('ops.watch_counted', { ago: sinceText(t, v.countAt) })}</span>}
                         {v?.alarm && <span className="block text-xs">{v.alarm}</span>}
                       </div>
                     );
@@ -717,21 +726,21 @@ export const MachineWatchScreen: React.FC = () => {
 
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={startCamera} className="min-h-[56px] px-5 rounded-xl bg-primary text-on-primary font-bold">
-              Start camera
+              {t('ops.watch_start_camera')}
             </button>
             {debug && (
               <label className="min-h-[56px] px-5 rounded-xl bg-surface-container-high font-bold flex items-center cursor-pointer">
-                Use video file
+                {t('ops.watch_use_video')}
                 <input type="file" accept="video/*" className="hidden" onChange={(e) => e.target.files?.[0] && startFile(e.target.files[0])} />
               </label>
             )}
             {mode === 'watching' ? (
               <button type="button" onClick={stopWatching} className="min-h-[56px] px-5 rounded-xl bg-red-700 text-white font-bold">
-                Stop watching
+                {t('ops.watch_stop')}
               </button>
             ) : (
               <button type="button" onClick={startWatching} disabled={!source || mode === 'setup'} className="min-h-[56px] px-5 rounded-xl bg-emerald-700 text-white font-bold disabled:opacity-40">
-                Start watching
+                {t('ops.watch_start')}
               </button>
             )}
           </div>
@@ -743,12 +752,12 @@ export const MachineWatchScreen: React.FC = () => {
         <aside className="flex flex-col gap-4">
           {mode === 'setup' ? (
             <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-3">
-              <h2 className="font-bold">Check the boxes</h2>
-              <p className="text-sm text-on-surface-variant">Drag a box to move it, drag its dot to resize. Green = light, blue = counter, purple = screen.</p>
+              <h2 className="font-bold">{t('ops.watch_setup_title')}</h2>
+              <p className="text-sm text-on-surface-variant">{t('ops.watch_setup_hint')}</p>
               {drafts.map((d, i) => (
                 <div key={i} className="flex flex-col gap-2 border-t border-outline-variant pt-2">
                   <label className="text-sm">
-                    Name
+                    {t('ops.watch_setup_name')}
                     <input
                       value={d.name}
                       onChange={(e) => setDrafts((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
@@ -756,7 +765,7 @@ export const MachineWatchScreen: React.FC = () => {
                     />
                   </label>
                   <label className="text-sm">
-                    Ideal cycle time (seconds per part)
+                    {t('ops.watch_setup_cycle')}
                     <input
                       type="number"
                       min={0.1}
@@ -770,19 +779,19 @@ export const MachineWatchScreen: React.FC = () => {
               ))}
               <div className="flex gap-2">
                 <button type="button" onClick={saveSetup} disabled={!!busy} className="min-h-[56px] flex-1 rounded-xl bg-primary text-on-primary font-bold">
-                  Save machines
+                  {t('ops.watch_setup_save')}
                 </button>
                 <button type="button" onClick={() => setMode('idle')} className="min-h-[56px] px-4 rounded-xl bg-surface-container-high">
-                  Cancel
+                  {t('ops.common_cancel')}
                 </button>
               </div>
             </div>
           ) : (
             <>
               <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-3">
-                <h2 className="font-bold">Set up new machines</h2>
+                <h2 className="font-bold">{t('ops.watch_new_title')}</h2>
                 <label className="text-sm flex items-center gap-2">
-                  Machines in view
+                  {t('ops.watch_new_count')}
                   <select value={setupCount} onChange={(e) => setSetupCount(Number(e.target.value))} className="min-h-[44px] rounded-lg bg-surface-container-high px-2">
                     {[1, 2, 3].map((n) => (
                       <option key={n}>{n}</option>
@@ -791,28 +800,28 @@ export const MachineWatchScreen: React.FC = () => {
                 </label>
                 <label className="text-sm flex items-center gap-2">
                   <input type="checkbox" checked={benchMachines} onChange={(e) => setBenchMachines(e.target.checked)} />
-                  These are the test bench machines (HOME RIG)
+                  {t('ops.watch_new_bench', { rig: 'HOME RIG' })}
                 </label>
                 <button type="button" onClick={beginSetup} disabled={!source || !!busy || mode === 'watching'} className="min-h-[56px] rounded-xl bg-surface-container-high font-bold disabled:opacity-40">
-                  Find machines with Gemini
+                  {t('ops.watch_new_find')}
                 </button>
               </div>
 
               <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-2">
-                <h2 className="font-bold">Machines this camera watches</h2>
-                {machines.length === 0 && <p className="text-sm text-on-surface-variant">No machines yet.</p>}
+                <h2 className="font-bold">{t('ops.watch_list_title')}</h2>
+                {machines.length === 0 && <p className="text-sm text-on-surface-variant">{t('ops.watch_list_empty')}</p>}
                 {machines.map((m) => (
                   <div key={m.id} className="flex items-center gap-2 text-sm min-h-[44px]">
                     <label className="flex flex-1 items-center gap-2 min-h-[44px]">
                       <input type="checkbox" checked={selected.includes(m.id)} onChange={() => toggle(m.id)} disabled={mode === 'watching'} />
-                      <span className="flex-1">{m.name}</span>
+                      <span className="flex-1 min-w-0 break-words">{m.name}</span>
                       <span className="text-xs text-on-surface-variant">
-                        {m.source === 'VIRTUAL' ? 'HOME RIG' : 'LIVE'} · {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {m.source === 'VIRTUAL' ? 'HOME RIG' : 'LIVE'} · {new Date(m.created_at).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </label>
                     <button
                       type="button"
-                      aria-label={`Remove ${m.name}`}
+                      aria-label={t('ops.watch_list_remove', { name: m.name })}
                       disabled={mode === 'watching'}
                       onClick={async () => {
                         try {
@@ -820,7 +829,7 @@ export const MachineWatchScreen: React.FC = () => {
                           setSelected((prev) => prev.filter((x) => x !== m.id));
                           await refreshLists();
                         } catch {
-                          setMessage('Could not remove that machine.');
+                          setMessage(t('ops.watch_remove_error'));
                         }
                       }}
                       className="min-w-[44px] min-h-[44px] rounded-lg text-on-surface-variant disabled:opacity-40"
@@ -833,9 +842,9 @@ export const MachineWatchScreen: React.FC = () => {
 
               <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-bold">Soak run (optional)</h2>
+                  <h2 className="font-bold">{t('ops.watch_run_title')}</h2>
                   <button type="button" onClick={refreshRuns} disabled={mode === 'watching'} className="min-h-[44px] px-3 rounded-lg bg-surface-container-high text-sm font-bold">
-                    Refresh
+                    {t('ops.watch_run_refresh')}
                   </button>
                 </div>
                 <select
@@ -843,19 +852,20 @@ export const MachineWatchScreen: React.FC = () => {
                   onChange={(e) => setRunId(e.target.value)}
                   onFocus={refreshRuns}
                   disabled={mode === 'watching'}
-                  aria-label="Soak run"
+                  aria-label={t('ops.watch_run_label')}
                   className="min-h-[44px] rounded-lg bg-surface-container-high px-2 text-sm"
                 >
-                  <option value="">No soak run</option>
+                  <option value="">{t('ops.watch_run_none')}</option>
                   {runs.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.id.slice(-6).toUpperCase()} · {r.status} · {new Date(r.started_at).toLocaleString()}
+                      {r.id.slice(-6).toUpperCase()} · {RUN_STATUSES.includes(r.status) ? t(`ops.watch_run_status_${r.status}`) : r.status} ·{' '}
+                      {new Date(r.started_at).toLocaleString(language)}
                     </option>
                   ))}
                 </select>
                 {source === 'file' && runId && (
                   <label className="text-sm">
-                    Video time when the run clock showed 00:00:00 (mm:ss)
+                    {t('ops.watch_run_offset')}
                     <input value={offsetText} onChange={(e) => setOffsetText(e.target.value)} placeholder="0:12" className="w-full min-h-[44px] rounded-lg bg-surface-container-high px-2" />
                   </label>
                 )}
@@ -870,19 +880,22 @@ export const MachineWatchScreen: React.FC = () => {
                 const ago = v?.lastReadAt ? Math.round((Date.now() - v.lastReadAt) / 1000) : null;
                 return (
                   <div key={m.id} className="bg-surface-container rounded-2xl p-3" data-testid={`watch-card-${m.id}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold">{m.name}</span>
-                      <span className="text-xs px-2 py-1 rounded-full bg-surface-container-high">{v?.state ?? '…'}</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold min-w-0 break-words">{m.name}</span>
+                      <span className="text-xs px-2 py-1 rounded-full bg-surface-container-high">{v?.state ? stateLabel(t, v.state) : '…'}</span>
                     </div>
                     <div className="text-sm text-on-surface-variant mt-1">
-                      Edge light: {v?.edgeLight ?? '…'} · Count: {v?.count ?? '—'}
-                      {v?.countAt ? ` (counted ${sinceText(v.countAt)})` : ''}
+                      {t('ops.watch_card_light_count', { light: v?.edgeLight ?? '…', count: v?.count ?? '—' })}
+                      {v?.countAt ? ` (${t('ops.watch_counted', { ago: sinceText(t, v.countAt) })})` : ''}
                     </div>
                     {v?.alarm && <div className="text-sm text-red-300 font-bold">{v.alarm}</div>}
                     <div className="text-xs text-on-surface-variant mt-1">
-                      Last Gemini read {ago === null ? '—' : `${ago}s ago`} · {v ? v.readsPerHour.toFixed(0) : 0} reads/hour
+                      {t('ops.watch_card_last_read', {
+                        ago: ago === null ? '—' : t('ops.common_s_ago', { n: ago }),
+                        n: v ? v.readsPerHour.toFixed(0) : 0,
+                      })}
                     </div>
-                    {v?.error && <div className="text-xs text-amber-300">{v.error}</div>}
+                    {v?.error && <div className="text-xs text-amber-300">{t(v.error)}</div>}
                   </div>
                 );
               })}
@@ -898,9 +911,8 @@ function emptyView(): MachineView {
   return { edgeLight: 'off', state: null, count: null, countAt: null, alarm: null, lastReadAt: null, readsPerHour: 0, error: null };
 }
 
-function sinceText(t: number): string {
-  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
-  return s < 60 ? `${s}s ago` : `${Math.round(s / 60)} min ago`;
+function sinceText(t: TFn, at: number): string {
+  return agoText(t, (Date.now() - at) / 1000);
 }
 
 export default MachineWatchScreen;

@@ -67,7 +67,7 @@ export const LiveNowStrip: React.FC<LiveNowStripProps> = ({
   return (
     <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 sm:p-5 shadow-sm">
       <div className="flex items-center justify-between mb-3.5">
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <span className="relative flex h-3 w-3">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75" />
             <span className="relative inline-flex rounded-full h-3 w-3 bg-error" />
@@ -93,7 +93,9 @@ export const LiveNowStrip: React.FC<LiveNowStripProps> = ({
           {liveSessions.map((session) => {
             const firstName =
               traineesMap[session.trainee_uid] ||
-              (session.trainee_uid ? `Trainee ${session.trainee_uid.slice(-4)}` : 'Trainee');
+              (session.trainee_uid
+                ? t('app.dashboard_trainee_short_id', { id: session.trainee_uid.slice(-4) })
+                : t('dashboard_trainee'));
             const skill = skillsMap[session.skill_id];
             const skillTitle = skill?.title || session.skill_id;
             const currentStep = session.current_step || 1;
@@ -107,7 +109,7 @@ export const LiveNowStrip: React.FC<LiveNowStripProps> = ({
                 className="bg-surface-container hover:bg-surface-container-high border border-outline-variant rounded-xl p-3.5 flex flex-col justify-between transition-all cursor-pointer shadow-sm active:scale-[0.99]"
               >
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <div>
+                  <div className="min-w-0">
                     <span className="text-[15px] font-bold text-on-surface block truncate">
                       {firstName}
                     </span>
@@ -120,7 +122,7 @@ export const LiveNowStrip: React.FC<LiveNowStripProps> = ({
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between text-[13px] font-medium pt-2 border-t border-outline-variant/60">
+                <div className="flex flex-wrap items-center justify-between gap-1 text-[13px] font-medium pt-2 border-t border-outline-variant/60">
                   <span className="text-primary-container font-semibold flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px]">play_circle</span>
                     {t('dashboard_step_n_of_m', { n: currentStep, total: totalSteps })}

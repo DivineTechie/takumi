@@ -1,10 +1,12 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useI18n } from '../i18n';
 
 const KNOWN_FEATURE_PATHS = ['/capture', '/forge', '/review', '/library', '/machines'];
 
 export const NotFoundScreen: React.FC = () => {
   const location = useLocation();
+  const { t } = useI18n();
   const isFeaturePath = KNOWN_FEATURE_PATHS.some(
     (prefix) => location.pathname === prefix || location.pathname.startsWith(`${prefix}/`)
   );
@@ -17,18 +19,16 @@ export const NotFoundScreen: React.FC = () => {
         </span>
       </div>
       <h1 className="font-headline-lg font-bold mb-2">
-        {isFeaturePath ? 'Coming Soon' : '404 - Page Not Found'}
+        {isFeaturePath ? t('app.not_found_coming_soon_title') : t('app.not_found_title')}
       </h1>
       <p className="font-body-md text-on-surface-variant max-w-sm mb-6">
-        {isFeaturePath
-          ? 'This part of TAKUMI is still being finished'
-          : 'The requested screen does not exist.'}
+        {isFeaturePath ? t('app.not_found_coming_soon_desc') : t('app.not_found_desc')}
       </p>
       <Link
         to="/"
         className="min-h-[56px] px-6 py-3.5 bg-primary-container text-on-primary-container rounded-xl font-bold flex items-center justify-center hover:brightness-105 transition-all shadow"
       >
-        Return to Home
+        {t('app.not_found_home')}
       </Link>
     </div>
   );

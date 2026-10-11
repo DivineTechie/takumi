@@ -1,12 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ref, uploadBytesResumable, UploadTask } from 'firebase/storage';
 import { storage } from '../../../lib/firebase';
+import type { CaptureMessage } from './useCameraStream';
 
 export interface UseResumableUploadResult {
   isRecording: boolean;
   isUploading: boolean;
   uploadProgress: number;
-  uploadError: string | null;
+  uploadError: CaptureMessage | null;
   recordedBlob: Blob | null;
   startRecording: (stream: MediaStream) => void;
   stopRecording: () => Promise<Blob>;
@@ -17,7 +18,7 @@ export function useResumableUpload(): UseResumableUploadResult {
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<CaptureMessage | null>(null);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -145,7 +146,7 @@ export function useResumableUpload(): UseResumableUploadResult {
               resolve(`gs://${bucket}/${targetPath}`);
               return;
             }
-            setUploadError(`Upload failed: ${error.message}`);
+            setUploadError({ key: 'app.capture_upload_failed', params: { message: error.message } });
             setIsUploading(false);
             reject(error);
           },

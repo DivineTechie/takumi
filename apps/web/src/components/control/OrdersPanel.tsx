@@ -10,6 +10,8 @@ import {
   type Machine,
   type OrderStatus,
 } from '../../lib/api';
+import { stateLabel } from '../../lib/controlEvents';
+import { useI18n } from '../../i18n';
 
 /**
  * Today's orders on the control tower (P19). Projections come from real Machine Watch counts and
@@ -17,8 +19,8 @@ import {
  * Google ADK demand agent, which explains the risk and suggests actions; nothing changes on its own.
  */
 
-function hhmm(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function hhmm(iso: string, language: string): string {
+  return new Date(iso).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' });
 }
 
 function defaultDue(): string {
@@ -28,16 +30,19 @@ function defaultDue(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const Chip: React.FC<{ o: OrderStatus }> = ({ o }) =>
-  o.on_track === null ? (
-    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-surface-container-high">Not enough data</span>
+const Chip: React.FC<{ o: OrderStatus }> = ({ o }) => {
+  const { t } = useI18n();
+  return o.on_track === null ? (
+    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-surface-container-high">{t('ops.orders_chip_no_data')}</span>
   ) : o.on_track ? (
-    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-600 text-white">On track</span>
+    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-green-600 text-white">{t('ops.orders_chip_on_track')}</span>
   ) : (
-    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-600 text-white">Short by {o.shortfall}</span>
+    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-600 text-white">{t('ops.orders_chip_short_by', { n: o.shortfall ?? '—' })}</span>
   );
+};
 
 export const OrdersPanel: React.FC = () => {
+  const { t, language } = useI18n();
   const [orders, setOrders] = useState<OrderStatus[] | null>(null);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -69,7 +74,7 @@ export const OrdersPanel: React.FC = () => {
     e.preventDefault();
     setFormError(null);
     if (!name.trim() || picked.length === 0) {
-      setFormError('Give the order a name and pick at least one machine.');
+      setFormError(t('ops.orders_form_missing'));
       return;
     }
     try {
@@ -79,7 +84,7 @@ export const OrdersPanel: React.FC = () => {
       setPicked([]);
       await load();
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Could not create the order.');
+      setFormError(err instanceof ApiError ? err.message : t('ops.orders_create_error'));
     }
   };
 
@@ -89,7 +94,7 @@ export const OrdersPanel: React.FC = () => {
     try {
       setPlan(await runDemandAgent());
     } catch (err) {
-      setPlanError(err instanceof ApiError ? err.message : 'The planner failed.');
+      setPlanError(err instanceof ApiError ? err.message : t('ops.orders_planner_error'));
     } finally {
       setPlanning(false);
     }
@@ -99,11 +104,11 @@ export const OrdersPanel: React.FC = () => {
     <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 space-y-3" aria-labelledby="orders-heading">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="orders-heading" className="font-bold text-lg">
-          Today's orders
+          {t('ops.orders_title')}
         </h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setShowForm((v) => !v)} className="min-h-[44px] px-3 rounded-xl bg-surface-container-high font-bold text-sm">
-            {showForm ? 'Cancel' : 'New order'}
+            {showForm ? t('ops.common_cancel') : t('ops.orders_new')}
           </button>
           <button
             type="button"
@@ -111,28 +116,28 @@ export const OrdersPanel: React.FC = () => {
             disabled={planning || !orders?.length}
             className="min-h-[44px] px-3 rounded-xl bg-primary text-on-primary font-bold text-sm disabled:opacity-40"
           >
-            {planning ? 'Planning…' : 'Will we make it?'}
+            {planning ? t('ops.orders_planning') : t('ops.orders_will_we_make_it')}
           </button>
         </div>
       </div>
 
       {showForm && (
-        <form onSubmit={submit} className="grid gap-2 sm:grid-cols-2 bg-surface-container rounded-xl p-3" aria-label="New order">
+        <form onSubmit={submit} className="grid gap-2 sm:grid-cols-2 bg-surface-container rounded-xl p-3" aria-label={t('ops.orders_new')}>
           <label className="text-sm">
-            Order
-            <input value={name} onChange={(e) => setName(e.target.value)} className="w-full min-h-[44px] rounded-lg bg-surface px-2" placeholder="e.g. Customer A, brackets" />
+            {t('ops.orders_form_order')}
+            <input value={name} onChange={(e) => setName(e.target.value)} className="w-full min-h-[44px] rounded-lg bg-surface px-2" placeholder={t('ops.orders_form_order_placeholder')} />
           </label>
           <label className="text-sm">
-            Quantity
+            {t('ops.orders_form_quantity')}
             <input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value) || 1)} className="w-full min-h-[44px] rounded-lg bg-surface px-2" />
           </label>
           <label className="text-sm">
-            Due
+            {t('ops.orders_form_due')}
             <input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} className="w-full min-h-[44px] rounded-lg bg-surface px-2" />
           </label>
           <fieldset className="text-sm">
-            <legend>Machines making it</legend>
-            {machines.length === 0 && <p className="text-on-surface-variant">Set up machines in Machine Watch first.</p>}
+            <legend>{t('ops.orders_form_machines')}</legend>
+            {machines.length === 0 && <p className="text-on-surface-variant">{t('ops.orders_form_no_machines')}</p>}
             {machines.map((m) => (
               <label key={m.id} className="flex items-center gap-2 min-h-[36px]">
                 <input type="checkbox" checked={picked.includes(m.id)} onChange={() => setPicked((p) => (p.includes(m.id) ? p.filter((x) => x !== m.id) : [...p, m.id]))} />
@@ -142,15 +147,15 @@ export const OrdersPanel: React.FC = () => {
           </fieldset>
           {formError && <p className="text-sm text-red-400 sm:col-span-2">{formError}</p>}
           <button type="submit" className="min-h-[48px] rounded-xl bg-primary text-on-primary font-bold sm:col-span-2">
-            Add order
+            {t('ops.orders_form_add')}
           </button>
         </form>
       )}
 
       {orders === null ? (
-        <p className="text-sm text-on-surface-variant">Loading…</p>
+        <p className="text-sm text-on-surface-variant">{t('ops.common_loading')}</p>
       ) : orders.length === 0 ? (
-        <p className="text-sm text-on-surface-variant">No open orders. Add one to see whether today's output will cover it.</p>
+        <p className="text-sm text-on-surface-variant">{t('ops.orders_empty')}</p>
       ) : (
         <ul className="space-y-2">
           {orders.map((o) => (
@@ -163,13 +168,19 @@ export const OrdersPanel: React.FC = () => {
                 </span>
               </div>
               <div className="text-on-surface-variant mt-1">
-                {o.good_made} of {o.quantity} good parts · due {hhmm(o.due_at)} ({o.hours_left} h left) · rate {o.rate_per_hour ?? '—'}/h
-                {o.rate_needed_per_hour !== null && `, needs ${o.rate_needed_per_hour}/h`}
-                {o.projected_good !== null && ` · projected ${o.projected_good}`}
-                {o.first_pass_rate !== null && ` · yield ${Math.round(o.first_pass_rate * 100)}%`}
+                {t('ops.orders_progress', {
+                  made: o.good_made,
+                  quantity: o.quantity,
+                  due: hhmm(o.due_at, language),
+                  hours: o.hours_left,
+                  rate: o.rate_per_hour ?? '—',
+                })}
+                {o.rate_needed_per_hour !== null && `, ${t('ops.orders_needs_rate', { rate: o.rate_needed_per_hour })}`}
+                {o.projected_good !== null && ` · ${t('ops.orders_projected', { n: o.projected_good })}`}
+                {o.first_pass_rate !== null && ` · ${t('ops.orders_yield', { pct: Math.round(o.first_pass_rate * 100) })}`}
               </div>
               <div className="text-xs text-on-surface-variant mt-1">
-                {o.machines.map((m) => `${m.name}: ${m.state ?? 'unknown'}${m.last_alarm ? ` (${m.last_alarm})` : ''}`).join(' · ')}
+                {o.machines.map((m) => `${m.name}: ${stateLabel(t, m.state)}${m.last_alarm ? ` (${m.last_alarm})` : ''}`).join(' · ')}
               </div>
               <button
                 type="button"
@@ -177,9 +188,9 @@ export const OrdersPanel: React.FC = () => {
                   await closeOrder(o.order_id).catch(() => {});
                   load();
                 }}
-                className="mt-2 text-xs underline"
+                className="mt-2 min-h-[44px] text-xs underline"
               >
-                Close order
+                {t('ops.orders_close')}
               </button>
             </li>
           ))}
@@ -200,12 +211,12 @@ export const OrdersPanel: React.FC = () => {
           {plan.report.orders.map((v) => (
             <p key={v.order_id} className="text-sm">
               <span className="font-bold">{plan.orders.find((o) => o.order_id === v.order_id)?.name ?? v.order_id}:</span> {v.verdict}
-              {v.main_constraint && <span className="text-on-surface-variant"> Constraint: {v.main_constraint}</span>}
+              {v.main_constraint && <span className="text-on-surface-variant"> {t('ops.orders_constraint', { constraint: v.main_constraint })}</span>}
             </p>
           ))}
           {plan.report.actions.length > 0 && (
             <div>
-              <h3 className="font-bold text-sm">Suggested actions (for you to decide)</h3>
+              <h3 className="font-bold text-sm">{t('ops.orders_suggested_actions')}</h3>
               <ul className="list-disc pl-5 text-sm">
                 {plan.report.actions.map((a, i) => (
                   <li key={i}>
@@ -215,7 +226,7 @@ export const OrdersPanel: React.FC = () => {
               </ul>
             </div>
           )}
-          <p className="text-xs text-on-surface-variant">Google ADK planner agent · numbers computed from machine counts and inspections, not by the model.</p>
+          <p className="text-xs text-on-surface-variant">{t('ops.orders_footer')}</p>
         </div>
       )}
     </section>

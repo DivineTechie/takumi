@@ -1,85 +1,44 @@
-# TAKUMI — Google Models and Cloud Services Feature Status
+# TAKUMI — feature status
 
-This inventory records the deployment status and ownership for all Google AI models and Google Cloud services across the TAKUMI codebase as of October 2026.
+What is deployed on [takumi-cup-2026.web.app](https://takumi-cup-2026.web.app) today, which Google model or service does the work, and how it has been checked. Every number shown in the app is labelled **LIVE** (our deployment), **HOME RIG** (our test bench filmed by a real camera) or **PUBLIC DATA** (dataset + licence).
 
-## Status Definitions
-- **Live**: Implemented, tested, deployed, and serving traffic in production on `https://takumi-cup-2026.web.app` and Cloud Run.
-- **In Progress (Member B)**: Implemented in code on branch `forge` or deployed in staging; pipeline integration active.
-- **In progress**: Built and tested (unit tests, local browser checks) but not yet proven end to end on the deployed site or scored by an evaluation.
-- **Planned**: Defined in architectural specifications and configuration files; planned for future milestones.
+**Status:** **Live** = deployed and working in production. **Evaluated** = also measured, with results on [/evals](https://takumi-cup-2026.web.app/evals). **Live, awaiting real data** = deployed and tested, not yet exercised on a full real scenario.
 
----
+## Features
 
-## 1. Google AI Models (`google-genai` SDK)
-
-| Model ID | Responsibility / Job in TAKUMI | Source Code Call Site | Production Status | Owner |
+| Feature | What it does | Google AI / Cloud | Code | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| `gemini-3.8-live` | Real-time bidirectional voice coaching with low-latency interruption support. Streams 16 kHz PCM audio in, 24 kHz PCM audio out. | [`apps/web/src/lib/live/client.ts`](file:///c:/takumi/apps/web/src/lib/live/client.ts), [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) | **Live** | Member A |
-| `gemini-3.5-flash-lite` | High-frequency (1 FPS) visual step watcher detecting task progression, common mistakes, and safety rule hazards; deep health pings; initial screening stage in dual-stage End-of-Line Quality Inspection (comparing candidate unit against 3 golden references). | [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) (`call_watch`, `check_deep_health`), [`services/api/inspection.py`](file:///c:/takumi/services/api/inspection.py) (`run_screen`) | **Live** | Member A |
-| `gemini-3.8-flash` | Strict objective step verification against visible success criteria and safety rules; supervisor insight aggregation; second confirmation stage in End-of-Line Quality Inspection validating flaws with full defect taxonomy context. | [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) (`call_verify`), [`services/api/inspection.py`](file:///c:/takumi/services/api/inspection.py) (`run_confirm`), [`services/api/main.py`](file:///c:/takumi/services/api/main.py) | **Live** | Member A |
-| `gemini-robotics-er-2-preview` | Spatial coordinate extraction and workbench reticle pointing (`[y, x]` normalized coordinates). | [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) (`call_point`) | **Live** | Member A |
-| `gemini-robotics-er-2-preview` (Machine Watch setup) | Finds each machine's stack light, parts counter and HMI screen in one camera frame (boxes the supervisor can adjust). Called once per setup, never while watching. | [`services/api/machines.py`](services/api/machines.py) (`call_robotics_er_setup`) | **In progress** | Member A |
-| `gemini-3.5-flash-lite` (Machine Watch reads) | Reads the light colour, counter value and alarm text from small region crops, only when the browser's edge check sees a stable change (plus a 5-minute heartbeat; max 6 reads per machine per minute). | [`services/api/machines.py`](services/api/machines.py) (`call_flash_lite_read`) | **In progress** | Member A |
-| `gemini-omni-1.1-flash` | Multimodal analysis of raw master craftsman video recordings into structured assembly steps. | `services/forge/graph/nodes/segmenter.py` (branch `forge`) | **In progress** | Member B |
-| `gemini-3.8-flash` (Forge) | Extraction of underlying rationale ("why" explanations) and multilingual localization across JAPAC target languages. | `services/forge/graph/nodes/why_extractor.py`, `localizer.py` (branch `forge`) | **In progress** | Member B |
-| `gemini-robotics-er-2-preview` (Forge) | Spatial coordinate keyframe annotation and technical manual alignment in master captures. | `services/forge/graph/nodes/spatial_annotator.py` (branch `forge`) | **In progress** | Member B |
-| `gemini-3.1-flash-image` | Step illustration and visual guidance card synthesis from technical manual text and step definitions. | `services/forge/graph/nodes/illustrator.py` (branch `forge`) | **In progress** | Member B |
-| `veo-3.1-fast-generate-preview` | Counterfactual mistake simulation video generation (budget-guarded: max 3 per skill). | `services/forge/graph/nodes/mistake_simulator.py` (branch `forge`) | **In progress** | Member B |
-| `gemini-3.8-flash-tts` | Multilingual speech audio synthesis for generated step guidance. | `services/forge/config.py` | **Planned** | Member B |
-| `gemini-embedding-2-preview` | Semantic embedding of technical manuals and assembly documentation for grounding retrieval. | `services/api/config.py`, `services/forge/config.py` | **Planned** | Both |
+| End-of-line inspection | Photo of each finished unit, screened against 3 known-good references; suspected defects confirmed by a stronger model; a supervisor confirms or overrides every flag. Supervisors add products from 3 photos. | `gemini-3.5-flash-lite` (screen), `gemini-3.8-flash` (confirm) | [services/api/main.py](../services/api/main.py), [InspectScreen.tsx](../apps/web/src/pages/InspectScreen.tsx) | **Evaluated** (PUBLIC DATA: VisA, 2,162 images) |
+| VisA gallery | Judges inspect real VisA test parts; the ground truth is revealed after the verdict. | same as above | [GalleryScreen.tsx](../apps/web/src/pages/GalleryScreen.tsx) | **Live** |
+| Machine Watch | A phone reads stack lights, counters and alarm screens: one setup call finds the regions, the browser checks them every 500 ms for free, Gemini reads only on change (plus a counter read every 2 min and a check-in every 10 min). Stop banner, beep and vibration on the phone. | `gemini-robotics-er-2-preview` (setup), `gemini-3.5-flash-lite` (reads) | [services/api/machines.py](../services/api/machines.py), [MachineWatchScreen.tsx](../apps/web/src/pages/MachineWatchScreen.tsx) | **Evaluated** (HOME RIG soak runs) |
+| Test bench | 1–3 simulated machines with a seeded fault schedule and ground truth for scoring; a detection stopwatch shows how long TAKUMI took to see each change. | — | [VirtualMachineScreen.tsx](../apps/web/src/pages/VirtualMachineScreen.tsx), [evals/machine_watch](../evals/machine_watch) | **Live** |
+| Maintenance agent | When a machine stops, drafts a work order: likely causes with evidence, steps, safety, parts, time. Supervisor approves or dismisses. The floor alert is spoken in 6 languages. | Google ADK agents on `gemini-3.8-flash` + `gemini-3.5-flash-lite`, `gemini-3.8-flash-tts` | [services/forge/agents/maintenance.py](../services/forge/agents/maintenance.py), [services/api/work_orders.py](../services/api/work_orders.py) | **Live** |
+| Ask TAKUMI (voice copilot) | Supervisors ask by voice in any language; Gemini Live answers by voice using tools over TAKUMI's own data (machines, orders, quality, work orders, the planner and maintenance agents). It cannot approve anything. | `gemini-3.8-live` (single-use tokens), function calling | [apps/web/src/lib/live/copilot.ts](../apps/web/src/lib/live/copilot.ts) | **Live** |
+| Station Watch | Follows each step of a work instruction at a manual station, speaks in the operator's language, points at the fix, verifies steps on visible facts only, full-screen STOP on a hazard. | `gemini-3.8-live`, `gemini-3.5-flash-lite` (step watcher), `gemini-3.8-flash` (verifier), `gemini-robotics-er-2-preview` (pointing), Model Armor | [CoachLiveView.tsx](../apps/web/src/pages/CoachLiveView.tsx), [services/api/main.py](../services/api/main.py) | **Live** (latencies in BigQuery `takumi.api_calls`) |
+| Unit records | A serial links a unit's station records (with evidence frames) and inspections; supervisors hold and release units. | Firestore, Cloud Storage | [services/api/units.py](../services/api/units.py), [UnitScreen.tsx](../apps/web/src/pages/UnitScreen.tsx) | **Live** |
+| Quality trace-back | From a failed unit, finds the station and step where the defect started, other units through the same step, and an instruction fix; drawn as an animated graph. Holds and fixes need approval. | Google ADK agents on `gemini-3.8-flash` | [services/forge/agents/traceback.py](../services/forge/agents/traceback.py) | **Live, awaiting real data** |
+| Demand planner | Orders projected in plain code from real machine counts and inspection yield; an agent explains the risk and proposes actions. | Google ADK agents on `gemini-3.8-flash` | [shared/ops/demand.py](../shared/ops/demand.py), [services/forge/agents/demand.py](../services/forge/agents/demand.py) | **Live** |
+| Standard Work Studio | A master demonstrates a task once; a workflow turns the video into steps with success criteria, reasons, pointing hints and translations; review requests from trace-back are applied per step. | Google ADK 2 Workflow graph, `gemini-omni-1.1-flash`, `gemini-3.8-flash`, `gemini-robotics-er-2-preview` | [services/forge/graph/workflow.py](../services/forge/graph/workflow.py) | **Live** |
+| Events pipeline and control tower | Every station step, inspection, machine event, hold and work-order decision goes to Pub/Sub; a BigQuery subscription stores it; the control tower shows totals per source label and a live feed. | Pub/Sub, BigQuery | [services/api/events_bus.py](../services/api/events_bus.py), [ControlTowerScreen.tsx](../apps/web/src/pages/ControlTowerScreen.tsx) | **Live** |
+| Supervisor dashboard | End-of-line quality, machines (timeline, availability, stops), step quality per instruction step, station replay. No per-worker scoring. | Firestore, BigQuery | [DashboardScreen.tsx](../apps/web/src/pages/DashboardScreen.tsx) | **Live** |
+| Six languages | Every screen in English, Japanese, Vietnamese, Hindi, Bahasa Indonesia and Filipino. Translations are machine-made with Gemini and marked for native review. | `gemini-3.8-flash` (offline, [infra/translate_i18n.py](../infra/translate_i18n.py)) | [apps/web/src/i18n](../apps/web/src/i18n) | **Live** |
+| Evaluations page | Public results with method, caveats and cost per part or machine. | — | [EvalsScreen.tsx](../apps/web/src/pages/EvalsScreen.tsx) | **Live** |
 
----
+## Platform
 
-## 2. Google Cloud Infrastructure & Platform Services
+| Service | Use | Status |
+| :--- | :--- | :--- |
+| Cloud Run `takumi-api` | FastAPI: auth, Live tokens, inspection, Machine Watch reads, units, orders, work orders, events | **Live** |
+| Cloud Run `takumi-forge` | Google ADK agents (maintenance, trace-back, demand) and the Studio workflow | **Live** |
+| Firebase Hosting + Auth | Web app; Google sign-in, email link, judge test accounts; roles in a custom claim | **Live** |
+| Firestore, Cloud Storage | Records, evidence frames, reference photos, cached spoken alerts; access enforced by rules (tested in CI) | **Live** |
+| Pub/Sub → BigQuery | `takumi-events` topic, BigQuery subscription to `takumi.events`; plus `api_calls`, `session_events`, `inspection_events`, `machine_events` | **Live** |
+| Secret Manager | The Gemini API key; the browser never sees a key | **Live** |
+| Model Armor | Screens user-supplied text (questions, pointing targets, work-order notes) | **Live** |
+| Cloud Monitoring, Cloud Build | Alerts on Gemini unavailability and server errors; CI runs every test suite and deploys on each push | **Live** |
 
-| Service | Responsibility in TAKUMI | Configuration / Deployment | Production Status | Owner |
-| :--- | :--- | :--- | :--- | :--- |
-| **Cloud Run (`takumi-api`)** | Stateless container running FastAPI Python 3.12 backend (auth verification, live tokens, watcher proxy, BigQuery ingestion, rate limiting, dual-stage inspection engine). | Region: `asia-southeast1`<br>URL: `https://takumi-api-692366725458.asia-southeast1.run.app` | **Live** | Member A |
-| **Cloud Run (`takumi-forge`)** | Standard Work Studio pipeline as a Google ADK 2 Workflow graph (each step a FunctionNode calling Gemini; illustration and mistake clips in parallel), and the Google ADK quality trace-back agent. | Region: `asia-southeast1`<br>URL: `https://takumi-forge-692366725458.asia-southeast1.run.app` | **In progress** | Member B |
-| **Firebase Hosting** | Global CDN hosting for React 19 + TypeScript + Vite Progressive Web Application with security headers and API rewrites. | Project: `takumi-cup-2026`<br>URL: `https://takumi-cup-2026.web.app` | **Live** | Member A |
-| **Firebase Authentication** | Identity management supporting Google Sign-In and email authentication with custom role claims (`role: trainee \| master \| supervisor`). | Project: `takumi-cup-2026` | **Live** | Member A |
-| **Cloud Firestore (Native)** | Document database storing sessions, real-time session events, skills, review requests, skill passports, product inspection profiles (`products`), inspection results (`inspections`), unit tracking (`units`), gallery items (`gallery`), Machine Watch machines, events and soak runs (`machines`, `machine_events`, `soak_runs`) with role-based security rules. | Database: `(default)`, Region: `asia-southeast1` | **Live** | Both |
-| **Cloud Storage** | Object storage bucket for workbench video frames, badge media, master capture assets, product reference units (`products/{id}/ref_{1,2,3}.jpg`), uploaded candidate inspection images (`units/{product_id}/{unit_id}.jpg`), and VisA benchmark test images (`gallery/{category}/{file}`) with strict access rules. | Bucket: `takumi-cup-2026.firebasestorage.app` | **Live** | Both |
-| **BigQuery** | Analytics data warehouse holding partitioned tables `takumi.session_events`, `takumi.api_calls`, `takumi.inspection_events` and `takumi.machine_events` for latency metrics, supervisor insights, inspection and machine telemetry. | Dataset: `takumi`, Region: `asia-southeast1` | **Live** | Member A |
-| **Secret Manager** | Centralized credential vault holding `GEMINI_API_KEY` and Firebase configurations; keys never exposed to browsers. | Project: `takumi-cup-2026` | **Live** | Member A |
-| **Model Armor** | Security screening engine filtering prompt injection, jailbreaks, and toxicity on user inputs before model ingestion. | Template in `asia-southeast1` | **Live** | Member A |
-| **Cloud Monitoring & Logging** | Structured JSON logging with trace context, log-based metrics for availability, and automated alert policies. | Project: `takumi-cup-2026` | **Live** | Member A |
-| **Cloud Build** | Automated CI/CD running linting, Python pytest, web Vitest, emulator security rules tests, container builds, and deployment. | Region: `asia-southeast1` | **Live** | Both |
+## Not built (yet)
 
----
-
-## 3. Machine Watch (pillar 3): **In progress**
-
-- Test bench `/machines/virtual` (HOME RIG): 1-3 simulated machines (stack light, counter, HMI) with a seeded fault schedule (realistic: a stop every 10-40 min lasting 1-8 min; fast: x10) and a run clock. Ground truth is logged with server timestamps.
-- Watch page `/machines/watch`: one Gemini Robotics-ER call per setup, then the browser checks the regions every 500 ms and calls Gemini Flash-Lite only on a stable change. Only region crops (max 512 px) leave the device; the setup frame is never stored. A recorded video can replace the camera with `?debug=1` (labelled "Simulated input").
-- Dashboard "Machines" tab: today's state timeline, availability, stops, downtime, top alarms, parts and availability x performance, labelled LIVE or HOME RIG.
-- Scoring: `python -m evals.machine_watch.score_soak <run_id>` writes detection rate, delays, false alarms and cost per machine. HOME RIG runs on Oct 11 (15 min each, 3 machines, fast x10 schedule, an iPhone filming the test bench): first run 61/61 detected, median 4.1 s, 3 false alarms; after the fixes, 61/61 detected, median 3.6 s, p90 4.6 s, 1 false alarm. Published on /evals with a labelled cost estimate (about $4.60 per machine per month for one shift) built from measured cost per read.
-- On the phone, a stop or new alarm raises a red banner with a beep and vibration; the control tower shows live machine states with optional stop alerts. Duplicate or old machines can be removed from lists (history kept). Full-screen watch mode; portrait phones get a "turn sideways" hint (Android also locks landscape).
-- Cost controls: counters are re-read every 2 minutes with only the counter crop (the phone shows when each count was read), full check-ins every 10 minutes, and a pixel-change fallback on the light region catches changes the colour check misses.
-
-## 4. Unit records and quality trace-back: **In progress**
-
-- A serial entered on the coach start screen (Station Watch) links the session to the unit. When the session ends, the unit gets a station record: steps verified, steps not verified, and each mistake, block or safety stop with its evidence frame. Inspections with a serial are added to the same record.
-- `/units/{serial}` shows the full history. Supervisors can put units on hold and release them (`POST /api/units/hold`, `POST /api/units/{id}/release`); holds keep the previous status.
-- Trace-back agent (Google ADK, `services/forge/agents/traceback.py`, `POST /forge/agents/traceback`, supervisors only): an investigator agent with three read-only tools (unit history, similar units at the same station and step, the step's work instruction) and a reporter agent with a response schema. It proposes the likely station and step, units to hold and a work-instruction change. Hold candidates are checked against what the tools returned, and nothing changes until a supervisor approves. Operator identities are never given to the agent.
-- In progress until it has run on real Station Watch sessions with serials.
-
-## 5. Events pipeline and control tower: **In progress**
-
-- Cloud Run (`takumi-api`) publishes every operational event (station steps, mistakes, safety stops and finished stations; inspections and supervisor decisions; machine state changes, alarms and counts; unit holds and releases) to Pub/Sub topic `takumi-events`. Publishing is fire-and-forget and never slows or fails a request.
-- A Pub/Sub BigQuery subscription (`takumi-events-to-bigquery`) writes each message to `takumi.events` (partitioned by day, clustered by kind and source). Setup: `infra/events_pipeline.sh`.
-- `/control` (supervisors): KPIs per source label (LIVE, HOME RIG, PUBLIC DATA never mixed): inspected, first-pass rate, confirmed defects, units on hold, stations finished, mistakes, safety stops, machine stops and alarms, plus a live feed. Reads `GET /api/control/summary` every 10 s.
-- Windowed aggregation in Dataflow is planned; the control tower aggregates in BigQuery for now.
-
-## 6. Demand agent: **In progress**
-
-- Supervisors enter today's orders on the control tower (`POST /api/orders`: name, quantity, due time, machines). `GET /api/orders` projects each order from real Machine Watch counts and inspections (gallery inspections never count): parts made, recent rate, yield, projected good parts at the due time, shortfall and the rate needed. The projection is plain code (`shared/ops/demand.py`), shared by the API and the agent.
-- "Will we make it?" runs a Google ADK agent (`services/forge/agents/demand.py`, `POST /forge/agents/demand`, supervisors only): a planner with two read-only tools (open orders with projections, a machine's stops and alarms) and a reporter with a response schema. It explains which orders are at risk, the constraint, and actions for a supervisor to decide. Numbers shown come from the tools, not the model. Each order carries the source label of its machines (LIVE or HOME RIG).
-
-## 5. Factory Governance & Access Control
-
-- **End-of-Line Quality Inspection Decisions**: Inspection verification and override decisions ([`POST /api/inspections/{id}/decision`](file:///c:/takumi/services/api/main.py)) stay strictly **supervisor-only** (`role: supervisor`). The worker/trainee who captured or submitted the inspection photo cannot approve or override their own flagged unit.
-- **Unit & Inspection Read Access**: Inspection reports and unit tracking records are restricted to the supervisor or the creating trainee/operator (`inspector_uid` / `created_by`); other trainees receive `403 Forbidden`.
-- **Benchmark Gallery Data Isolation**: VisA benchmark test items and raw images stored in Firestore (`gallery/{id}`) and Cloud Storage (`gallery/{category}/{file}`) are locked from direct browser access in `firestore.rules` and `storage.rules`. Access is strictly server-mediated via authenticated API endpoints (`GET /api/inspect/gallery`, `POST /api/inspect/gallery`) with signed URLs, preventing client-side ground truth inspection tampering.
-
-
+- Windowed aggregation in Dataflow (the control tower aggregates in BigQuery).
+- Gemma on-device for the edge loop (today the edge check is plain colour and pixel change).
+- Real factory footage evaluation for Machine Watch (the soak runs use the test bench filmed by a real phone).

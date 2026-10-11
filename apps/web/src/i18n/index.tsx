@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import en from './en.json';
 import ja from './ja.json';
 import vi from './vi.json';
@@ -23,14 +23,44 @@ export const SUPPORTED_LANGUAGES: LanguageInfo[] = [
   { code: 'fil', native: 'Filipino' },
 ];
 
+// Page strings live in one file per area and language (pages/<lang>/<area>.json) so areas can be
+// edited independently; they are merged over the core file for each language. English is bundled;
+// other languages are fetched the first time they are chosen, and English shows until they arrive.
+const englishAreas = import.meta.glob('./pages/en/*.json', { eager: true, import: 'default' }) as Record<string, Record<string, unknown>>;
+const otherAreas = import.meta.glob(['./pages/*/*.json', '!./pages/en/*.json'], { import: 'default' }) as Record<string, () => Promise<Record<string, unknown>>>;
+
+function mergeAreas(target: Record<string, unknown>, strings: Record<string, unknown>): void {
+  for (const [k, v] of Object.entries(strings)) if (!k.startsWith('_') && typeof v === 'string') target[k] = v;
+}
+
 const translations: Record<LanguageCode, Record<string, unknown>> = {
-  en,
-  ja,
-  vi,
-  hi,
-  id,
-  fil,
+  en: { ...en },
+  ja: { ...ja },
+  vi: { ...vi },
+  hi: { ...hi },
+  id: { ...id },
+  fil: { ...fil },
 };
+for (const strings of Object.values(englishAreas)) mergeAreas(translations.en, strings);
+
+const loadedLanguages = new Set<LanguageCode>(['en']);
+const loading = new Map<LanguageCode, Promise<void>>();
+
+/** Loads a language's page strings once; resolves when they are merged. */
+export function loadLanguage(lang: LanguageCode): Promise<void> {
+  if (loadedLanguages.has(lang)) return Promise.resolve();
+  const pending = loading.get(lang);
+  if (pending) return pending;
+  const p = Promise.all(
+    Object.entries(otherAreas)
+      .filter(([path]) => path.startsWith(`./pages/${lang}/`))
+      .map(([, load]) => load().then((strings) => mergeAreas(translations[lang], strings)))
+  ).then(() => {
+    loadedLanguages.add(lang);
+  });
+  loading.set(lang, p);
+  return p;
+}
 
 export function detectLanguage(): LanguageCode {
   if (typeof window === 'undefined') return 'en';
@@ -80,6 +110,20 @@ export const I18nProvider: React.FC<{ children: ReactNode; initialLanguage?: Lan
   initialLanguage,
 }) => {
   const [language, setLanguageState] = useState<LanguageCode>(() => initialLanguage || detectLanguage());
+  const [, setLoadedVersion] = useState(0);
+
+  useEffect(() => {
+    if (loadedLanguages.has(language)) return;
+    let alive = true;
+    loadLanguage(language)
+      .then(() => alive && setLoadedVersion((v) => v + 1))
+      .catch(() => {
+        // Offline or a stale deploy: keep English for page strings.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [language]);
 
   const setLanguage = (newLang: LanguageCode) => {
     setLanguageState(newLang);

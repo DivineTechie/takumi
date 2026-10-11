@@ -19,6 +19,7 @@ import {
   type BenchState,
 } from '../lib/benchSchedule';
 import logoSvg from '../assets/logo.svg';
+import { useI18n } from '../i18n';
 
 /**
  * HOME RIG test bench (P17): 1-3 simulated machines with a stack light, a parts counter and an HMI
@@ -64,11 +65,12 @@ interface Detection {
 
 /** Stopwatch chip: how long TAKUMI took to see this machine's last change (HOME RIG). */
 const DetectionChip: React.FC<{ d: Detection | undefined; now: number }> = ({ d, now }) => {
+  const { t } = useI18n();
   if (d?.pending) {
     return (
-      <div className="h-9 px-3 rounded-full bg-neutral-800 text-neutral-200 text-sm font-mono flex items-center gap-2" role="status">
+      <div className="min-h-[36px] py-1 px-3 rounded-full bg-neutral-800 text-neutral-200 text-sm font-mono flex items-center gap-2" role="status">
         <span className="w-2 h-2 rounded-full bg-neutral-300 animate-pulse" />
-        TAKUMI watching… {((now - d.pending.since) / 1000).toFixed(1)} s
+        {t('ops.bench_chip_watching', { s: ((now - d.pending.since) / 1000).toFixed(1) })}
       </div>
     );
   }
@@ -76,15 +78,15 @@ const DetectionChip: React.FC<{ d: Detection | undefined; now: number }> = ({ d,
   if (!r || now - r.at > 12_000) return <div className="h-9" aria-hidden="true" />;
   if (r.kind === 'seen') {
     return (
-      <div key={r.at} className="h-9 px-3 rounded-full bg-neutral-700 text-white text-sm font-bold flex items-center gap-1.5 tk-pop" role="status">
+      <div key={r.at} className="min-h-[36px] py-1 px-3 rounded-full bg-neutral-700 text-white text-sm font-bold flex items-center gap-1.5 tk-pop" role="status">
         <span className="material-symbols-outlined text-[18px]">visibility</span>
-        Seen by TAKUMI in {r.afterS.toFixed(1)} s
+        {t('ops.bench_chip_seen', { s: r.afterS.toFixed(1) })}
       </div>
     );
   }
   return (
-    <div className="h-9 px-3 rounded-full bg-neutral-800 text-neutral-400 text-sm flex items-center" role="status">
-      {r.kind === 'missed' ? 'Not seen within 90 s' : 'No camera is watching this machine'}
+    <div className="min-h-[36px] py-1 px-3 rounded-full bg-neutral-800 text-neutral-400 text-sm flex items-center text-center" role="status">
+      {r.kind === 'missed' ? t('ops.bench_chip_missed') : t('ops.bench_chip_no_camera')}
     </div>
   );
 };
@@ -97,6 +99,7 @@ const MachinePanel: React.FC<{
   showTimer: boolean;
   now: number;
 }> = ({ m, showControls, onSet, detection, showTimer, now }) => {
+  const { t } = useI18n();
   const [alarmPick, setAlarmPick] = useState(BENCH_ALARMS[0]);
   const lit = STATE_LIGHT[m.state];
   return (
@@ -147,15 +150,15 @@ const MachinePanel: React.FC<{
       {showControls && (
         <div className="flex flex-wrap justify-center gap-2 w-full">
           <button type="button" onClick={() => onSet(m.slot, 'running', null)} className="min-h-[48px] px-4 rounded-xl bg-green-700 font-bold">
-            Run
+            {t('ops.bench_btn_run')}
           </button>
           <button type="button" onClick={() => onSet(m.slot, 'idle', null)} className="min-h-[48px] px-4 rounded-xl bg-amber-700 font-bold">
-            Idle
+            {t('ops.bench_btn_idle')}
           </button>
           <select
             value={alarmPick}
             onChange={(e) => setAlarmPick(e.target.value)}
-            aria-label={`Alarm for ${m.name}`}
+            aria-label={t('ops.bench_alarm_for', { name: m.name })}
             className="min-h-[48px] rounded-xl bg-neutral-800 border border-neutral-700 px-2 text-sm"
           >
             {BENCH_ALARMS.map((a) => (
@@ -163,7 +166,7 @@ const MachinePanel: React.FC<{
             ))}
           </select>
           <button type="button" onClick={() => onSet(m.slot, 'stopped', alarmPick)} className="min-h-[48px] px-4 rounded-xl bg-red-700 font-bold">
-            Stop + alarm
+            {t('ops.bench_btn_stop_alarm')}
           </button>
         </div>
       )}
@@ -173,6 +176,7 @@ const MachinePanel: React.FC<{
 
 export const VirtualMachineScreen: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [machineCount, setMachineCount] = useState(3);
   const [machines, setMachines] = useState<BenchMachine[]>(() =>
     BENCH.map((b) => ({ ...b, state: 'running', alarm: null, count: 0, nextPartAt: Date.now() + nextCycleMs(b.idealCycleS) }))
@@ -188,7 +192,7 @@ export const VirtualMachineScreen: React.FC = () => {
   const runRef = useRef(run);
   const schedulesRef = useRef<Record<number, BenchPhase[]>>({});
   const [clockS, setClockS] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
   const [truthFailures, setTruthFailures] = useState(0);
   const [showTimer, setShowTimer] = useState(true);
   const [detections, setDetections] = useState<Record<number, Detection>>({});
@@ -326,7 +330,7 @@ export const VirtualMachineScreen: React.FC = () => {
   }, []);
 
   const startRun = async () => {
-    setError(null);
+    setError(false);
     try {
       const slots = BENCH.slice(0, machineCount).map((b) => b.slot);
       const created = await startSoakRun({
@@ -346,7 +350,7 @@ export const VirtualMachineScreen: React.FC = () => {
         else applyState(s, 'running', null);
       }
     } catch {
-      setError('Could not start the run. Check that you are signed in and online.');
+      setError(true);
     }
   };
 
@@ -363,19 +367,19 @@ export const VirtualMachineScreen: React.FC = () => {
       {showControls && (
         <header className="bg-neutral-900 border-b border-neutral-800 px-4 py-3">
           <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-3 justify-between">
-            <div className="flex items-center gap-3">
-              <button type="button" onClick={() => navigate('/')} className="text-neutral-400 hover:text-white" aria-label="Back to home">
+            <div className="flex items-center gap-3 min-w-0">
+              <button type="button" onClick={() => navigate('/')} className="min-w-[44px] min-h-[44px] text-neutral-400 hover:text-white" aria-label={t('ops.common_back_home')}>
                 <span className="material-symbols-outlined text-[24px]">arrow_back</span>
               </button>
               <img src={logoSvg} alt="TAKUMI" className="w-7 h-7" />
-              <div>
-                <div className="font-bold tracking-wide">Machine test bench</div>
-                <div className="text-xs text-neutral-400">Point a camera at this screen and open Machine Watch on it</div>
+              <div className="min-w-0">
+                <div className="font-bold tracking-wide">{t('ops.bench_title')}</div>
+                <div className="text-xs text-neutral-400">{t('ops.bench_subtitle')}</div>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <label className="flex items-center gap-1">
-                Machines
+                {t('ops.bench_label_machines')}
                 <select value={machineCount} onChange={(e) => setMachineCount(Number(e.target.value))} disabled={!!run} className="bg-neutral-800 rounded px-2 py-1">
                   {[1, 2, 3].map((n) => (
                     <option key={n}>{n}</option>
@@ -383,7 +387,7 @@ export const VirtualMachineScreen: React.FC = () => {
                 </select>
               </label>
               <label className="flex items-center gap-1">
-                Minutes
+                {t('ops.bench_label_minutes')}
                 <select value={duration} onChange={(e) => setDuration(Number(e.target.value))} disabled={!!run} className="bg-neutral-800 rounded px-2 py-1">
                   {DURATIONS.map((d) => (
                     <option key={d}>{d}</option>
@@ -391,42 +395,42 @@ export const VirtualMachineScreen: React.FC = () => {
                 </select>
               </label>
               <label className="flex items-center gap-1">
-                Seed
+                {t('ops.bench_label_seed')}
                 <input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value) || 0)} disabled={!!run} className="bg-neutral-800 rounded px-2 py-1 w-20" />
               </label>
               <label className="flex items-center gap-1">
-                Pace
+                {t('ops.bench_label_pace')}
                 <select value={pace} onChange={(e) => setPace(e.target.value as BenchPace)} disabled={!!run} className="bg-neutral-800 rounded px-2 py-1">
-                  <option value="realistic">Realistic</option>
-                  <option value="fast">Fast (x10)</option>
+                  <option value="realistic">{t('ops.bench_pace_realistic')}</option>
+                  <option value="fast">{t('ops.bench_pace_fast')}</option>
                 </select>
               </label>
               <label className="flex items-center gap-1">
                 <input type="checkbox" checked={showTimer} onChange={(e) => setShowTimer(e.target.checked)} />
-                Detection timer
+                {t('ops.bench_detection_timer')}
               </label>
               <label className="flex items-center gap-1">
                 <input type="checkbox" checked={autoSchedule} onChange={(e) => setAutoSchedule(e.target.checked)} disabled={!!run} />
-                Automatic faults
+                {t('ops.bench_automatic_faults')}
               </label>
               {run ? (
                 <button type="button" onClick={stopRun} className="min-h-[44px] px-4 rounded-xl bg-red-700 font-bold">
-                  End run
+                  {t('ops.bench_end_run')}
                 </button>
               ) : (
                 <button type="button" onClick={startRun} className="min-h-[44px] px-4 rounded-xl bg-emerald-700 font-bold">
-                  Start soak run
+                  {t('ops.bench_start_run')}
                 </button>
               )}
               <button type="button" onClick={() => setShowControls(false)} className="min-h-[44px] px-3 rounded-xl bg-neutral-800">
-                Camera view
+                {t('ops.bench_camera_view')}
               </button>
             </div>
           </div>
-          {error && <div className="max-w-7xl mx-auto mt-2 text-red-300 text-sm">{error}</div>}
+          {error && <div className="max-w-7xl mx-auto mt-2 text-red-300 text-sm">{t('ops.bench_start_error')}</div>}
           {truthFailures > 0 && (
             <div className="max-w-7xl mx-auto mt-2 text-amber-300 text-sm">
-              {truthFailures} ground-truth events failed to save; this run's score will be incomplete.
+              {t('ops.bench_truth_failures', { n: truthFailures })}
             </div>
           )}
         </header>
@@ -455,16 +459,19 @@ export const VirtualMachineScreen: React.FC = () => {
         </div>
         {showTimer && seenTimes.length > 0 && (
           <div className="absolute top-3 left-3 bg-black border border-neutral-700 rounded-xl px-4 py-2" data-testid="detection-summary">
-            <div className="text-[11px] font-mono text-neutral-400">SEEN BY TAKUMI · HOME RIG</div>
+            <div className="text-[11px] font-mono text-neutral-400">{t('ops.bench_summary_title')} · HOME RIG</div>
             <div className="font-mono text-xl font-bold tabular-nums text-emerald-400">
-              median {median(seenTimes)?.toFixed(1)} s · {seenTimes.length} {seenTimes.length === 1 ? 'change' : 'changes'}
+              {t(seenTimes.length === 1 ? 'ops.bench_summary_median_one' : 'ops.bench_summary_median_other', {
+                s: median(seenTimes)?.toFixed(1) ?? '—',
+                n: seenTimes.length,
+              })}
             </div>
           </div>
         )}
-        {!showControls && <div className="absolute bottom-3 left-3 text-[11px] text-neutral-600">Double-click to show controls</div>}
+        {!showControls && <div className="absolute bottom-3 left-3 text-[11px] text-neutral-600">{t('ops.bench_show_controls_hint')}</div>}
       </main>
 
-      <footer className="text-center text-xs text-neutral-500 py-2">HOME RIG test bench, simulated machines</footer>
+      <footer className="text-center text-xs text-neutral-500 py-2">{t('ops.bench_footer', { rig: 'HOME RIG' })}</footer>
     </div>
   );
 };

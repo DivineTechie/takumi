@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
 import logoSvg from '../assets/logo.svg';
@@ -29,7 +29,7 @@ export const SignInScreen: React.FC = () => {
       await signInWithGoogle();
     } catch (err: unknown) {
       console.error('Google sign-in error:', err);
-      const msg = err instanceof Error ? err.message : 'Google sign-in failed';
+      const msg = err instanceof Error ? err.message : t('app.signin_google_failed');
       setErrorMessage(msg);
     }
   };
@@ -44,7 +44,7 @@ export const SignInScreen: React.FC = () => {
       setEmailSent(true);
     } catch (err: unknown) {
       console.error('Email link error:', err);
-      const msg = err instanceof Error ? err.message : 'Failed to send sign-in link';
+      const msg = err instanceof Error ? err.message : t('app.signin_link_failed');
       setErrorMessage(msg);
     } finally {
       setIsSubmitting(false);
@@ -60,7 +60,7 @@ export const SignInScreen: React.FC = () => {
       await signInWithPassword(testEmail, testPassword);
     } catch (err: unknown) {
       console.error('Test account sign-in error:', err);
-      const msg = err instanceof Error ? err.message : 'Invalid test credentials';
+      const msg = err instanceof Error ? err.message : t('app.signin_test_invalid');
       setErrorMessage(msg);
     } finally {
       setIsTestSubmitting(false);
@@ -77,7 +77,7 @@ export const SignInScreen: React.FC = () => {
               language
             </span>
             <select
-              aria-label="Select language"
+              aria-label={t('app.home_select_language')}
               value={language}
               onChange={(e) => setLanguage(e.target.value as LanguageCode)}
               className="appearance-none bg-surface-container-high border border-outline-variant text-on-surface text-[14px] font-medium rounded-lg pl-8 pr-7 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-container cursor-pointer transition-colors"
@@ -99,7 +99,7 @@ export const SignInScreen: React.FC = () => {
           <div className="w-36 h-36 mb-6 flex items-center justify-center">
             <img
               src={logoSvg}
-              alt="TAKUMI Logo"
+              alt={t('app.home_logo_alt')}
               className="w-[120px] h-[120px] object-contain rounded-2xl mx-auto shadow-2xl"
               width={120}
               height={120}
@@ -112,6 +112,10 @@ export const SignInScreen: React.FC = () => {
           <p className="text-[19px] leading-[28px] text-on-surface-variant font-normal max-w-[320px]">
             {t('tagline')}
           </p>
+          <Link to="/tour" className="mt-4 min-h-[44px] inline-flex items-center gap-1 font-bold text-primary underline-offset-4 hover:underline">
+            {t('app.signin_tour_link')}
+            <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
+          </Link>
         </div>
 
         {/* Action Section */}
@@ -138,7 +142,7 @@ export const SignInScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={handleGoogleSignIn}
-                className="w-full min-h-[56px] h-[56px] bg-white hover:bg-neutral-50 active:bg-neutral-100 border border-neutral-300 rounded-lg px-4 flex items-center justify-center gap-3 shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary-container/80 active:scale-[0.99] cursor-pointer"
+                className="w-full min-h-[56px] py-2 bg-white hover:bg-neutral-50 active:bg-neutral-100 border border-neutral-300 rounded-lg px-4 flex items-center justify-center gap-3 shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary-container/80 active:scale-[0.99] cursor-pointer"
               >
                 <svg className="w-6 h-6 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
@@ -173,7 +177,7 @@ export const SignInScreen: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmitting || !email}
-                  className="w-full min-h-[56px] h-[56px] bg-surface-container-high hover:bg-surface-container-highest active:bg-surface-container border border-outline rounded-lg text-on-surface font-bold text-[17px] flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                  className="w-full min-h-[56px] py-2 px-4 text-center bg-surface-container-high hover:bg-surface-container-highest active:bg-surface-container border border-outline rounded-lg text-on-surface font-bold text-[17px] flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[20px]">mail</span>
                   <span>{isSubmitting ? t('sign_in_email_sending') : t('sign_in_email_button')}</span>
@@ -185,9 +189,9 @@ export const SignInScreen: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowTestAccount(!showTestAccount)}
-                  className="text-xs font-semibold text-on-surface-variant hover:text-on-surface flex items-center gap-1 cursor-pointer transition-colors py-1"
+                  className="min-h-[44px] text-xs font-semibold text-on-surface-variant hover:text-on-surface flex items-center gap-1 cursor-pointer transition-colors py-1"
                 >
-                  <span>Use a test account</span>
+                  <span>{t('app.signin_test_toggle')}</span>
                   <span className="material-symbols-outlined text-[16px]">
                     {showTestAccount ? 'expand_less' : 'expand_more'}
                   </span>
@@ -208,16 +212,16 @@ export const SignInScreen: React.FC = () => {
                       required
                       value={testPassword}
                       onChange={(e) => setTestPassword(e.target.value)}
-                      placeholder="Password"
+                      placeholder={t('app.signin_test_password')}
                       className="w-full min-h-[48px] h-[48px] bg-surface-container border border-outline-variant rounded-lg px-3.5 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary-container text-[15px]"
                     />
                     <button
                       type="submit"
                       disabled={isTestSubmitting || !testEmail || !testPassword}
-                      className="w-full min-h-[48px] h-[48px] bg-primary text-on-primary hover:bg-primary/90 active:bg-primary rounded-lg font-semibold text-[15px] flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer shadow-sm"
+                      className="w-full min-h-[48px] py-2 px-4 text-center bg-primary text-on-primary hover:bg-primary/90 active:bg-primary rounded-lg font-semibold text-[15px] flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer shadow-sm"
                     >
                       <span className="material-symbols-outlined text-[18px]">badge</span>
-                      <span>{isTestSubmitting ? 'Signing in…' : 'Sign in with test account'}</span>
+                      <span>{isTestSubmitting ? t('app.signin_test_signing_in') : t('app.signin_test_submit')}</span>
                     </button>
                   </form>
                 )}

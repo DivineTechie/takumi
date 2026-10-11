@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { TracebackResult } from '../../lib/api';
+import { useI18n } from '../../i18n';
 
 /**
  * Animated picture of a trace-back result: the failed unit, the station and step where the agent
@@ -56,6 +57,7 @@ const Box: React.FC<{ n: Node; tone: string; title: string; sub?: string; delay:
 
 export const TraceGraph: React.FC<{ unitId: string; defect: string | null; trace: TracebackResult }> = ({ unitId, defect, trace }) => {
   const narrow = useNarrow();
+  const { t } = useI18n();
   const r = trace.report;
   const units = r.hold_unit_ids.slice(0, MAX_UNITS);
   const more = r.hold_unit_ids.length - units.length;
@@ -83,15 +85,22 @@ export const TraceGraph: React.FC<{ unitId: string; defect: string | null; trace
   }
 
   return (
-    <figure className="bg-surface-container rounded-2xl p-2 overflow-hidden" aria-label="Trace-back graph">
+    <figure className="bg-surface-container rounded-2xl p-2 overflow-hidden" aria-label={t('quality.trace_graph_label')}>
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto text-on-surface" role="img">
-        <title>{`Unit ${unitId} traced to ${r.root_cause_station ?? 'an unknown station'}${r.root_cause_step ? ` step ${r.root_cause_step}` : ''}; ${r.hold_unit_ids.length} other unit(s) at risk`}</title>
+        <title>
+          {t(r.root_cause_step ? 'quality.trace_svg_title_step' : 'quality.trace_svg_title', {
+            unit: unitId,
+            station: r.root_cause_station ?? t('quality.trace_unknown_station'),
+            step: r.root_cause_step ?? '',
+            count: r.hold_unit_ids.length,
+          })}
+        </title>
         {hasCause && <path d={edge(unit, cause, narrow)} className="tk-draw stroke-red-500 fill-none" strokeWidth={3} style={{ animationDelay: '0.4s' }} />}
         {hasCause && narrow && holds.length > 0 && (
           <>
             <path d={`M${cause.x + cause.w / 2},${cause.y + cause.h} L${cause.x + cause.w / 2},${holds[0].y - 22}`} className="tk-draw stroke-purple-500 fill-none" strokeWidth={2} style={{ animationDelay: '1.5s' }} />
             <text x={width / 2 + 8} y={holds[0].y - 8} className="fill-current text-[12px] font-bold tk-rise" style={{ animationDelay: '1.6s' }}>
-              {`${r.hold_unit_ids.length} at risk`}
+              {t('quality.trace_at_risk', { count: r.hold_unit_ids.length })}
             </text>
           </>
         )}
@@ -109,11 +118,11 @@ export const TraceGraph: React.FC<{ unitId: string; defect: string | null; trace
           />
         )}
 
-        <Box n={unit} tone="fill-red-600 text-white" title={unitId} sub={defect ? `Defect: ${defect}` : 'Failed unit'} delay={0} mono />
+        <Box n={unit} tone="fill-red-600 text-white" title={unitId} sub={defect ? t('quality.trace_defect', { defect }) : t('quality.trace_failed_unit')} delay={0} mono />
         {hasCause ? (
-          <Box n={cause} tone="fill-amber-400 text-black" title={r.root_cause_station as string} sub={`Step ${r.root_cause_step ?? '?'} · ${r.confidence} confidence`} delay={1.1} />
+          <Box n={cause} tone="fill-amber-400 text-black" title={r.root_cause_station as string} sub={t('quality.trace_step_confidence', { step: r.root_cause_step ?? '?', confidence: r.confidence })} delay={1.1} />
         ) : (
-          <Box n={cause} tone="fill-surface-container-high text-on-surface" title="No station found" sub="Not enough records" delay={1.1} />
+          <Box n={cause} tone="fill-surface-container-high text-on-surface" title={t('quality.trace_no_station')} sub={t('quality.trace_not_enough_records')} delay={1.1} />
         )}
         {holds.map((h, i) => (
           <Box key={units[i]} n={h} tone="fill-purple-600 text-white" title={units[i]} delay={1.8 + i * 0.15} mono />
@@ -125,13 +134,13 @@ export const TraceGraph: React.FC<{ unitId: string; defect: string | null; trace
             textAnchor="middle"
             className="fill-current text-[12px] opacity-70"
           >
-            +{more} more at risk
+            {t('quality.trace_more_at_risk', { count: more })}
           </text>
         )}
-        {hasFix && <Box n={fix} tone="fill-emerald-600 text-white" title="Fix → Standard Work Studio" sub="Suggested instruction change" delay={2.2 + holds.length * 0.15} />}
+        {hasFix && <Box n={fix} tone="fill-emerald-600 text-white" title={t('quality.trace_fix_title')} sub={t('quality.trace_fix_sub')} delay={2.2 + holds.length * 0.15} />}
       </svg>
       <figcaption className="sr-only">
-        {r.hold_unit_ids.length} unit(s) at risk{hasFix ? '; a work-instruction fix is suggested' : ''}.
+        {t(hasFix ? 'quality.trace_caption_fix' : 'quality.trace_caption', { count: r.hold_unit_ids.length })}
       </figcaption>
     </figure>
   );

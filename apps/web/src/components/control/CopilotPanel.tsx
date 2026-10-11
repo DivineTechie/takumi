@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Machine, WorkOrder } from '../../lib/api';
 import { CopilotSession, type CopilotState } from '../../lib/live/copilot';
 import { buildCopilotTools } from '../../lib/live/copilotTools';
+import { useI18n } from '../../i18n';
 
 /**
  * "Ask TAKUMI": the supervisor talks to the factory. Gemini Live listens and answers by voice in the
@@ -14,20 +15,24 @@ interface Line {
   final: boolean;
 }
 
+/** Translation keys for the copilot's tools. */
 const TOOL_LABEL: Record<string, string> = {
-  get_machines_now: 'Machines',
-  get_orders: 'Orders',
-  get_quality: 'Quality',
-  get_work_orders: 'Work orders',
-  draft_work_order: 'Maintenance agent',
-  ask_planner: 'Planner agent',
+  get_machines_now: 'ops.copilot_tool_machines',
+  get_orders: 'ops.copilot_tool_orders',
+  get_quality: 'ops.copilot_tool_quality',
+  get_work_orders: 'ops.copilot_tool_work_orders',
+  draft_work_order: 'ops.copilot_tool_maintenance_agent',
+  ask_planner: 'ops.copilot_tool_planner_agent',
 };
 
-const SUGGESTIONS = ["Will we make today's orders?", 'Which machine is stopped, and why?', 'How is quality today?'];
+/** Suggested questions (translation keys); sent to the voice model as the user's question. */
+const SUGGESTIONS = ['ops.copilot_suggestion_orders', 'ops.copilot_suggestion_stopped', 'ops.copilot_suggestion_quality'];
 
 const MAX_SESSION_MS = 9 * 60_000;
 
 export const CopilotPanel: React.FC<{ draftWorkOrder: (m: Machine) => Promise<WorkOrder | null> }> = ({ draftWorkOrder }) => {
+  const { t } = useI18n();
+  const toolLabel = (name: string) => (TOOL_LABEL[name] ? t(TOOL_LABEL[name]) : name);
   const [state, setState] = useState<CopilotState>('idle');
   const [lines, setLines] = useState<Line[]>([]);
   const [tools, setTools] = useState<{ name: string; phase: 'start' | 'done' | 'error'; at: number }[]>([]);
@@ -93,14 +98,14 @@ export const CopilotPanel: React.FC<{ draftWorkOrder: (m: Machine) => Promise<Wo
   const running = tools.filter((t) => t.phase === 'start');
   const status =
     state === 'connecting'
-      ? 'Connecting…'
+      ? t('ops.copilot_connecting')
       : running.length > 0
-        ? `Checking ${running.map((t) => TOOL_LABEL[t.name] ?? t.name).join(', ')}…`
+        ? t('ops.copilot_checking', { tools: running.map((x) => toolLabel(x.name)).join(', ') })
         : state === 'speaking'
-          ? 'TAKUMI is answering'
+          ? t('ops.copilot_answering')
           : state === 'listening'
-            ? 'Listening — ask in any language'
-            : 'Ask TAKUMI about machines, orders and quality';
+            ? t('ops.copilot_listening')
+            : t('ops.copilot_idle');
 
   return (
     <section className="relative overflow-hidden bg-surface-container-low border border-outline-variant rounded-2xl p-4 space-y-3" aria-labelledby="copilot-title">
@@ -109,7 +114,7 @@ export const CopilotPanel: React.FC<{ draftWorkOrder: (m: Machine) => Promise<Wo
           type="button"
           onClick={live ? stop : start}
           aria-pressed={live}
-          aria-label={live ? 'End voice session' : 'Talk to TAKUMI'}
+          aria-label={live ? t('ops.copilot_end_session') : t('ops.copilot_talk')}
           className={`relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center text-white shadow-lg transition-colors ${live ? 'bg-red-600' : 'bg-primary'}`}
         >
           {state === 'listening' && (
@@ -129,32 +134,32 @@ export const CopilotPanel: React.FC<{ draftWorkOrder: (m: Machine) => Promise<Wo
           )}
         </button>
         <div className="min-w-0 flex-1">
-          <h2 id="copilot-title" className="font-bold text-lg">Ask TAKUMI</h2>
+          <h2 id="copilot-title" className="font-bold text-lg">{t('ops.copilot_title')}</h2>
           <p className="text-sm text-on-surface-variant" role="status" aria-live="polite">
             {status}
           </p>
-          <p className="text-[11px] text-on-surface-variant mt-0.5">Gemini Live · answers only from TAKUMI’s data · cannot approve anything</p>
+          <p className="text-[11px] text-on-surface-variant mt-0.5">Gemini Live · {t('ops.copilot_footer')}</p>
         </div>
       </div>
 
       {tools.length > 0 && (
-        <div className="flex flex-wrap gap-1.5" aria-label="Data TAKUMI checked">
-          {tools.map((t, i) => (
+        <div className="flex flex-wrap gap-1.5" aria-label={t('ops.copilot_data_checked')}>
+          {tools.map((tool, i) => (
             <span
-              key={`${t.name}-${t.at}-${i}`}
-              className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 tk-rise ${t.phase === 'error' ? 'bg-red-500/15 text-red-500' : 'bg-surface-container-high'}`}
+              key={`${tool.name}-${tool.at}-${i}`}
+              className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 tk-rise ${tool.phase === 'error' ? 'bg-red-500/15 text-red-500' : 'bg-surface-container-high'}`}
             >
-              <span className={`material-symbols-outlined text-[14px] ${t.phase === 'start' ? 'animate-spin' : 'text-green-500'}`}>
-                {t.phase === 'start' ? 'progress_activity' : t.phase === 'error' ? 'error' : 'check_circle'}
+              <span className={`material-symbols-outlined text-[14px] ${tool.phase === 'start' ? 'animate-spin' : 'text-green-500'}`}>
+                {tool.phase === 'start' ? 'progress_activity' : tool.phase === 'error' ? 'error' : 'check_circle'}
               </span>
-              {TOOL_LABEL[t.name] ?? t.name}
+              {toolLabel(tool.name)}
             </span>
           ))}
         </div>
       )}
 
       {lines.length > 0 && (
-        <ol className="space-y-2 max-h-72 overflow-y-auto" aria-label="Conversation">
+        <ol className="space-y-2 max-h-72 overflow-y-auto" aria-label={t('ops.copilot_conversation')}>
           {lines.map((l, i) => (
             <li key={i} className={`flex ${l.who === 'user' ? 'justify-end' : 'justify-start'} tk-rise`}>
               <span
@@ -170,7 +175,7 @@ export const CopilotPanel: React.FC<{ draftWorkOrder: (m: Machine) => Promise<Wo
       )}
 
       <div className="flex flex-wrap gap-2">
-        {SUGGESTIONS.map((q) => (
+        {SUGGESTIONS.map((k) => t(k)).map((q) => (
           <button
             key={q}
             type="button"

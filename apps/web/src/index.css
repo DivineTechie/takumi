@@ -247,3 +247,21 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .tk-rise, .tk-pop, .tk-ring, .tk-shimmer, .tk-draw, .tk-flow, .tk-bar, .tk-halo { animation: none; opacity: 1; stroke-dashoffset: 0; }
 }
+
+/* Tour scene: a bench machine that stops, a camera beam, and events flowing to the agents. */
+@keyframes tk-lamp-green { 0%, 44% { opacity: 1; } 46%, 84% { opacity: 0.12; } 86%, 100% { opacity: 1; } }
+@keyframes tk-lamp-red { 0%, 44% { opacity: 0.12; } 46%, 84% { opacity: 1; } 86%, 100% { opacity: 0.12; } }
+@keyframes tk-alert { 0%, 46% { opacity: 0; transform: scale(0.6); } 50% { opacity: 0.9; } 62% { opacity: 0; transform: scale(2.2); } 100% { opacity: 0; } }
+@keyframes tk-chip { 0%, 49% { opacity: 0; transform: translateY(8px); } 53%, 82% { opacity: 1; transform: none; } 86%, 100% { opacity: 0; } }
+@keyframes tk-beam { 0%, 100% { opacity: 0.18; } 50% { opacity: 0.38; } }
+@keyframes tk-packet { from { left: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } to { left: 100%; opacity: 0; } }
+.tk-lamp-green { animation: tk-lamp-green 9s linear infinite; }
+.tk-lamp-red { animation: tk-lamp-red 9s linear infinite; }
+.tk-alert { animation: tk-alert 9s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.tk-chip { animation: tk-chip 9s ease-out infinite; }
+.tk-beam { animation: tk-beam 3s ease-in-out infinite; }
+.tk-packet { animation: tk-packet 2.4s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-lamp-green, .tk-lamp-red, .tk-alert, .tk-chip, .tk-beam, .tk-packet { animation: none; }
+  .tk-chip { opacity: 1; }
+}

@@ -11,26 +11,30 @@ import { createAndResumeAudioContexts } from '../lib/live/audio';
 interface LanguageOption {
   code: LanguageCode;
   native: string;
-  label: string;
+  /** Translation key for the secondary label under the native name. */
+  labelKey: string;
 }
 
 const LANGUAGES: LanguageOption[] = [
-  { code: 'en', native: 'English', label: 'Primary' },
-  { code: 'ja', native: '日本語', label: 'Japanese' },
-  { code: 'vi', native: 'Tiếng Việt', label: 'Vietnamese' },
-  { code: 'hi', native: 'हिन्दी', label: 'Hindi' },
-  { code: 'id', native: 'Bahasa Indonesia', label: 'Indonesian' },
-  { code: 'fil', native: 'Filipino', label: 'Tagalog' },
+  { code: 'en', native: 'English', labelKey: 'station.before_start_lang_label_en' },
+  { code: 'ja', native: '日本語', labelKey: 'station.before_start_lang_label_ja' },
+  { code: 'vi', native: 'Tiếng Việt', labelKey: 'station.before_start_lang_label_vi' },
+  { code: 'hi', native: 'हिन्दी', labelKey: 'station.before_start_lang_label_hi' },
+  { code: 'id', native: 'Bahasa Indonesia', labelKey: 'station.before_start_lang_label_id' },
+  { code: 'fil', native: 'Filipino', labelKey: 'station.before_start_lang_label_fil' },
 ];
+
+/** A load error is either a translation key or a raw message from Firestore. */
+type LoadError = { key: string } | { raw: string };
 
 export const CoachBeforeStartScreen: React.FC = () => {
   const { skillId } = useParams<{ skillId: string }>();
   const navigate = useNavigate();
-  const { language: currentUiLang } = useTranslation();
+  const { language: currentUiLang, t } = useTranslation();
 
   const [skill, setSkill] = useState<Skill | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<LoadError | null>(null);
 
   const [selectedLang, setSelectedLang] = useState<LanguageCode>(() => {
     const validCodes: LanguageCode[] = ['en', 'ja', 'vi', 'hi', 'id', 'fil'];
@@ -51,7 +55,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
   });
 
   const [isStarting, setIsStarting] = useState(false);
-  const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [permissionError, setPermissionError] = useState<boolean>(false);
   const [sessionsEnabled, setSessionsEnabled] = useState<boolean>(true);
 
   // Check system status on mount for kill switch
@@ -78,7 +82,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
   // 1. Load published skill strictly from Firestore (no seed fallback!)
   useEffect(() => {
     if (!skillId) {
-      setLoadError('No lesson ID provided');
+      setLoadError({ key: 'station.before_start_error_no_id' });
       setLoading(false);
       return;
     }
@@ -95,7 +99,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
 
         if (!snapshot.exists()) {
           if (isMounted) {
-            setLoadError('Lesson not found');
+            setLoadError({ key: 'station.before_start_error_not_found' });
             setLoading(false);
           }
           return;
@@ -106,7 +110,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
         // Must be published!
         if (data.status !== 'published') {
           if (isMounted) {
-            setLoadError('Lesson is not published yet');
+            setLoadError({ key: 'station.before_start_error_not_published' });
             setLoading(false);
           }
           return;
@@ -119,7 +123,9 @@ export const CoachBeforeStartScreen: React.FC = () => {
       } catch (err: unknown) {
         console.error('Failed to load skill doc from Firestore:', err);
         if (isMounted) {
-          setLoadError(err instanceof Error ? err.message : 'Failed to load lesson');
+          setLoadError(
+            err instanceof Error ? { raw: err.message } : { key: 'station.before_start_error_load_failed' }
+          );
           setLoading(false);
         }
       }
@@ -135,7 +141,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
   // 2. Start Live Coaching (iOS Safari User Gesture AudioContexts)
   const handleStartCoaching = async () => {
     if (!skill) return;
-    setPermissionError(null);
+    setPermissionError(false);
     setIsStarting(true);
 
     // Rule 2: Create both AudioContexts and call resume() BEFORE the first await!
@@ -185,9 +191,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
       } catch {
         // ignore
       }
-      setPermissionError(
-        'Camera and microphone access is required for live coaching. Please allow camera and mic permissions in your browser address bar and try again.'
-      );
+      setPermissionError(true);
     }
   };
 
@@ -244,25 +248,27 @@ export const CoachBeforeStartScreen: React.FC = () => {
           <div className="w-16 h-16 rounded-full bg-error-container/30 border border-error/50 flex items-center justify-center text-error mb-4">
             <span className="material-symbols-outlined text-[36px]">videocam_off</span>
           </div>
-          <h2 className="text-[22px] font-bold text-on-surface mb-2">Camera & Mic Required</h2>
+          <h2 className="text-[22px] font-bold text-on-surface mb-2">
+            {t('station.before_start_permission_title')}
+          </h2>
           <p className="text-[15px] leading-[22px] text-on-surface-variant mb-6 text-left">
-            {permissionError}
+            {t('station.before_start_permission_desc')}
           </p>
           <div className="w-full space-y-3">
             <button
               type="button"
               onClick={handleStartCoaching}
-              className="w-full min-h-[56px] h-14 bg-primary-container text-on-primary-container font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer"
+              className="w-full min-h-[56px] px-3 py-2 bg-primary-container text-on-primary-container font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer"
             >
               <span className="material-symbols-outlined text-[22px]">refresh</span>
-              <span>Retry Permission</span>
+              <span>{t('station.before_start_permission_retry')}</span>
             </button>
             <button
               type="button"
               onClick={() => navigate('/coach')}
-              className="w-full min-h-[56px] h-14 bg-surface-container border border-outline-variant text-on-surface font-semibold rounded-xl flex items-center justify-center hover:bg-surface-bright active:scale-[0.98] transition-all cursor-pointer"
+              className="w-full min-h-[56px] px-3 py-2 bg-surface-container border border-outline-variant text-on-surface font-semibold rounded-xl flex items-center justify-center hover:bg-surface-bright active:scale-[0.98] transition-all cursor-pointer"
             >
-              Back to lessons
+              {t('station.common_back_to_lessons')}
             </button>
           </div>
         </div>
@@ -276,7 +282,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
       <div className="bg-background text-on-surface min-h-screen flex items-center justify-center p-6 font-sans">
         <div className="flex flex-col items-center gap-4">
           <div className="w-10 h-10 border-4 border-primary-container border-t-transparent rounded-full animate-spin" />
-          <span className="text-on-surface-variant font-medium">Loading lesson details...</span>
+          <span className="text-on-surface-variant font-medium">{t('station.before_start_loading')}</span>
         </div>
       </div>
     );
@@ -290,17 +296,23 @@ export const CoachBeforeStartScreen: React.FC = () => {
           <div className="w-16 h-16 rounded-full bg-error-container/30 border border-error/50 flex items-center justify-center text-error mb-4">
             <span className="material-symbols-outlined text-[36px]">error</span>
           </div>
-          <h2 className="text-[22px] font-bold text-on-surface mb-2">Lesson Unavailable</h2>
+          <h2 className="text-[22px] font-bold text-on-surface mb-2">
+            {t('station.before_start_unavailable_title')}
+          </h2>
           <p className="text-[15px] leading-[22px] text-on-surface-variant mb-6">
-            {loadError || 'This lesson could not be loaded or is not published.'}
+            {loadError
+              ? 'key' in loadError
+                ? t(loadError.key)
+                : loadError.raw
+              : t('station.before_start_unavailable_desc')}
           </p>
           <button
             type="button"
             onClick={() => navigate('/coach')}
-            className="w-full min-h-[56px] h-14 bg-primary-container text-on-primary-container font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer"
+            className="w-full min-h-[56px] px-3 py-2 bg-primary-container text-on-primary-container font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer"
           >
             <span className="material-symbols-outlined text-[22px]">arrow_back</span>
-            <span>Back to lessons</span>
+            <span>{t('station.common_back_to_lessons')}</span>
           </button>
         </div>
       </div>
@@ -314,7 +326,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
         <header className="w-full h-[56px] px-4 flex items-center justify-between bg-surface-container-low shrink-0 z-20 border-b border-outline-variant">
           <button
             onClick={() => navigate('/coach')}
-            aria-label="Back to lessons"
+            aria-label={t('station.common_back_to_lessons')}
             className="flex items-center justify-center w-12 h-12 -ml-2 rounded text-on-surface hover:bg-surface-container-high active:scale-95 transition-transform cursor-pointer"
             type="button"
           >
@@ -323,7 +335,7 @@ export const CoachBeforeStartScreen: React.FC = () => {
           <div className="flex items-center gap-2">
             <img
               src={logoSvg}
-              alt="TAKUMI Logo"
+              alt={t('station.common_logo_alt')}
               className="w-8 h-8 rounded-lg shrink-0 object-contain shadow-sm"
               width={32}
               height={32}
@@ -338,29 +350,31 @@ export const CoachBeforeStartScreen: React.FC = () => {
           {/* Header Title & Tagline */}
           <div className="mb-6">
             <span className="font-label-md uppercase tracking-wider text-primary font-bold block mb-1">
-              Lesson preparation
+              {t('station.before_start_eyebrow')}
             </span>
             <h1 className="font-headline-lg font-extrabold tracking-tight mb-2 text-on-surface">
               {skill.title}
             </h1>
             <p className="font-body-md text-on-surface-variant">
-              Choose your coaching language to start audio and camera prompts.
+              {t('station.before_start_intro')}
             </p>
           </div>
 
           {/* Language Selection Grid (2x3) */}
           <section className="flex flex-col flex-1">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between flex-wrap gap-x-3 gap-y-1 mb-3">
               <h2 className="font-headline-sm text-on-surface font-semibold">
-                Coaching language
+                {t('station.before_start_language_heading')}
               </h2>
-              <span className="font-label-md text-on-surface-variant">6 Available</span>
+              <span className="font-label-md text-on-surface-variant">
+                {t('station.before_start_language_count', { count: LANGUAGES.length })}
+              </span>
             </div>
 
             <div
               className="grid grid-cols-2 gap-3 mb-6"
               role="radiogroup"
-              aria-label="Select coaching language"
+              aria-label={t('station.before_start_language_aria')}
             >
               {LANGUAGES.map((lang) => {
                 const isSelected = selectedLang === lang.code;
@@ -371,14 +385,14 @@ export const CoachBeforeStartScreen: React.FC = () => {
                     aria-checked={isSelected}
                     type="button"
                     onClick={() => setSelectedLang(lang.code)}
-                    className={`relative flex flex-col justify-center items-start min-h-[72px] px-4 py-3 rounded-xl text-left transition-all cursor-pointer ${
+                    className={`relative flex flex-col justify-center items-start min-w-0 min-h-[72px] px-4 py-3 rounded-xl text-left transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-surface-container-high border-2 border-primary-container shadow-md'
                         : 'bg-surface-container border border-outline-variant hover:border-surface-bright'
                     }`}
                   >
-                    <div className="flex items-center justify-between w-full">
-                      <span className="font-headline-sm font-bold text-on-surface leading-tight">
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      <span className="font-headline-sm font-bold text-on-surface leading-tight min-w-0 break-words">
                         {lang.native}
                       </span>
                       {isSelected && (
@@ -387,8 +401,8 @@ export const CoachBeforeStartScreen: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <span className="font-label-md text-on-surface-variant leading-tight mt-1">
-                      {lang.label}
+                    <span className="font-label-md text-on-surface-variant leading-tight mt-1 break-words">
+                      {t(lang.labelKey)}
                     </span>
                   </button>
                 );
@@ -398,38 +412,38 @@ export const CoachBeforeStartScreen: React.FC = () => {
             {/* Unit serial (Station Watch) */}
             <div className="flex flex-col gap-1.5 p-3.5 rounded-xl bg-surface-container-low border border-outline-variant">
               <label htmlFor="unit-serial" className="font-body-md text-on-surface font-semibold">
-                Unit serial (optional)
+                {t('station.before_start_serial_label')}
               </label>
               <input
                 id="unit-serial"
                 value={unitSerial}
                 onChange={(e) => setUnitSerial(e.target.value)}
-                placeholder="e.g. SN-0042"
+                placeholder={t('station.before_start_serial_placeholder')}
                 autoCapitalize="characters"
                 autoComplete="off"
                 className={`min-h-[48px] rounded-lg bg-surface-container px-3 font-mono border ${serialValid ? 'border-outline-variant' : 'border-error'}`}
               />
               <p className="font-body-sm text-on-surface-variant leading-snug">
                 {serialValid
-                  ? "Adds this station's checks to the unit's record, so a failed unit can be traced back."
-                  : 'Use letters, numbers, dot, dash or underscore (max 64).'}
+                  ? t('station.before_start_serial_help')
+                  : t('station.before_start_serial_invalid')}
               </p>
             </div>
 
             {/* Headphone Toggle & Note */}
             <div className="flex flex-col gap-2.5 p-3.5 rounded-xl bg-surface-container-low border border-outline-variant mt-auto">
-              <label className="flex items-center justify-between cursor-pointer select-none">
-                <div className="flex items-center gap-3">
+              <label className="flex items-center justify-between gap-3 cursor-pointer select-none">
+                <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center shrink-0 text-primary">
                     <span className="material-symbols-outlined text-2xl">headphones</span>
                   </div>
-                  <span className="font-body-md text-on-surface font-semibold">
-                    I'm wearing headphones
+                  <span className="font-body-md text-on-surface font-semibold min-w-0 break-words">
+                    {t('station.before_start_headphones')}
                   </span>
                 </div>
                 <input
                   type="checkbox"
-                  aria-label="I'm wearing headphones"
+                  aria-label={t('station.before_start_headphones')}
                   checked={wearingHeadphones}
                   onChange={(e) => {
                     const next = e.target.checked;
@@ -440,11 +454,11 @@ export const CoachBeforeStartScreen: React.FC = () => {
                       // ignore
                     }
                   }}
-                  className="w-5 h-5 accent-primary cursor-pointer rounded"
+                  className="w-5 h-5 shrink-0 accent-primary cursor-pointer rounded"
                 />
               </label>
               <p className="font-body-sm text-on-surface-variant leading-snug">
-                On speaker, the coach talks and then listens. With headphones you can interrupt it anytime.
+                {t('station.before_start_headphones_help')}
               </p>
             </div>
           </section>
@@ -453,23 +467,23 @@ export const CoachBeforeStartScreen: React.FC = () => {
         {/* Pinned Bottom Action Zone */}
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[420px] p-4 bg-surface-container-lowest/95 backdrop-blur-md border-t border-outline-variant z-30">
           {!sessionsEnabled ? (
-            <div className="w-full min-h-[56px] h-14 rounded-xl bg-surface-container-high border border-outline-variant text-on-surface-variant font-headline-sm font-semibold flex items-center justify-center gap-2 px-3 text-center">
+            <div className="w-full min-h-[56px] py-2 rounded-xl bg-surface-container-high border border-outline-variant text-on-surface-variant font-headline-sm font-semibold flex items-center justify-center gap-2 px-3 text-center">
               <span className="material-symbols-outlined text-[22px] text-amber-500 shrink-0">construction</span>
-              <span className="text-[15px]">Coaching is paused for maintenance.</span>
+              <span className="text-[15px]">{t('station.before_start_paused')}</span>
             </div>
           ) : (
             <button
               type="button"
               disabled={isStarting || !serialValid}
               onClick={handleStartCoaching}
-              className="w-full min-h-[56px] h-14 rounded-xl bg-primary-container text-on-primary-container font-headline-sm font-extrabold flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow-lg cursor-pointer disabled:opacity-50"
+              className="w-full min-h-[56px] px-3 py-2 rounded-xl bg-primary-container text-on-primary-container font-headline-sm font-extrabold flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.99] transition-all shadow-lg cursor-pointer disabled:opacity-50"
             >
               {isStarting ? (
                 <div className="w-6 h-6 border-3 border-on-primary-container border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
                   <span className="material-symbols-outlined text-[24px]">play_arrow</span>
-                  <span className="text-[18px]">Start coaching</span>
+                  <span className="text-[18px]">{t('station.before_start_start_btn')}</span>
                 </>
               )}
             </button>
