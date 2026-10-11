@@ -25,11 +25,19 @@ function ago(iso: string | null | undefined): string {
   return s < 90 ? `${s}s ago` : `${Math.round(s / 60)} min ago`;
 }
 
-export const MachinesNow: React.FC = () => {
+export const MachinesNow: React.FC<{
+  /** Called when the supervisor asks the maintenance agent for a work order. */
+  onDraft?: (m: Machine) => void;
+  /** Called for machines that stopped while the page was open (not ones already stopped at load). */
+  onNewStop?: (m: Machine) => void;
+}> = ({ onDraft, onNewStop }) => {
   const [machines, setMachines] = useState<Machine[] | null>(null);
   const [alertsOn, setAlertsOn] = useState(false);
   const audioRef = useRef<AudioContext | null>(null);
   const stoppedRef = useRef<Set<string>>(new Set());
+  const loadedRef = useRef(false);
+  const onNewStopRef = useRef(onNewStop);
+  onNewStopRef.current = onNewStop;
 
   const beep = useCallback(() => {
     const ctx = audioRef.current;
@@ -50,8 +58,10 @@ export const MachinesNow: React.FC = () => {
     try {
       const ms = await fetchMachines();
       const nowStopped = new Set(ms.filter((m) => liveState(m) === 'stopped').map((m) => m.id));
-      const newlyStopped = [...nowStopped].some((id) => !stoppedRef.current.has(id));
-      if (newlyStopped && alertsOn && stoppedRef.current.size + nowStopped.size > 0) beep();
+      const fresh = ms.filter((m) => nowStopped.has(m.id) && !stoppedRef.current.has(m.id));
+      if (fresh.length > 0 && alertsOn) beep();
+      if (loadedRef.current) fresh.forEach((m) => onNewStopRef.current?.(m));
+      loadedRef.current = true;
       stoppedRef.current = nowStopped;
       setMachines(ms);
     } catch {
@@ -97,10 +107,20 @@ export const MachinesNow: React.FC = () => {
           const colour =
             state === 'stopped' ? 'bg-red-600 text-white' : state === 'idle' ? 'bg-amber-400 text-black' : state === 'running' ? 'bg-green-600 text-white' : 'bg-surface-container-high';
           return (
-            <div key={m.id} className={`${colour} rounded-xl px-3 py-2 text-sm min-w-[150px]`} data-testid={`machine-now-${m.id}`}>
+            <div key={m.id} className={`${colour} rounded-xl px-3 py-2 text-sm min-w-[150px] flex-1 sm:flex-none ${state === 'stopped' ? 'tk-ring' : ''}`} data-testid={`machine-now-${m.id}`}>
               <div className="font-bold">{m.name}</div>
               <div>{state ?? (isStale(m) ? `no camera (last: ${m.state ?? 'unknown'})` : 'unknown')}</div>
               {state === 'stopped' && m.last_alarm && <div className="text-xs font-bold">{m.last_alarm}</div>}
+              {state === 'stopped' && onDraft && (
+                <button
+                  type="button"
+                  onClick={() => onDraft(m)}
+                  className="mt-1 min-h-[40px] w-full rounded-lg bg-white/90 text-red-700 text-xs font-bold flex items-center justify-center gap-1"
+                >
+                  <span className="material-symbols-outlined text-[16px]">build</span>
+                  Draft work order
+                </button>
+              )}
               <div className="text-[11px] opacity-80">
                 {m.source === 'VIRTUAL' ? 'HOME RIG' : 'LIVE'} · {ago(m.last_seen_at)}
               </div>

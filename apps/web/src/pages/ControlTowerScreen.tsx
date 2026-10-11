@@ -4,6 +4,8 @@ import { fetchControlSummary, type ControlSourceKpis, type ControlSummary } from
 import { describe } from '../lib/controlEvents';
 import { OrdersPanel } from '../components/control/OrdersPanel';
 import { MachinesNow } from '../components/control/MachinesNow';
+import { WorkOrdersPanel, type DraftRequest } from '../components/control/WorkOrdersPanel';
+import type { Machine } from '../lib/api';
 
 /**
  * Control tower (P18): the whole factory from one event stream. Cloud Run publishes every event to
@@ -58,6 +60,9 @@ export const ControlTowerScreen: React.FC = () => {
   const [hours, setHours] = useState(24);
   const [data, setData] = useState<ControlSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draftRequest, setDraftRequest] = useState<DraftRequest | null>(null);
+  const [autoDraft, setAutoDraft] = useState(false);
+  const requestDraft = useCallback((m: Machine) => setDraftRequest({ machineId: m.id, name: m.name, nonce: Date.now() + Math.random() }), []);
 
   const load = useCallback(async () => {
     try {
@@ -94,7 +99,8 @@ export const ControlTowerScreen: React.FC = () => {
 
       <main className="max-w-6xl mx-auto p-4 grid gap-4 lg:grid-cols-[1fr_380px]">
         <div className="space-y-4 min-w-0">
-          <MachinesNow />
+          <MachinesNow onDraft={requestDraft} onNewStop={autoDraft ? requestDraft : undefined} />
+          <WorkOrdersPanel request={draftRequest} autoDraft={autoDraft} onAutoDraftChange={setAutoDraft} />
           <OrdersPanel />
           {error && <p className="text-red-400">{error}</p>}
           {!data && !error && <p className="text-on-surface-variant">Loading…</p>}

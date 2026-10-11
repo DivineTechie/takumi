@@ -915,6 +915,65 @@ export async function closeOrder(id: string): Promise<{ id: string; status: stri
   return await apiFetch(`/api/orders/${encodeURIComponent(id)}/close`, { method: 'POST' });
 }
 
+export interface WorkOrderDraft {
+  title: string;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  summary: string;
+  likely_causes: { cause: string; evidence: string }[];
+  steps: string[];
+  safety: string[];
+  parts: string[];
+  estimated_minutes: number | null;
+  repeat_issue: boolean;
+  operator_alert: string;
+}
+
+export interface WorkOrder {
+  id: string;
+  machine_id: string;
+  machine_name: string | null;
+  alarm_text: string | null;
+  source: string;
+  status: 'draft' | 'approved' | 'dismissed';
+  draft: WorkOrderDraft;
+  agent_steps: { agent: string; tool: string; args: Record<string, unknown> }[];
+  created_at: string;
+  agent_ms?: number;
+  existing?: boolean;
+  decision_note?: string | null;
+}
+
+export type SpeechLanguage = 'en' | 'ja' | 'vi' | 'hi' | 'id' | 'fil';
+
+export async function draftWorkOrder(machineId: string): Promise<WorkOrder> {
+  return await apiFetch<WorkOrder>('/forge/agents/maintenance', { method: 'POST', body: JSON.stringify({ machine_id: machineId }) });
+}
+
+export async function fetchWorkOrders(): Promise<WorkOrder[]> {
+  return await apiFetch<WorkOrder[]>('/api/work-orders');
+}
+
+export async function decideWorkOrder(id: string, decision: 'approve' | 'dismiss', note?: string): Promise<{ id: string; status: string }> {
+  return await apiFetch(`/api/work-orders/${encodeURIComponent(id)}/decision`, {
+    method: 'POST',
+    body: JSON.stringify(note ? { decision, note } : { decision }),
+  });
+}
+
+/** Fetches the spoken operator alert (WAV) and the text that was spoken. */
+export async function speakWorkOrder(id: string, language: SpeechLanguage): Promise<{ audio: Blob; text: string }> {
+  const token = await getIdToken();
+  const res = await fetch(`/api/work-orders/${encodeURIComponent(id)}/speak`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ language }),
+  });
+  if (!res.ok) throw new ApiError('Could not make the spoken alert', res.status);
+  const b64 = res.headers.get('X-Spoken-Text-B64') || '';
+  const text = b64 ? new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))) : '';
+  return { audio: await res.blob(), text };
+}
+
 export async function runDemandAgent(): Promise<DemandResult> {
   return await apiFetch<DemandResult>('/forge/agents/demand', { method: 'POST' });
 }

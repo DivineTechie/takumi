@@ -26,6 +26,10 @@ export function describe(e: ControlFeedItem): string {
       return 'Alarm cleared';
     case 'machine.count':
       return d.flag ? `Counter misread rejected (${d.count})` : `Count ${d.count}`;
+    case 'machine.work_order_approved':
+      return `Work order approved${d.title ? `: ${d.title}` : ''}`;
+    case 'machine.work_order_dismissed':
+      return `Work order dismissed${d.title ? `: ${d.title}` : ''}`;
     case 'unit.hold':
       return `Put on hold${d.reason ? `: ${d.reason}` : ''}`;
     case 'unit.release':

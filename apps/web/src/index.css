@@ -198,3 +198,42 @@ body {
   font-family: "Noto Sans", "Noto Sans JP", "Noto Sans Devanagari", sans-serif;
   font-size: 18px;
 }
+
+/* Motion used by the agent panels, control tower and tour. Disabled for reduced-motion users. */
+@keyframes tk-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tk-shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+@keyframes tk-ring {
+  0% { box-shadow: 0 0 0 0 rgb(239 68 68 / 0.7); }
+  70% { box-shadow: 0 0 0 14px rgb(239 68 68 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(239 68 68 / 0); }
+}
+@keyframes tk-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes tk-flow {
+  to { stroke-dashoffset: -24; }
+}
+@keyframes tk-pop {
+  0% { opacity: 0; transform: scale(0.6); }
+  70% { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.tk-rise { animation: tk-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.tk-pop { animation: tk-pop 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.tk-ring { animation: tk-ring 1.6s ease-out infinite; }
+.tk-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 0.14) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: tk-shimmer 1.6s linear infinite;
+}
+.tk-draw { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: tk-draw 1.2s ease-out forwards; }
+.tk-flow { stroke-dasharray: 6 6; animation: tk-flow 0.8s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-rise, .tk-pop, .tk-ring, .tk-shimmer, .tk-draw, .tk-flow { animation: none; opacity: 1; stroke-dashoffset: 0; }
+}

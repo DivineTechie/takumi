@@ -1,6 +1,6 @@
 """FastAPI Application for TAKUMI Forge Multi-Agent Service."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import asyncio
 import logging
 import uuid
@@ -202,6 +202,67 @@ async def traceback_agent(
     except Exception as e:
         logger.error("Trace-back agent failed for %s: %s", req.unit_id, e)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Trace-back agent failed")
+
+
+class MaintenanceRequest(BaseModel):
+    machine_id: str = Field(..., pattern=r"^[A-Za-z0-9._-]{1,64}$")
+
+
+# A stop already drafted within this window returns the same work order instead of a second run.
+WORK_ORDER_DEDUP_MIN = 60
+
+
+@app.post("/forge/agents/maintenance")
+async def maintenance_agent(
+    req: MaintenanceRequest,
+    user: AuthUser = Depends(verify_auth_token),
+) -> dict[str, Any]:
+    """Runs the ADK maintenance agent on a stopped machine and saves a draft work order (supervisors only)."""
+    if user.role != "supervisor":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Supervisor role required")
+    db = get_firestore_client()
+    if db is None or MOCK_MODELS:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Maintenance agent is unavailable")
+    snap = db.collection("machines").document(req.machine_id).get()
+    if not snap.exists:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Machine not found")
+    machine = snap.to_dict() or {}
+    if machine.get("state") != "stopped":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Machine is not stopped")
+
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(minutes=WORK_ORDER_DEDUP_MIN)).isoformat()
+    for w in db.collection("work_orders").where("machine_id", "==", req.machine_id).stream():
+        d = w.to_dict() or {}
+        if d.get("status") == "draft" and d.get("alarm_text") == machine.get("last_alarm") and str(d.get("created_at") or "") >= cutoff:
+            return {**d, "existing": True}
+
+    from services.forge.agents.maintenance import run_maintenance
+
+    try:
+        result = await asyncio.wait_for(run_maintenance(db, req.machine_id, user.uid), timeout=TRACEBACK_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Maintenance agent timed out")
+    except Exception as e:
+        logger.error("Maintenance agent failed for %s: %s", req.machine_id, e)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Maintenance agent failed")
+
+    wo_id = f"wo_{uuid.uuid4().hex[:12]}"
+    doc = {
+        "id": wo_id,
+        "machine_id": req.machine_id,
+        "machine_name": machine.get("name"),
+        "alarm_text": machine.get("last_alarm"),
+        "source": "HOME RIG" if str(machine.get("source", "")).lower() == "virtual" else "LIVE",
+        "status": "draft",
+        "draft": result["draft"],
+        "agent_steps": result["agent_steps"],
+        "created_at": now.isoformat(),
+        "created_by": user.uid,
+        "agent_ms": int((datetime.now(timezone.utc) - now).total_seconds() * 1000),
+    }
+    db.collection("work_orders").document(wo_id).set(doc)
+    return {**doc, "existing": False}
 
 
 @app.post("/forge/agents/demand")
