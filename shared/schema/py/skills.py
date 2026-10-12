@@ -39,6 +39,7 @@ class Status(Enum):
     draft = 'draft'
     in_review = 'in_review'
     published = 'published'
+    archived = 'archived'
 
 
 class Master(BaseModel):
@@ -135,7 +136,10 @@ class Skill(BaseModel):
     )
     source_language: SourceLanguage
     languages: list[Language]
-    status: Status
+    status: Status = Field(
+        ...,
+        description='archived: withdrawn from the library and from Station Watch, kept for the record',
+    )
     master: Master
     video_uri: AnyUrl | None = None
     safety_rules: list[str]

@@ -29,7 +29,8 @@
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "in_review", "published"]
+      "enum": ["draft", "in_review", "published", "archived"],
+      "description": "archived: withdrawn from the library and from Station Watch, kept for the record"
     },
     "master": {
       "type": "object",

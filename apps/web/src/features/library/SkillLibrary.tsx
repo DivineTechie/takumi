@@ -55,6 +55,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
   }, []);
 
   const filteredSkills = skills.filter((s) => {
+    if (s.status === 'archived') return false;
     const matchesSearch =
       s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.master.display_name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -218,8 +219,8 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
             )}
             {loadState === 'ready' && (
               <>
-                <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '0.35rem' }}>{t('no_lessons_title')}</div>
-                <div style={{ fontSize: '0.9rem', color: '#a1a1aa' }}>{t('card_teach_desc')}</div>
+                <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '0.35rem' }}>{t('app.library_empty_title')}</div>
+                <div style={{ fontSize: '0.9rem', color: '#a1a1aa' }}>{t('app.library_empty_desc')}</div>
               </>
             )}
           </div>
@@ -291,7 +292,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
                 <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1rem', color: '#a1a1aa', fontSize: '0.8rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     <Layers size={14} color="#fbbf24" />
-                    <span>{t('app.library_steps_count', { count: item.steps.length })}</span>
+                    <span>{item.steps.length === 1 ? t('app.library_steps_one') : t('app.library_steps_count', { count: item.steps.length })}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     <Globe size={14} color="#34d399" />

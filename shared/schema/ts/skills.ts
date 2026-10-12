@@ -19,7 +19,10 @@ export interface Skill {
   capture_id?: string;
   source_language: "en" | "ja" | "vi" | "hi" | "id" | "fil";
   languages: ("en" | "ja" | "vi" | "hi" | "id" | "fil")[];
-  status: "draft" | "in_review" | "published";
+  /**
+   * archived: withdrawn from the library and from Station Watch, kept for the record
+   */
+  status: "draft" | "in_review" | "published" | "archived";
   master: {
     display_name: string;
     role: string;

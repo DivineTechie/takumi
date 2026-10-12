@@ -19,7 +19,7 @@ describe('SkillLibrary', () => {
   it('shows an empty library instead of a sample lesson', () => {
     store.collections['skills'] = [];
     renderLibrary();
-    expect(screen.getByText('no_lessons_title')).toBeInTheDocument();
+    expect(screen.getByText('app.library_empty_title')).toBeInTheDocument();
     expect(screen.queryByText(/DIN-rail/)).not.toBeInTheDocument();
   });
 
@@ -36,6 +36,15 @@ describe('SkillLibrary', () => {
     }];
     renderLibrary();
     expect(screen.getByText('Wire a terminal block')).toBeInTheDocument();
-    expect(screen.queryByText('no_lessons_title')).not.toBeInTheDocument();
+    expect(screen.queryByText('app.library_empty_title')).not.toBeInTheDocument();
+  });
+
+  it('hides archived instructions', () => {
+    store.collections['skills'] = [{
+      id: 'skill_old', title: 'Withdrawn draft', status: 'archived', languages: ['en'],
+      master: { display_name: 'Master Craftsman', role: 'Senior Technician' }, steps: [{ n: 1 }], created_at: '2026-10-07T10:00:00Z',
+    }];
+    renderLibrary();
+    expect(screen.queryByText('Withdrawn draft')).not.toBeInTheDocument();
   });
 });
