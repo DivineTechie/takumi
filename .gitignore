@@ -80,3 +80,6 @@ takumi-private/
 # Build artifacts generated during deployment
 apps/web/public/version.json
 .firebase/
+
+# Local tool settings
+.claude/
