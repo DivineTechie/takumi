@@ -10,6 +10,8 @@ import {
 } from '../../lib/api';
 import { AgentWorking } from '../AgentWorking';
 import { useI18n } from '../../i18n';
+import { usePolling } from '../../lib/usePolling';
+import { stampText } from '../../lib/controlEvents';
 
 /**
  * Maintenance work orders (control tower). When a machine stops, the Google ADK maintenance agent
@@ -153,7 +155,7 @@ const WorkOrderCard: React.FC<{
         <h3 className="font-bold text-on-surface">{d.title}</h3>
         <p className="text-xs text-on-surface-variant">
           {wo.machine_name ?? wo.machine_id}
-          {wo.alarm_text ? ` · ${wo.alarm_text}` : ''} · {t('ops.work_orders_drafted_at', { time: new Date(wo.created_at).toLocaleTimeString(language) })}
+          {wo.alarm_text ? ` · ${wo.alarm_text}` : ''} · {t('ops.work_orders_drafted_at', { time: stampText(wo.created_at, language) })}
           {wo.agent_ms ? ` ${t('ops.work_orders_drafted_in', { s: (wo.agent_ms / 1000).toFixed(1) })}` : ''}
         </p>
       </div>
@@ -261,11 +263,7 @@ export const WorkOrdersPanel: React.FC<{
     }
   }, []);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
-  }, [load]);
+  usePolling(load, 15_000);
 
   const runNext = useCallback(async () => {
     if (busy.current) return;

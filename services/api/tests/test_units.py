@@ -1,4 +1,4 @@
-"""Unit records (P16): serial on Station Watch sessions, station records, history, holds."""
+"""Unit records: serial on Station Watch sessions, station records, history, holds."""
 
 from unittest.mock import patch
 

@@ -1,4 +1,4 @@
-"""Unit records and quality trace-back data (P16).
+"""Unit records and quality trace-back data.
 
 A unit is one physical product, identified by its serial. Each Station Watch session started with a
 serial adds a station record (which station, which steps were verified, where mistakes or safety

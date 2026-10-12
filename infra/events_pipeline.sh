@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Operational events pipeline (P18): Cloud Run -> Pub/Sub topic takumi-events -> BigQuery subscription -> takumi.events.
+# Operational events pipeline: Cloud Run -> Pub/Sub topic takumi-events -> BigQuery subscription -> takumi.events.
 # Idempotent: safe to re-run. Run from the repo root with gcloud and bq authenticated as a project owner.
 set -euo pipefail
 PROJECT=takumi-cup-2026

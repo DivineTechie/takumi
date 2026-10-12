@@ -1,4 +1,4 @@
-"""Events pipeline (P18): event shape, source labels, publishing guard and control tower KPIs."""
+"""Events pipeline: event shape, source labels, publishing guard and control tower KPIs."""
 
 import json
 from datetime import datetime, timezone

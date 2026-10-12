@@ -34,7 +34,7 @@ export interface Session {
    */
   preview?: boolean;
   /**
-   * Serial of the unit built in this Station Watch session (P16), or null
+   * Serial of the unit built in this Station Watch session, or null
    */
   unit_id?: string | null;
 }

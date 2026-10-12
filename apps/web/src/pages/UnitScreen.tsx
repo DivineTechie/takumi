@@ -24,7 +24,7 @@ const TRACE_TOOL_LABEL: Record<string, string> = {
 };
 
 /**
- * Unit record (P16) and quality trace-back: every station the unit went through (with the evidence
+ * Unit record and quality trace-back: every station the unit went through (with the evidence
  * frames of any mistake or safety stop) and every inspection. Supervisors can ask the trace-back agent
  * where a defect started; the agent only proposes, and holds happen when the supervisor approves.
  */
@@ -203,9 +203,9 @@ export const UnitScreen: React.FC = () => {
                   {r.incomplete_steps.length > 0 && ` · ${t('quality.unit_not_verified', { steps: r.incomplete_steps.join(', ') })}`}
                 </div>
                 {r.issues.length > 0 && (
-                  <ul className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {r.issues.map((i, k) => (
-                      <li key={k} className="flex gap-3 bg-surface-container rounded-xl p-2">
+                      <li key={k} className="flex gap-3 min-w-0 bg-surface-container rounded-xl p-2">
                         {i.frame_url ? (
                           <img src={i.frame_url} alt={t('quality.unit_evidence_alt', { step: i.step ?? '' })} className="w-24 h-24 object-cover rounded-lg shrink-0" />
                         ) : (

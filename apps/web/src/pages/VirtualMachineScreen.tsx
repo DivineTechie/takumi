@@ -22,7 +22,7 @@ import logoSvg from '../assets/logo.svg';
 import { useI18n } from '../i18n';
 
 /**
- * HOME RIG test bench (P17): 1-3 simulated machines with a stack light, a parts counter and an HMI
+ * HOME RIG test bench: 1-3 simulated machines with a stack light, a parts counter and an HMI
  * screen. A camera pointed at this page is watched by /machines/watch. During a soak run every state
  * change, alarm and part is logged as ground truth (server timestamps) so detections can be scored.
  */

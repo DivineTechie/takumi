@@ -15,10 +15,11 @@ import {
 import { RateCap, RegionChange, StableValue, roiToPixels, stackLightLit, type Roi } from '../lib/machineVision';
 import { MACHINE_WATCH } from '../config';
 import { useI18n } from '../i18n';
-import { agoText, stateLabel, type TFn } from '../lib/controlEvents';
+import { agoText, stampText, stateLabel, type TFn } from '../lib/controlEvents';
+import { latestPerMachine } from '../lib/machinesView';
 
 /**
- * Machine Watch (P17): a fixed camera (old phone or webcam) watches stack lights, counters and HMI
+ * Machine Watch: a fixed camera (old phone or webcam) watches stack lights, counters and HMI
  * screens. Gemini Robotics-ER finds the regions once; the browser then checks them every 500 ms for
  * free and only asks Gemini Flash-Lite to read a machine when something changed. Only small region
  * crops ever leave the device.
@@ -179,6 +180,13 @@ export const MachineWatchScreen: React.FC = () => {
   const [views, setViews] = useState<Record<string, MachineView>>({});
 
   const watched = useMemo(() => machines.filter((m) => selected.includes(m.id)), [machines, selected]);
+  // Repeated setups of the same machine are listed once; older ones stay one tap away.
+  const [showOlder, setShowOlder] = useState(false);
+  const { listed, older } = useMemo(() => {
+    const { latest } = latestPerMachine(machines);
+    const keep = new Set([...latest.map((m) => m.id), ...selected]);
+    return { listed: machines.filter((m) => keep.has(m.id)), older: machines.filter((m) => !keep.has(m.id)) };
+  }, [machines, selected]);
 
   const refreshLists = useCallback(async () => {
     try {
@@ -810,13 +818,13 @@ export const MachineWatchScreen: React.FC = () => {
               <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-2">
                 <h2 className="font-bold">{t('ops.watch_list_title')}</h2>
                 {machines.length === 0 && <p className="text-sm text-on-surface-variant">{t('ops.watch_list_empty')}</p>}
-                {machines.map((m) => (
+                {[...listed, ...(showOlder ? older : [])].map((m) => (
                   <div key={m.id} className="flex items-center gap-2 text-sm min-h-[44px]">
                     <label className="flex flex-1 items-center gap-2 min-h-[44px]">
                       <input type="checkbox" checked={selected.includes(m.id)} onChange={() => toggle(m.id)} disabled={mode === 'watching'} />
                       <span className="flex-1 min-w-0 break-words">{m.name}</span>
                       <span className="text-xs text-on-surface-variant">
-                        {m.source === 'VIRTUAL' ? 'HOME RIG' : 'LIVE'} · {new Date(m.created_at).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}
+                        {m.source === 'VIRTUAL' ? 'HOME RIG' : 'LIVE'} · {stampText(m.created_at, language)}
                       </span>
                     </label>
                     <button
@@ -838,6 +846,11 @@ export const MachineWatchScreen: React.FC = () => {
                     </button>
                   </div>
                 ))}
+                {older.length > 0 && (
+                  <button type="button" onClick={() => setShowOlder((v) => !v)} className="min-h-[44px] self-start px-3 rounded-lg text-sm font-bold text-primary">
+                    {showOlder ? t('ops.watch_list_older_hide') : t('ops.watch_list_older_show', { n: older.length })}
+                  </button>
+                )}
               </div>
 
               <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-2">

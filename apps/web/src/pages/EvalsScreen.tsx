@@ -7,7 +7,7 @@ import agents from '../evals/agentResults.json';
 import { useI18n } from '../i18n';
 
 /**
- * /evals (P20): the evidence behind TAKUMI, public. Every figure carries its label: PUBLIC DATA
+ * /evals: the evidence behind TAKUMI, public. Every figure carries its label: PUBLIC DATA
  * (dataset + licence), HOME RIG (our test bench filmed by a real camera) or LIVE (our deployment).
  */
 
@@ -94,7 +94,7 @@ export const EvalsScreen: React.FC = () => {
   const [catSetup, setCatSetup] = useState<SetupKey>('few_false_alarms');
 
   useEffect(() => {
-    fetchLiveLatency(30)
+    fetchLiveLatency(90)
       .then((r) => setLive(r.endpoints))
       .catch(() => setLiveError(true));
   }, []);
@@ -373,7 +373,8 @@ export const EvalsScreen: React.FC = () => {
           </p>
           {liveError && <p className="text-sm text-red-400">{t('quality.evals_live_error')}</p>}
           {!live && !liveError && <p className="text-sm text-on-surface-variant">{t('quality.evals_loading')}</p>}
-          {live && (
+          {live && live.length === 0 && <p className="text-sm text-on-surface-variant">{t('quality.evals_live_empty')}</p>}
+          {live && live.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[520px]" data-testid="live-table">
                 <thead className="text-left text-on-surface-variant">

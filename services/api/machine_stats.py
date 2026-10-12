@@ -1,4 +1,4 @@
-"""Daily Machine Watch statistics computed from machine_events (P17).
+"""Daily Machine Watch statistics computed from machine_events.
 
 Pure functions only, so the dashboard numbers can be unit-tested without Firestore.
 """

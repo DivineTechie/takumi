@@ -1,4 +1,4 @@
-"""Machine Watch API endpoints for TAKUMI (Pillar 3).
+"""Machine Watch API endpoints for TAKUMI.
 
 Implements:
 - POST /api/machines/setup (Gemini Robotics-ER bounding box detection)

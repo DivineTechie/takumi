@@ -1,5 +1,5 @@
 /**
- * HOME RIG test bench fault schedule (P17): a deterministic, seeded timeline of running / idle /
+ * HOME RIG test bench fault schedule: a deterministic, seeded timeline of running / idle /
  * stopped periods with alarms for each simulated machine, so a soak run can be replayed and scored.
  */
 

@@ -126,7 +126,7 @@
         "null"
       ],
       "pattern": "^[A-Za-z0-9._-]{1,64}$",
-      "description": "Serial of the unit built in this Station Watch session (P16), or null"
+      "description": "Serial of the unit built in this Station Watch session, or null"
     }
   },
   "required": [

@@ -13,11 +13,22 @@ export function stateLabel(t: TFn, state: string | null | undefined): string {
 }
 
 /** "12s ago" / "3 min ago" / "2 h ago" (hours only when `withHours` is set). */
-export function agoText(t: TFn, seconds: number, withHours = false): string {
+/** "42s ago", "12 min ago", "4 h ago", "3 d ago": the unit grows with the age so old data stays readable. */
+export function agoText(t: TFn, seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
-  if (s < (withHours ? 90 : 60)) return t('ops.common_s_ago', { n: s });
-  if (!withHours || s < 5400) return t('ops.common_min_ago', { n: Math.round(s / 60) });
-  return t('ops.common_h_ago', { n: Math.round(s / 3600) });
+  if (s < 60) return t('ops.common_s_ago', { n: s });
+  if (s < 5400) return t('ops.common_min_ago', { n: Math.round(s / 60) });
+  if (s < 36 * 3600) return t('ops.common_h_ago', { n: Math.round(s / 3600) });
+  return t('ops.common_d_ago', { n: Math.round(s / 86400) });
+}
+
+/** Time of day for today's events, date and time for older ones (a feed read days later stays unambiguous). */
+export function stampText(iso: string, language: string, now: Date = new Date()): string {
+  const d = new Date(iso);
+  const sameDay = d.toDateString() === now.toDateString();
+  return sameDay
+    ? d.toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleString(language, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 const english: TFn = (key, params) => getTranslation('en', key, params);

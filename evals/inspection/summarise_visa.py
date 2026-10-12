@@ -1,4 +1,4 @@
-"""Summarise a VisA inspection benchmark run into the files the /evals page and README use (P20).
+"""Summarise a VisA inspection benchmark run into the files the /evals page and README use.
 
 Input: the per-image JSONL written by the benchmark runner: one line per test image with the
 category, the dataset label and both stage results ("lite_ref" = gemini-3.5-flash-lite with 3

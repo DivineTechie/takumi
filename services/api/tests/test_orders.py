@@ -1,4 +1,4 @@
-"""Orders and live projection for the demand agent (P19)."""
+"""Orders and live projection for the demand agent."""
 
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch

@@ -31,7 +31,7 @@
     },
     "station_records": {
       "type": "array",
-      "description": "One record per finished Station Watch session on this unit (P16)",
+      "description": "One record per finished Station Watch session on this unit",
       "items": {
         "type": "object",
         "properties": {

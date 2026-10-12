@@ -74,8 +74,7 @@ class Unit(BaseModel):
     created_at: AwareDatetime = Field(..., description='Creation timestamp')
     status: Status = Field(..., description='Lifecycle state of the unit')
     station_records: list[StationRecord] = Field(
-        ...,
-        description='One record per finished Station Watch session on this unit (P16)',
+        ..., description='One record per finished Station Watch session on this unit'
     )
     inspections: list[str] = Field(
         ..., description='Ordered inspection IDs performed on this unit'

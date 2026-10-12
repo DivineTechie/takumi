@@ -35,15 +35,16 @@ export const StatusScreen: React.FC = () => {
   }, [loadStatus]);
 
   const hasLatencyData =
-    status?.last_24h &&
-    (status.last_24h.sessions > 0 ||
-      status.last_24h.p50_ms.watch !== null ||
-      status.last_24h.p50_ms.verify !== null ||
-      status.last_24h.p50_ms.point !== null ||
-      status.last_24h.p50_ms.decision_to_audio !== null);
+    status?.recent &&
+    (status.recent.sessions > 0 ||
+      status.recent.p50_ms.watch !== null ||
+      status.recent.p50_ms.verify !== null ||
+      status.recent.p50_ms.point !== null ||
+      status.recent.p50_ms.decision_to_audio !== null);
 
   const isCoachingActive = status?.sessions_enabled ?? true;
-  const isApiHealthy = status?.api === 'ok';
+  const isGeminiHealthy = status?.gemini !== 'unavailable';
+  const isApiHealthy = status?.api === 'ok' && isGeminiHealthy;
 
   return (
     <div className="min-h-screen bg-surface text-on-surface flex flex-col items-center px-4 py-8 md:py-12">
@@ -76,7 +77,7 @@ export const StatusScreen: React.FC = () => {
               <span className="hidden sm:inline">{t('app.status_refresh')}</span>
             </button>
             <Link
-              to="/coach"
+              to="/"
               className="px-3.5 py-2 text-sm font-semibold rounded-lg bg-primary-container text-on-primary-container hover:brightness-105 transition-all shadow-sm"
             >
               {t('app.status_open_app')}
@@ -147,7 +148,23 @@ export const StatusScreen: React.FC = () => {
             </div>
 
             {/* Core Services Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl bg-surface-container border border-outline-variant flex items-center justify-between">
+                <div className="flex flex-col">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
+                    {t('app.status_gemini')}
+                  </span>
+                  <span className="text-base font-bold mt-1">
+                    {isGeminiHealthy ? t('app.status_operational') : t('app.status_degraded')}
+                  </span>
+                </div>
+                <span
+                  className={`w-3 h-3 rounded-full ${
+                    isGeminiHealthy ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+                  }`}
+                />
+              </div>
+
               <div className="p-4 rounded-xl bg-surface-container border border-outline-variant flex items-center justify-between">
                 <div className="flex flex-col">
                   <span className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
@@ -170,12 +187,12 @@ export const StatusScreen: React.FC = () => {
                     {t('app.status_api')}
                   </span>
                   <span className="text-base font-bold mt-1">
-                    {isApiHealthy ? t('app.status_operational') : t('app.status_degraded')}
+                    {status?.api === 'ok' ? t('app.status_operational') : t('app.status_degraded')}
                   </span>
                 </div>
                 <span
                   className={`w-3 h-3 rounded-full ${
-                    isApiHealthy ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
+                    status?.api === 'ok' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'
                   }`}
                 />
               </div>
@@ -183,10 +200,10 @@ export const StatusScreen: React.FC = () => {
               <div className="p-4 rounded-xl bg-surface-container border border-outline-variant flex items-center justify-between">
                 <div className="flex flex-col">
                   <span className="text-xs font-semibold uppercase tracking-wider text-on-surface-variant">
-                    {t('app.status_sessions_24h')}
+                    {t('app.status_sessions_7d')}
                   </span>
                   <span className="text-base font-bold mt-1">
-                    {status?.last_24h?.sessions ?? 0}
+                    {status?.recent?.sessions ?? 0}
                   </span>
                 </div>
                 <span className="material-symbols-outlined text-primary text-xl">
@@ -237,43 +254,43 @@ export const StatusScreen: React.FC = () => {
                         <td className="py-3 px-3 font-semibold text-on-surface">{t('app.status_row_watch')}</td>
                         <td className="py-3 px-3 text-xs text-on-surface-variant">gemini-3.5-flash-lite</td>
                         <td className="py-3 px-3 text-right font-mono font-medium">
-                          {status?.last_24h.p50_ms.watch !== null ? t('app.status_ms', { value: status?.last_24h.p50_ms.watch ?? '' }) : '—'}
+                          {status?.recent.p50_ms.watch !== null ? t('app.status_ms', { value: status?.recent.p50_ms.watch ?? '' }) : '—'}
                         </td>
                         <td className="py-3 px-3 text-right font-mono text-on-surface-variant">
-                          {status?.last_24h.p90_ms.watch !== null ? t('app.status_ms', { value: status?.last_24h.p90_ms.watch ?? '' }) : '—'}
+                          {status?.recent.p90_ms.watch !== null ? t('app.status_ms', { value: status?.recent.p90_ms.watch ?? '' }) : '—'}
                         </td>
                       </tr>
                       <tr>
                         <td className="py-3 px-3 font-semibold text-on-surface">{t('app.status_row_verify')}</td>
                         <td className="py-3 px-3 text-xs text-on-surface-variant">gemini-3.8-flash</td>
                         <td className="py-3 px-3 text-right font-mono font-medium">
-                          {status?.last_24h.p50_ms.verify !== null ? t('app.status_ms', { value: status?.last_24h.p50_ms.verify ?? '' }) : '—'}
+                          {status?.recent.p50_ms.verify !== null ? t('app.status_ms', { value: status?.recent.p50_ms.verify ?? '' }) : '—'}
                         </td>
                         <td className="py-3 px-3 text-right font-mono text-on-surface-variant">
-                          {status?.last_24h.p90_ms.verify !== null ? t('app.status_ms', { value: status?.last_24h.p90_ms.verify ?? '' }) : '—'}
+                          {status?.recent.p90_ms.verify !== null ? t('app.status_ms', { value: status?.recent.p90_ms.verify ?? '' }) : '—'}
                         </td>
                       </tr>
                       <tr>
                         <td className="py-3 px-3 font-semibold text-on-surface">{t('app.status_row_point')}</td>
                         <td className="py-3 px-3 text-xs text-on-surface-variant">gemini-robotics-er-2-preview</td>
                         <td className="py-3 px-3 text-right font-mono font-medium">
-                          {status?.last_24h.p50_ms.point !== null ? t('app.status_ms', { value: status?.last_24h.p50_ms.point ?? '' }) : '—'}
+                          {status?.recent.p50_ms.point !== null ? t('app.status_ms', { value: status?.recent.p50_ms.point ?? '' }) : '—'}
                         </td>
                         <td className="py-3 px-3 text-right font-mono text-on-surface-variant">
-                          {status?.last_24h.p90_ms.point !== null ? t('app.status_ms', { value: status?.last_24h.p90_ms.point ?? '' }) : '—'}
+                          {status?.recent.p90_ms.point !== null ? t('app.status_ms', { value: status?.recent.p90_ms.point ?? '' }) : '—'}
                         </td>
                       </tr>
                       <tr>
                         <td className="py-3 px-3 font-semibold text-on-surface">{t('app.status_row_decision')}</td>
                         <td className="py-3 px-3 text-xs text-on-surface-variant">{t('app.status_row_decision_desc')}</td>
                         <td className="py-3 px-3 text-right font-mono font-medium">
-                          {status?.last_24h.p50_ms.decision_to_audio !== null
-                            ? t('app.status_ms', { value: status?.last_24h.p50_ms.decision_to_audio ?? '' })
+                          {status?.recent.p50_ms.decision_to_audio !== null
+                            ? t('app.status_ms', { value: status?.recent.p50_ms.decision_to_audio ?? '' })
                             : '—'}
                         </td>
                         <td className="py-3 px-3 text-right font-mono text-on-surface-variant">
-                          {status?.last_24h.p90_ms.decision_to_audio !== null
-                            ? t('app.status_ms', { value: status?.last_24h.p90_ms.decision_to_audio ?? '' })
+                          {status?.recent.p90_ms.decision_to_audio !== null
+                            ? t('app.status_ms', { value: status?.recent.p90_ms.decision_to_audio ?? '' })
                             : '—'}
                         </td>
                       </tr>

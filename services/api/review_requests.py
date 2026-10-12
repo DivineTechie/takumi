@@ -1,4 +1,4 @@
-"""Review requests (P21): a supervisor sends a suggested work-instruction change to the Standard Work Studio.
+"""Review requests: a supervisor sends a suggested work-instruction change to the Standard Work Studio.
 
 Typically the suggestion comes from the quality trace-back agent and the supervisor approves sending
 it. Masters then apply or dismiss it in the Studio (Firestore rules let them change only the status).

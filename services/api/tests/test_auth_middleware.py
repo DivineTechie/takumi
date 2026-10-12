@@ -34,8 +34,8 @@ def test_forbidden_role_returns_403():
         )
         assert response.status_code == 403
 
-    # Master cannot call watch (requires 'trainee' or 'supervisor')
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "user2", "role": "master"}):
+    # A signed-in account without a role cannot call watch
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "user2"}):
         response = client.post(
             "/api/watch",
             json={

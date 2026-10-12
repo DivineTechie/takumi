@@ -1,4 +1,4 @@
-"""Unit and integration tests for Machine Watch (Pillar 3)."""
+"""Unit and integration tests for Machine Watch."""
 
 import asyncio
 import base64

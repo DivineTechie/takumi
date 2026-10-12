@@ -1,16 +1,17 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { fetchMachines, type Machine } from '../../lib/api';
 import { agoText, stateLabel, type TFn } from '../../lib/controlEvents';
 import { useI18n } from '../../i18n';
 import { visibleMachines } from '../../lib/machinesView';
+import { usePolling } from '../../lib/usePolling';
 
 /**
- * Live machine states for the control tower (P17/P18). The phone on the floor only senses; this is
+ * Live machine states for the control tower. The phone on the floor only senses; this is
  * where a supervisor notices a stop: stopped machines turn red with their alarm text, and with alerts
  * switched on the page beeps when a machine newly stops.
  */
 
-const POLL_MS = 5_000;
+const POLL_MS = 10_000;
 /** Longer than the 10-minute check-in: after this the last state is stale, not a live stop. */
 const STALE_MS = 15 * 60_000;
 
@@ -78,11 +79,7 @@ export const MachinesNow: React.FC<{
     }
   }, [alertsOn, beep]);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, POLL_MS);
-    return () => clearInterval(t);
-  }, [load]);
+  usePolling(load, POLL_MS);
 
   const toggleAlerts = () => {
     if (!alertsOn) {

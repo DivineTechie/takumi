@@ -4,7 +4,7 @@ import { stateLabel, type TFn } from '../../lib/controlEvents';
 import { useI18n } from '../../i18n';
 
 /**
- * Supervisor view of Machine Watch (P17): today's state timeline per machine, availability, stops,
+ * Supervisor view of Machine Watch: today's state timeline per machine, availability, stops,
  * downtime, top alarms and parts, all computed by the API from real machine_events. Every figure
  * carries its source label (LIVE or HOME RIG); empty values show "—".
  */

@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 // Standard Work Studio routes: record a task, follow the Studio run, review and publish, library.
 import type { ReactNode } from 'react';
 import type { Role } from '../lib/auth';

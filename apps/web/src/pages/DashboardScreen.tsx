@@ -217,7 +217,7 @@ export const DashboardScreen: React.FC = () => {
             onClick={() => loadSkills()}
             disabled={skillsLoading}
             aria-label={t('app.dashboard_refresh')}
-            className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+            className="hidden w-9 h-9 sm:w-10 sm:h-10 sm:flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer disabled:opacity-50 shrink-0"
             type="button"
           >
             <span className={`material-symbols-outlined text-[19px] sm:text-[20px] ${skillsLoading ? 'animate-spin' : ''}`}>

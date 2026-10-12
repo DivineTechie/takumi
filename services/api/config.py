@@ -1,22 +1,18 @@
 """Model IDs and runtime configuration for TAKUMI API service.
 
-Model IDs live ONLY in services/*/config.py and apps/web/src/config.ts.
-Never use Gemini 1.x/2.x names or Imagen.
-Do not set temperature (deprecated on 3.6+).
+Model IDs live ONLY in services/*/config.py. Never use Gemini 1.x/2.x names or Imagen.
+Do not set temperature (deprecated on 3.6+). Each ID can be overridden with an environment
+variable of the same name, so a retired preview model can be swapped without a code change.
 """
 
 import os
 
 # Approved Google Model IDs
-MODEL_FLASH = "gemini-3.8-flash"
-MODEL_FLASH_LITE = "gemini-3.5-flash-lite"
-MODEL_LIVE = "gemini-3.8-live"
-MODEL_ROBOTICS_ER = "gemini-robotics-er-2-preview"
-MODEL_FLASH_IMAGE = "gemini-3.1-flash-image"
-MODEL_VEO = "veo-3.1-fast-generate-preview"
-MODEL_OMNI = "gemini-omni-1.1-flash"
-MODEL_TTS = "gemini-3.8-flash-tts"
-MODEL_EMBEDDING = "gemini-embedding-2-preview"
+MODEL_FLASH = os.environ.get("MODEL_FLASH", "gemini-3.8-flash")
+MODEL_FLASH_LITE = os.environ.get("MODEL_FLASH_LITE", "gemini-3.5-flash-lite")
+MODEL_LIVE = os.environ.get("MODEL_LIVE", "gemini-3.8-live")
+MODEL_ROBOTICS_ER = os.environ.get("MODEL_ROBOTICS_ER", "gemini-robotics-er-2-preview")
+MODEL_TTS = os.environ.get("MODEL_TTS", "gemini-3.8-flash-tts")
 
 # Environment & Credentials
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
@@ -26,6 +22,8 @@ LOCAL_DEV = os.environ.get("LOCAL_DEV") == "1"
 # Per-User Daily Rate Limits
 LIMIT_LIVE_TOKENS_PER_DAY = int(os.environ.get("LIMIT_LIVE_TOKENS_PER_DAY", "60"))
 LIMIT_CHECKS_PER_DAY = int(os.environ.get("LIMIT_CHECKS_PER_DAY", "3000"))
+# Backstop across all users; the API runs at most 3 instances, so the project-wide ceiling is 3x this.
+LIMIT_INSTANCE_CALLS_PER_DAY = int(os.environ.get("LIMIT_INSTANCE_CALLS_PER_DAY", "20000"))
 
 # Timeouts in seconds
 TIMEOUT_WATCH_S = 6.0
@@ -54,7 +52,7 @@ INSPECT_JPEG_QUALITY = 90
 MAX_REQUEST_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
 
 # Cloud Storage Bucket
-# Pub/Sub topic for operational events (P18); a BigQuery subscription writes them to takumi.events
+# Pub/Sub topic for operational events; a BigQuery subscription writes them to takumi.events
 EVENTS_TOPIC = os.environ.get("EVENTS_TOPIC", "takumi-events").strip()
 STORAGE_BUCKET = os.environ.get("FIREBASE_STORAGE_BUCKET", "takumi-cup-2026.firebasestorage.app")
 BQ_LOCATION = os.environ.get("BIGQUERY_LOCATION", "asia-southeast1")

@@ -1,5 +1,5 @@
 /**
- * Machine Watch edge vision (P17): cheap per-frame checks that run in the browser so Gemini is only
+ * Machine Watch edge vision: cheap per-frame checks that run in the browser so Gemini is only
  * called when something on the machine changes. "Gemini configures, the edge watches, Gemini reasons."
  */
 

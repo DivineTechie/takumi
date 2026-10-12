@@ -1,4 +1,4 @@
-"""Unit and integration tests for End-of-Line Quality Inspection API (P15).
+"""Unit and integration tests for End-of-Line Quality Inspection API.
 
 Tests:
 - Dual-stage few_false_alarms mode (screen ok -> skip confirm; screen flag -> confirm).

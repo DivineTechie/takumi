@@ -718,7 +718,6 @@ export class GeminiLiveClient {
 
     // Exponential backoff: 500ms, 1500ms, 3000ms
     const delay = Math.min(500 * Math.pow(2, this.reconnectAttempts - 1), 3000);
-    console.log(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms...`);
 
     if (this.reconnectTimeoutId !== null) {
       clearTimeout(this.reconnectTimeoutId);

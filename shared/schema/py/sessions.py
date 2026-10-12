@@ -77,5 +77,5 @@ class Session(BaseModel):
     )
     unit_id: constr(pattern=r'^[A-Za-z0-9._-]{1,64}$') | None = Field(
         None,
-        description='Serial of the unit built in this Station Watch session (P16), or null',
+        description='Serial of the unit built in this Station Watch session, or null',
     )

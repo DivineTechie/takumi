@@ -1,4 +1,4 @@
-"""Score a Machine Watch soak run (HOME RIG) against its ground truth (P17).
+"""Score a Machine Watch soak run (HOME RIG) against its ground truth.
 
 Usage (from the repo root, with gcloud application-default credentials):
     python -m evals.machine_watch.score_soak <soak_run_id> [--out PATH] [--window 120]

@@ -1,4 +1,4 @@
-"""Public LIVE evaluation figures for the /evals page (P20): production API timings from BigQuery.
+"""Public LIVE evaluation figures for the /evals page: production API timings from BigQuery.
 
 Only aggregates are returned (count, median and 90th-percentile latency per endpoint), never rows.
 """
@@ -33,7 +33,7 @@ ORDER BY n DESC
 
 
 @router.get("/evals/live")
-def live_latency(days: int = Query(default=30, ge=1, le=90)) -> dict[str, Any]:
+def live_latency(days: int = Query(default=90, ge=1, le=90)) -> dict[str, Any]:
     """Successful production calls per endpoint with median and p90 latency (LIVE label)."""
     hit = _CACHE.get(days)
     if hit and time.time() - hit[0] < CACHE_S:

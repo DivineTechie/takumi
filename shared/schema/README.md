@@ -19,10 +19,10 @@ All timestamps are stored as ISO-8601 UTC strings (e.g. `2026-10-05T09:30:00Z`),
 
 ## Shared HTTP APIs
 
-These endpoints define the inter-service HTTP contract between Member A (API & Coach) and Member B (Forge pipeline).
+These endpoints define the inter-service HTTP contract between the API service and the Forge service.
 
 ### 1. `POST /api/live-token`
-- **Owner**: Member A
+- **Owner**: API service
 - **Description**: Issues a single-use Gemini Live token locked to `gemini-3.8-live` with audio output.
 - **Auth**: Firebase ID token (`Authorization: Bearer <idToken>`)
 - **Request Body**:
@@ -41,7 +41,7 @@ These endpoints define the inter-service HTTP contract between Member A (API & C
   ```
 
 ### 2. `POST /forge/jobs`
-- **Owner**: Member B
+- **Owner**: Forge service
 - **Description**: Triggers asynchronous Forge pipeline execution for a capture.
 - **Auth**: Firebase ID token (`Authorization: Bearer <idToken>`)
 - **Request Body**:
@@ -59,7 +59,7 @@ These endpoints define the inter-service HTTP contract between Member A (API & C
   ```
 
 ### 3. `GET /forge/jobs/{job_id}`
-- **Owner**: Member B
+- **Owner**: Forge service
 - **Description**: Fetches current status of a Forge pipeline job. (UIs stream Firestore events instead).
 - **Auth**: Firebase ID token (`Authorization: Bearer <idToken>`)
 - **Response** (200 OK):

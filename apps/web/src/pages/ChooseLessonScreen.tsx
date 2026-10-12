@@ -127,7 +127,7 @@ export const ChooseLessonScreen: React.FC = () => {
                   <h2 className="font-headline-md font-bold text-on-surface leading-snug">
                     {skill.title}
                   </h2>
-                  <p className="font-body-md text-slate-300 mt-2 font-normal">
+                  <p className="font-body-md text-on-surface-variant mt-2 font-normal">
                     {skill.master
                       ? t('station.choose_master_line', { name: skill.master.display_name, role: skill.master.role })
                       : t('station.choose_master_fallback')}

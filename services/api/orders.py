@@ -1,4 +1,4 @@
-"""Orders for the demand agent (P19): a supervisor enters today's orders; status is projected live.
+"""Orders for the demand agent: a supervisor enters today's orders; status is projected live.
 
 The projection (parts made, recent rate, yield, shortfall) is computed by shared.ops.demand from real
 Machine Watch counts and inspections, so the API and the agent always show the same numbers.

@@ -136,7 +136,7 @@ def main() -> None:
     parser.add_argument(
         "--visa-dir",
         type=Path,
-        default=Path(os.environ.get("VISA_DATA_DIR", r"C:\Users\tusha\takumi-data\VisA")),
+        default=Path(os.environ.get("VISA_DATA_DIR", "data/VisA")),
         help="Path to VisA dataset root directory",
     )
     parser.add_argument("--project", default=os.getenv("GCP_PROJECT", "takumi-cup-2026"), help="GCP project ID")

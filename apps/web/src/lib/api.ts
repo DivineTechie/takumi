@@ -361,8 +361,11 @@ export async function fetchSessionReplay(sessionId: string): Promise<SessionRepl
 
 export interface SystemStatusResponse {
   api: string;
+  /** Result of a real (cached) Gemini call on the server. */
+  gemini: 'ok' | 'unavailable';
   sessions_enabled: boolean;
-  last_24h: {
+  window_days: number;
+  recent: {
     sessions: number;
     p50_ms: {
       watch: number | null;
@@ -398,7 +401,7 @@ export interface LiveLatencyRow {
 }
 
 /** Public LIVE production timings for /evals (no sign-in). */
-export async function fetchLiveLatency(days = 30): Promise<{ label: string; days: number; endpoints: LiveLatencyRow[] }> {
+export async function fetchLiveLatency(days = 90): Promise<{ label: string; days: number; endpoints: LiveLatencyRow[] }> {
   const res = await fetch(`/api/evals/live?days=${days}`);
   if (!res.ok) {
     throw new ApiError(await res.text(), res.status);
@@ -480,7 +483,7 @@ export async function askMaster(
 }
 
 // ---------------------------------------------------------------------------
-// End-of-Line Quality Inspection API (P15)
+// End-of-Line Quality Inspection API
 // ---------------------------------------------------------------------------
 
 export interface InspectionStage {

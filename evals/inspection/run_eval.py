@@ -1,4 +1,4 @@
-"""Offline evaluation benchmark for TAKUMI End-of-Line Quality Inspection (P15).
+"""Offline evaluation benchmark for TAKUMI End-of-Line Quality Inspection.
 
 Evaluates the dual-stage vision pipeline on the VisA dataset across all 12 categories,
 running BOTH stages on every image and deriving all 4 configurations:
@@ -506,7 +506,7 @@ def main() -> None:
     parser.add_argument(
         "--visa-dir",
         type=Path,
-        default=Path(os.environ.get("VISA_DATA_DIR", r"C:\Users\tusha\takumi-data\VisA")),
+        default=Path(os.environ.get("VISA_DATA_DIR", "data/VisA")),
         help="Path to VisA dataset root directory",
     )
     parser.add_argument(

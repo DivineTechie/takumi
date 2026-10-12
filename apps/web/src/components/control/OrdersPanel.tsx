@@ -12,15 +12,17 @@ import {
 } from '../../lib/api';
 import { stateLabel } from '../../lib/controlEvents';
 import { useI18n } from '../../i18n';
+import { usePolling } from '../../lib/usePolling';
+import { stampText } from '../../lib/controlEvents';
 
 /**
- * Today's orders on the control tower (P19). Projections come from real Machine Watch counts and
+ * Today's orders on the control tower. Projections come from real Machine Watch counts and
  * inspections (computed in code, same numbers as the agent's tools). "Ask the planner" runs the
  * Google ADK demand agent, which explains the risk and suggests actions; nothing changes on its own.
  */
 
-function hhmm(iso: string, language: string): string {
-  return new Date(iso).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' });
+function dueText(iso: string, language: string): string {
+  return stampText(iso, language);
 }
 
 function defaultDue(): string {
@@ -64,11 +66,9 @@ export const OrdersPanel: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    load();
     fetchMachines().then(setMachines).catch(() => setMachines([]));
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
-  }, [load]);
+  }, []);
+  usePolling(load, 30_000);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,7 +171,7 @@ export const OrdersPanel: React.FC = () => {
                 {t('ops.orders_progress', {
                   made: o.good_made,
                   quantity: o.quantity,
-                  due: hhmm(o.due_at, language),
+                  due: dueText(o.due_at, language),
                   hours: o.hours_left,
                   rate: o.rate_per_hour ?? '—',
                 })}

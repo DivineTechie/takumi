@@ -197,8 +197,9 @@ class SessionEventCreateRequest(BaseModel):
 # --- Role-checking dependencies & Helpers ---
 
 
-def require_trainee_or_supervisor(user: AuthUser = Depends(verify_auth_token)) -> AuthUser:
-    if user.role not in ("trainee", "supervisor"):
+def require_station_user(user: AuthUser = Depends(verify_auth_token)) -> AuthUser:
+    """Station Watch checks: operators, supervisors, and masters previewing their own instruction."""
+    if user.role not in ("trainee", "supervisor", "master"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Forbidden: role '{user.role}' is not allowed",
@@ -365,7 +366,7 @@ async def issue_live_token(
 @app.post("/api/watch")
 async def watch_step(
     req: WatchRequest,
-    user: AuthUser = Depends(require_trainee_or_supervisor),
+    user: AuthUser = Depends(require_station_user),
 ) -> dict[str, Any]:
     t_handler_start = time.perf_counter()
     check_rate_limit(user.uid, "checks")
@@ -398,7 +399,7 @@ async def watch_step(
 @app.post("/api/verify")
 async def verify_step(
     req: VerifyRequest,
-    user: AuthUser = Depends(require_trainee_or_supervisor),
+    user: AuthUser = Depends(require_station_user),
 ) -> dict[str, Any]:
     t_handler_start = time.perf_counter()
     check_rate_limit(user.uid, "checks")
@@ -1184,7 +1185,7 @@ _STATUS_CACHE: dict[str, Any] = {"data": None, "cached_at": 0.0}
 
 @app.get("/api/status")
 async def get_system_status(request: Request) -> dict[str, Any]:
-    """Public system health and 24-hour latency metrics computed from BigQuery.
+    """Public system health (API and a real Gemini check) and 7-day latency metrics from BigQuery.
 
     Cached for 60 seconds. Rate limited per IP (60/min).
     Returns pure numeric metrics with no user identifiers, personal names, or emails.
@@ -1198,11 +1199,11 @@ async def get_system_status(request: Request) -> dict[str, Any]:
     bq = get_bigquery_client()
     excluded_list = list(EXCLUDED_UIDS)
 
-    # 1. Total sessions in last 24h from takumi.session_events
+    # 1. Station Watch sessions in the last 7 days
     q_sessions = f"""
     SELECT COUNT(DISTINCT session_id) as session_count
     FROM `{GCP_PROJECT}.takumi.session_events`
-    WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+    WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
       AND (trainee_uid IS NULL OR (trainee_uid NOT IN UNNEST(@excluded_uids) AND trainee_uid != 'smoke-trainee'))
     """
     job_cfg_sessions = bigquery.QueryJobConfig(
@@ -1216,15 +1217,15 @@ async def get_system_status(request: Request) -> dict[str, Any]:
         if rows:
             sessions_count = int(rows[0]["session_count"] or 0)
     except Exception as exc:
-        logger.warning(f"Failed to query 24h sessions for /api/status: {exc}")
+        logger.warning(f"Failed to query 7-day sessions for /api/status: {exc}")
 
-    # 2. decision_to_audio latencies in last 24h from takumi.session_events
+    # 2. decision_to_audio latencies
     q_d2a = f"""
     SELECT
       APPROX_QUANTILES(latency_ms, 100)[OFFSET(50)] as p50,
       APPROX_QUANTILES(latency_ms, 100)[OFFSET(90)] as p90
     FROM `{GCP_PROJECT}.takumi.session_events`
-    WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+    WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
       AND source = 'watcher'
       AND type IN ('step_done', 'mistake')
       AND latency_ms IS NOT NULL
@@ -1239,14 +1240,14 @@ async def get_system_status(request: Request) -> dict[str, Any]:
     except Exception as exc:
         logger.warning(f"Failed to query decision_to_audio latencies: {exc}")
 
-    # 3. watch/verify/point latencies in last 24h from takumi.api_calls
+    # 3. watch/verify/point latencies
     q_apis = f"""
     SELECT
       endpoint,
       APPROX_QUANTILES(total_ms, 100)[OFFSET(50)] as p50,
       APPROX_QUANTILES(total_ms, 100)[OFFSET(90)] as p90
     FROM `{GCP_PROJECT}.takumi.api_calls`
-    WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+    WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
       AND status = 200
       AND endpoint IN ('watch', 'verify', 'point')
     GROUP BY endpoint
@@ -1264,10 +1265,18 @@ async def get_system_status(request: Request) -> dict[str, Any]:
     except Exception as exc:
         logger.warning(f"Failed to query api_calls latencies: {exc}")
 
+    # 4. A real (cached) Gemini call, so the page is not green while the models are unavailable
+    try:
+        gemini_state = "ok" if await check_deep_health() else "unavailable"
+    except HTTPException:
+        gemini_state = "unavailable"
+
     result = {
         "api": "ok",
+        "gemini": gemini_state,
         "sessions_enabled": SESSIONS_ENABLED,
-        "last_24h": {
+        "window_days": 7,
+        "recent": {
             "sessions": sessions_count,
             "p50_ms": p50_map,
             "p90_ms": p90_map,
@@ -1310,7 +1319,7 @@ async def post_csp_report(request: Request) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# --- End-of-Line Quality Inspection (P15) ---
+# --- End-of-Line Quality Inspection ---
 
 UNIT_ID_REGEX = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 

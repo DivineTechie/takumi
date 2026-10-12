@@ -22,7 +22,7 @@ export interface Unit {
    */
   status: "in_progress" | "passed" | "failed" | "needs_review" | "on_hold";
   /**
-   * One record per finished Station Watch session on this unit (P16)
+   * One record per finished Station Watch session on this unit
    */
   station_records: {
     session_id?: string;

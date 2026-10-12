@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 from services.api.main import app
@@ -6,11 +6,11 @@ from services.api.main import app
 
 def test_kill_switch_sessions_disabled():
     from services.api.auth import AuthUser, verify_auth_token
-    from services.api.main import require_trainee_or_supervisor
+    from services.api.main import require_station_user
 
     mock_user = AuthUser(uid="trainee_1", role="trainee", email="t@example.com", email_verified=True, display_name="Trainee")
     app.dependency_overrides[verify_auth_token] = lambda: mock_user
-    app.dependency_overrides[require_trainee_or_supervisor] = lambda: mock_user
+    app.dependency_overrides[require_station_user] = lambda: mock_user
     client = TestClient(app)
 
     try:
@@ -36,7 +36,7 @@ def test_kill_switch_sessions_disabled():
             assert resp_session.json()["detail"] == "Coaching is paused for maintenance."
     finally:
         app.dependency_overrides.pop(verify_auth_token, None)
-        app.dependency_overrides.pop(require_trainee_or_supervisor, None)
+        app.dependency_overrides.pop(require_station_user, None)
 
 
 def test_api_status_public_and_returns_metrics():
@@ -62,13 +62,16 @@ def test_api_status_public_and_returns_metrics():
     mock_bq.query.side_effect = [mock_job_sessions, mock_job_d2a, mock_job_apis]
 
     with patch("services.api.main.get_bigquery_client", return_value=mock_bq), \
+         patch("services.api.main.check_deep_health", new=AsyncMock(return_value=True)), \
          patch.dict("services.api.main._STATUS_CACHE", {"data": None, "cached_at": 0.0}):
         resp = client.get("/api/status")
         assert resp.status_code == 200
         data = resp.json()
         assert data["api"] == "ok"
+        assert data["gemini"] == "ok"
+        assert data["window_days"] == 7
         assert "sessions_enabled" in data
-        last_24h = data["last_24h"]
+        last_24h = data["recent"]
         assert last_24h["sessions"] == 8
         assert last_24h["p50_ms"]["watch"] == 380
         assert last_24h["p50_ms"]["verify"] == 620
@@ -139,3 +142,16 @@ def test_api_calls_timing_measurement_with_delay():
         assert 1200 <= row["total_ms"] <= 1300, f"Expected total_ms in [1200, 1300], got {row['total_ms']}"
         assert 1200 <= row["model_ms"] <= 1300, f"Expected model_ms in [1200, 1300], got {row['model_ms']}"
 
+
+
+def test_api_status_reports_gemini_unavailable():
+    from fastapi import HTTPException
+
+    mock_bq = MagicMock()
+    mock_bq.query.return_value.result.return_value = []
+    with patch("services.api.main.get_bigquery_client", return_value=mock_bq), \
+         patch("services.api.main.check_deep_health", new=AsyncMock(side_effect=HTTPException(status_code=503))), \
+         patch.dict("services.api.main._STATUS_CACHE", {"data": None, "cached_at": 0.0}):
+        data = TestClient(app).get("/api/status").json()
+    assert data["api"] == "ok"
+    assert data["gemini"] == "unavailable"

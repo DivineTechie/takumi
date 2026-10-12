@@ -9,6 +9,7 @@ from google.cloud import firestore
 
 from services.api.config import (
     LIMIT_CHECKS_PER_DAY,
+    LIMIT_INSTANCE_CALLS_PER_DAY,
     LIMIT_LIVE_TOKENS_PER_DAY,
 )
 
@@ -88,6 +89,23 @@ def require_role(*roles: str):
     return _role_checker
 
 
+# Model calls counted by this instance today, across all users: a backstop if many accounts are used at once.
+_instance_calls: dict[str, int] = {}
+
+
+def _check_instance_cap(day: str, cost: int, now: datetime) -> None:
+    used = _instance_calls.get(day, 0)
+    if used + cost > LIMIT_INSTANCE_CALLS_PER_DAY:
+        midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        raise HTTPException(
+            status_code=429,
+            detail="TAKUMI has reached its daily limit of AI calls. Please try again tomorrow.",
+            headers={"Retry-After": str(max(1, int((midnight - now).total_seconds())))},
+        )
+    _instance_calls.clear()
+    _instance_calls[day] = used + cost
+
+
 def check_rate_limit(uid: str, limit_type: str, cost: int = 1) -> None:
     """Enforces daily per-user rate limits in Firestore collection rate_limits/{uid}_{YYYYMMDD}.
 
@@ -100,6 +118,7 @@ def check_rate_limit(uid: str, limit_type: str, cost: int = 1) -> None:
     day_str = now.strftime("%Y%m%d")
     doc_id = f"{uid}_{day_str}"
 
+    _check_instance_cap(day_str, cost, now)
     db = get_firestore_client()
     doc_ref = db.collection("rate_limits").document(doc_id)
 

@@ -1,16 +1,17 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchControlSummary, type ControlSourceKpis, type ControlSummary } from '../lib/api';
-import { agoText, describe, type TFn } from '../lib/controlEvents';
+import { agoText, describe, stampText, type TFn } from '../lib/controlEvents';
 import { useI18n } from '../i18n';
 import { OrdersPanel } from '../components/control/OrdersPanel';
 import { MachinesNow } from '../components/control/MachinesNow';
 import { WorkOrdersPanel, type DraftRequest } from '../components/control/WorkOrdersPanel';
 import type { Machine, WorkOrder } from '../lib/api';
 import { CopilotPanel } from '../components/control/CopilotPanel';
+import { usePolling } from '../lib/usePolling';
 
 /**
- * Control tower (P18): the whole factory from one event stream. Cloud Run publishes every event to
+ * Control tower: the whole factory from one event stream. Cloud Run publishes every event to
  * Pub/Sub; a BigQuery subscription writes it to takumi.events; this page reads it every 10 seconds.
  * Figures are shown per source label so live, home-rig and public-dataset events never mix.
  */
@@ -23,7 +24,7 @@ function pct(v: number | null): string {
 
 function ago(t: TFn, iso: string | null): string {
   if (!iso) return t('ops.tower_no_events_yet');
-  return agoText(t, (Date.now() - Date.parse(iso)) / 1000, true);
+  return agoText(t, (Date.now() - Date.parse(iso)) / 1000);
 }
 
 const KIND_ICON: Record<string, string> = { station: 'front_hand', inspection: 'verified', machine: 'precision_manufacturing', unit: 'inventory_2' };
@@ -84,11 +85,7 @@ export const ControlTowerScreen: React.FC = () => {
     }
   }, [hours]);
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 10_000);
-    return () => clearInterval(t);
-  }, [load]);
+  usePolling(load, 30_000);
 
   const sources = data ? Object.keys(data.by_source).sort((a, b) => SOURCE_ORDER(a) - SOURCE_ORDER(b) || a.localeCompare(b)) : [];
 
@@ -105,6 +102,7 @@ export const ControlTowerScreen: React.FC = () => {
         <select value={hours} onChange={(e) => setHours(Number(e.target.value))} aria-label={t('ops.tower_time_window')} className="min-h-[44px] rounded-lg bg-surface-container px-2">
           <option value={24}>{t('ops.tower_last_24h')}</option>
           <option value={168}>{t('ops.tower_last_7d')}</option>
+          <option value={720}>{t('ops.tower_last_30d')}</option>
         </select>
       </header>
 
@@ -134,7 +132,7 @@ export const ControlTowerScreen: React.FC = () => {
                 <div className="min-w-0">
                   <div className="break-words">{describe(e, t, machineNames)}</div>
                   <div className="text-xs text-on-surface-variant">
-                    {new Date(e.ts).toLocaleTimeString(language)} · {e.source}
+                    {stampText(e.ts, language)} · {e.source}
                     {e.unit_id && (
                       <>
                         {' · '}

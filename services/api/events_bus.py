@@ -1,4 +1,4 @@
-"""Operational event bus (P18): every factory event is published to Pub/Sub topic `takumi-events`.
+"""Operational event bus: every factory event is published to Pub/Sub topic `takumi-events`.
 
 A BigQuery subscription writes the messages into `takumi.events` (one row per event, same columns as
 the message), which the control tower queries. Publishing is fire-and-forget: a Pub/Sub problem is

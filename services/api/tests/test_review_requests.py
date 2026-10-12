@@ -1,4 +1,4 @@
-"""Supervisor review requests to the Standard Work Studio (P21)."""
+"""Supervisor review requests to the Standard Work Studio."""
 
 from unittest.mock import MagicMock, patch
 

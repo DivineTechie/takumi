@@ -1,4 +1,4 @@
-"""End-of-line quality inspection pipeline (P15).
+"""End-of-line quality inspection pipeline.
 
 Implements dual-stage visual inspection with:
 - Stage 1 'screen': gemini-3.5-flash-lite with candidate + 3 reference images

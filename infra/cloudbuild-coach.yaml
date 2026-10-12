@@ -139,7 +139,7 @@ steps:
       - '--concurrency=20'
       - '--timeout=300s'
       - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
-      - '--set-env-vars=LIMIT_CHECKS_PER_DAY=15000,LIMIT_LIVE_TOKENS_PER_DAY=200,SESSIONS_ENABLED=true,VERIFY_THINKING=default,VERIFY_MAX_PX=1280,POINT_THINKING=0'
+      - '--set-env-vars=LIMIT_CHECKS_PER_DAY=3000,LIMIT_LIVE_TOKENS_PER_DAY=30,LIMIT_INSTANCE_CALLS_PER_DAY=20000,SESSIONS_ENABLED=true,VERIFY_THINKING=default,VERIFY_MAX_PX=1280,POINT_THINKING=0'
       - '--allow-unauthenticated'
       - '--project=takumi-cup-2026'
       - '--quiet'

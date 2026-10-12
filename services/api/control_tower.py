@@ -1,4 +1,4 @@
-"""Control tower (P18): one view of the factory built from `takumi.events` in BigQuery.
+"""Control tower: one view of the factory built from `takumi.events` in BigQuery.
 
 Events arrive there through Pub/Sub (Cloud Run publishes, a BigQuery subscription writes). Every
 figure is split by source label (LIVE, HOME RIG, PUBLIC DATA), so simulated or public-dataset events
@@ -89,7 +89,7 @@ def _query(sql: str, params: list[bigquery.ScalarQueryParameter]) -> list[dict[s
 
 @router.get("/control/summary")
 def control_summary(
-    hours: int = Query(default=24, ge=1, le=168),
+    hours: int = Query(default=24, ge=1, le=720),
     limit: int = Query(default=40, ge=1, le=200),
     user: AuthUser = Depends(require_role("supervisor")),
 ) -> dict[str, Any]:

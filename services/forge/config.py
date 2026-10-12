@@ -32,7 +32,8 @@ FORGE_ENABLE_ILLUSTRATOR = os.environ.get("FORGE_ENABLE_ILLUSTRATOR", "0") == "1
 FORGE_MAX_VIDEO = int(os.environ.get("FORGE_MAX_VIDEO", "0"))
 
 # Agents
-TRACEBACK_TIMEOUT_S = float(os.environ.get("TRACEBACK_TIMEOUT_S", "90"))
+# Firebase Hosting gives a rewritten request 60 s, so agents must answer (or fail clearly) before that.
+TRACEBACK_TIMEOUT_S = float(os.environ.get("TRACEBACK_TIMEOUT_S", "50"))
 
 # Target languages for localization
 SUPPORTED_LANGUAGES = ["en", "ja", "vi", "hi", "id", "fil"]

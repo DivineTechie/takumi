@@ -1,4 +1,4 @@
-"""Tests for Machine Watch day statistics and the summary / soak-run endpoints (P17 pass 2)."""
+"""Tests for Machine Watch day statistics and the summary / soak-run endpoints."""
 
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
