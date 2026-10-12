@@ -127,6 +127,15 @@ describe('validateSkillForPublish', () => {
     expect(res.missingFieldsByStep[1]).toContain('point_hint');
   });
 
+  it('does not ask for interview timestamps when the reason is marked as inferred', () => {
+    const inferred: Skill = {
+      ...validSkill,
+      steps: [{ ...validSkill.steps[0], why_source: undefined, why_inferred: true }],
+    };
+    const res = validateSkillForPublish(inferred, 20.0);
+    expect(res.missingFieldsByStep[1] ?? []).not.toContain('why_source');
+  });
+
   it('fails if vi or hi translations are missing', () => {
     const invalid: Skill = {
       ...validSkill,

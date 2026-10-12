@@ -20,7 +20,7 @@ export interface ValidationResult {
  * 1. video_uri pointing to H.264/AAC MP4.
  * 2. Every step must have:
  *    - clip.start_s < clip.end_s within video duration (start_s >= 0)
- *    - why plus why_source (t_start, t_end where 0 <= t_start <= t_end)
+ *    - why plus why_source (t_start, t_end where 0 <= t_start <= t_end), unless why_inferred is true
  *    - success_criteria with visible facts only (no subjective words)
  *    - at least 1 common_mistakes entry with non-empty visual_cue
  *    - point_hint
@@ -116,8 +116,11 @@ export function validateSkillForPublish(skill: Skill, videoDuration?: number): V
       addStepIssue(n, 'why', `Step ${n}: Missing craftsman "why" rationale.`);
     }
 
+    // A reason the model inferred (not said by the master) is labelled as such and has no timestamps.
     if (!step.why_source) {
-      addStepIssue(n, 'why_source', `Step ${n}: Missing "why_source" interview timestamps.`);
+      if (!step.why_inferred) {
+        addStepIssue(n, 'why_source', `Step ${n}: Missing "why_source" interview timestamps.`);
+      }
     } else {
       const { t_start, t_end } = step.why_source;
       if (typeof t_start !== 'number' || typeof t_end !== 'number' || t_start < 0 || t_start > t_end) {
