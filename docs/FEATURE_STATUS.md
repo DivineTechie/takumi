@@ -22,7 +22,8 @@ What is deployed on [takumi-cup-2026.web.app](https://takumi-cup-2026.web.app) t
 | Events pipeline and control tower | Every station step, inspection, machine event, hold and work-order decision goes to Pub/Sub; a BigQuery subscription stores it; the control tower shows totals per source label and a live feed. | Pub/Sub, BigQuery | [services/api/events_bus.py](../services/api/events_bus.py), [ControlTowerScreen.tsx](../apps/web/src/pages/ControlTowerScreen.tsx) | **Live** |
 | Supervisor dashboard | End-of-line quality, machines (timeline, availability, stops), step quality per instruction step, station replay. No per-worker scoring. | Firestore, BigQuery | [DashboardScreen.tsx](../apps/web/src/pages/DashboardScreen.tsx) | **Live** |
 | Six languages | Every screen in English, Japanese, Vietnamese, Hindi, Bahasa Indonesia and Filipino. Translations are machine-made with Gemini and marked for native review. | `gemini-3.8-flash` (offline, [infra/translate_i18n.py](../infra/translate_i18n.py)) | [apps/web/src/i18n](../apps/web/src/i18n) | **Live** |
-| Evaluations page | Public results with method, caveats and cost per part or machine. | — | [EvalsScreen.tsx](../apps/web/src/pages/EvalsScreen.tsx) | **Live** |
+| Evaluations page | Public results with method, caveats and cost per part or machine; live production timings over 90 days. | — | [EvalsScreen.tsx](../apps/web/src/pages/EvalsScreen.tsx) | **Live** |
+| Status page | API health, a live (cached) Gemini check and 7-day latency percentiles, public. | Cloud Run, BigQuery | [StatusScreen.tsx](../apps/web/src/pages/StatusScreen.tsx) | **Live** |
 
 ## Platform
 
@@ -35,7 +36,7 @@ What is deployed on [takumi-cup-2026.web.app](https://takumi-cup-2026.web.app) t
 | Pub/Sub → BigQuery | `takumi-events` topic, BigQuery subscription to `takumi.events`; plus `api_calls`, `session_events`, `inspection_events`, `machine_events` | **Live** |
 | Secret Manager | The Gemini API key; the browser never sees a key | **Live** |
 | Model Armor | Screens user-supplied text (questions, pointing targets, work-order notes) | **Live** |
-| Cloud Monitoring, Cloud Build | Alerts on Gemini unavailability and server errors; CI runs every test suite and deploys on each push | **Live** |
+| Cloud Monitoring, Cloud Build | Uptime checks and alerts on the API, a live Gemini call and Forge, plus Gemini errors and server errors; CI runs every test suite and deploys on each push to `main` | **Live** |
 
 ## Not built (yet)
 

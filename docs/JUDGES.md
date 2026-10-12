@@ -2,6 +2,7 @@
 
 - **Live app**: [https://takumi-cup-2026.web.app](https://takumi-cup-2026.web.app)
 - **System status**: [https://takumi-cup-2026.web.app/status](https://takumi-cup-2026.web.app/status)
+- **No sign-in needed**: [product tour](https://takumi-cup-2026.web.app/tour) · [evaluations](https://takumi-cup-2026.web.app/evals)
 - **Architecture**: [architecture.md](architecture.md) · **What is live**: [FEATURE_STATUS.md](FEATURE_STATUS.md)
 
 You need only a laptop and (optionally) a phone. No hardware kit is required.
@@ -35,17 +36,17 @@ Images: VisA dataset (Amazon), CC BY 4.0. Every result is labelled PUBLIC DATA. 
 2. On the phone open **Home → Watch machines** (`/machines/watch`), sign in, press **Start camera** and point it at the laptop screen.
 3. Tick "test bench machines", choose the number of machines, press **Find machines with Gemini** (one Gemini Robotics-ER call finds each light, counter and screen), adjust the boxes if needed and **Save**. Press **Start watching**.
 4. On the laptop, stop a machine with an alarm (or start a soak run with automatic faults). The phone notices the change locally and asks Gemini Flash-Lite to read the machine; the stop and the alarm text appear within seconds. Under each bench machine a stopwatch shows how long TAKUMI took to see the change, measured on the laptop's own clock.
-5. As supervisor, open **Dashboard → Machines** for the state timeline, availability, stops and alarms (labelled HOME RIG).
+5. As supervisor, open **Home → Quality dashboard → Machines** for the state timeline, availability, stops and alarms (labelled HOME RIG).
 
 ## 3. Station Watch (5 minutes, phone or laptop camera)
 
-1. As trainee, open **Home → Learn a skill**, pick the published lesson and your language.
+1. As trainee, open **Home → Start Station Watch**, pick a work instruction and your language.
 2. Optionally type a **unit serial** (for example `JUDGE-001`): the session is then recorded on that unit.
 3. Do the steps in front of the camera. The coach speaks in your language, points at the right place when you ask "where?", checks each step against visible success criteria, and stops you with a full-screen STOP on a hazard.
 
 ## 4. Unit records and quality trace-back (3 minutes, supervisor)
 
-1. Open **Dashboard** (it opens on **End-of-line quality**) and open a failed unit from the units list (or go to `/units/<serial>`).
+1. Open **Home → Quality dashboard** (it opens on **End-of-line quality**) and open a failed unit from the units list (or go to `/units/<serial>`, for example `/units/FIX-0004`).
 2. The unit page shows every station it went through (with evidence frames for mistakes and safety stops) and every inspection.
 3. Press **Trace back**. A Google ADK agent reads the records with three read-only tools and proposes the station and step where the defect most likely started, the other units at risk, and a work-instruction change. The result is drawn as a graph (failed unit → station and step → units at risk → fix) and its tool calls are listed.
 4. Approve a hold for the units you select, and **Send to the Standard Work Studio** to create a review request for the master. Nothing changes without these approvals.
@@ -62,13 +63,13 @@ Open **Home → Control tower** (`/control`). Every event (station steps, inspec
 
 ## 6. Standard Work Studio (master)
 
-As master, **Home → Teach a skill** records a demonstration; a Google ADK 2 workflow turns it into steps with success criteria, reasons, pointing hints and translations. In the review screen the master edits steps, applies or dismisses review requests from supervisors, and publishes.
+As master, **Home → Record a task**: record a short demonstration and say why each step matters. A Google ADK 2 workflow sends the video to Gemini, which writes the steps with visible success criteria and reasons; Gemini Robotics-ER adds a pointing hint per step, a checker flags criteria that are not visible facts, and the steps are translated into five languages. Follow the run live (every step shows its real progress), then review: edit steps, apply or dismiss review requests from supervisors, and publish. A run takes a few minutes; each master can start 10 runs a day.
 
 ---
 
 ## Observability
 
-[/status](https://takumi-cup-2026.web.app/status) shows API health, a deep Gemini check and the deployed version. Cloud Monitoring alerts on Gemini unavailability and server errors.
+[/status](https://takumi-cup-2026.web.app/status) shows API health, a live (cached) Gemini check and 7-day latency percentiles. Cloud Monitoring alerts on API, Gemini and Forge health and on server errors. If /status shows Gemini as degraded, AI features pause while records, dashboards and the gallery history keep working.
 
 ## Tips
 
