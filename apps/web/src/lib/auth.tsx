@@ -10,14 +10,12 @@ import {
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   onAuthStateChanged,
-  updateProfile,
   type User,
 } from 'firebase/auth';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import React from 'react';
 import { auth } from './firebase';
 import { getMe } from './api';
-import { NamePromptDialog } from '../components/NamePromptDialog';
 
 export type Role = 'trainee' | 'master' | 'supervisor';
 
@@ -31,7 +29,6 @@ export interface AuthContextType {
   finishSignInWithEmail: (email?: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshRole: () => Promise<void>;
-  updateDisplayName: (name: string) => Promise<void>;
 }
 
 const googleProvider = new GoogleAuthProvider();
@@ -156,14 +153,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const updateDisplayName = async (name: string) => {
-    if (auth.currentUser) {
-      await updateProfile(auth.currentUser, { displayName: name });
-      await auth.currentUser.getIdToken(true);
-      setUser({ ...auth.currentUser } as User);
-    }
-  };
-
   const value: AuthContextType = {
     user,
     role,
@@ -182,15 +171,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     },
     signOut: signOutAction,
     refreshRole,
-    updateDisplayName,
   };
 
   return (
     <AuthContext.Provider value={value}>
       {children}
-      {user && !user.displayName && !loading && (
-        <NamePromptDialog onSave={updateDisplayName} />
-      )}
     </AuthContext.Provider>
   );
 };

@@ -8,7 +8,6 @@ from shared.schema.py import forge_job_events
 from shared.schema.py import review_requests
 from shared.schema.py import sessions
 from shared.schema.py import session_events
-from shared.schema.py import passports
 from shared.schema.py import products
 from shared.schema.py import units
 from shared.schema.py import inspections

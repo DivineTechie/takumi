@@ -3,17 +3,15 @@ import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestor
 import { db } from '../../lib/firebase';
 import { useTranslation } from '../../i18n';
 import type { Session } from '../../../../../shared/schema/ts/sessions';
-import type { MatrixSkill } from '../../lib/api';
+import type { InsightSkill } from '../../lib/api';
 
 interface LiveNowStripProps {
-  skillsMap: Record<string, MatrixSkill>;
-  traineesMap: Record<string, string>; // uid -> first_name
+  skillsMap: Record<string, InsightSkill>;
   onSelectSession?: (sessionId: string) => void;
 }
 
 export const LiveNowStrip: React.FC<LiveNowStripProps> = ({
   skillsMap,
-  traineesMap,
   onSelectSession,
 }) => {
   const { t } = useTranslation();
@@ -91,11 +89,10 @@ export const LiveNowStrip: React.FC<LiveNowStripProps> = ({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {liveSessions.map((session) => {
-            const firstName =
-              traineesMap[session.trainee_uid] ||
-              (session.trainee_uid
-                ? t('app.dashboard_trainee_short_id', { id: session.trainee_uid.slice(-4) })
-                : t('dashboard_trainee'));
+            // Operators are shown by a short anonymous id, never by name
+            const firstName = session.trainee_uid
+              ? t('app.dashboard_trainee_short_id', { id: session.trainee_uid.slice(-4) })
+              : t('dashboard_trainee');
             const skill = skillsMap[session.skill_id];
             const skillTitle = skill?.title || session.skill_id;
             const currentStep = session.current_step || 1;

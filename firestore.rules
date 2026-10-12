@@ -89,15 +89,6 @@ service cloud.firestore {
       }
     }
 
-    // passports & passport_locks: NO client access. Served exclusively via takumi-api.
-    match /passports/{passportId} {
-      allow read, write: if false;
-    }
-
-    match /passport_locks/{lockId} {
-      allow read, write: if false;
-    }
-
     // products: readable by any signed-in user, written by supervisors.
     match /products/{productId} {
       allow read: if isSignedIn();

@@ -74,11 +74,9 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const [remainingSeconds, setRemainingSeconds] = useState<number>(600);
   const [debugOpen, setDebugOpen] = useState<boolean>(true);
   const [isLessonComplete, setIsLessonComplete] = useState<boolean>(false);
-  const [earnedPassportId, setEarnedPassportId] = useState<string | null>(null);
-  const [cleanRunsProgress, setCleanRunsProgress] = useState<number>(0);
   const [activeReticles, setActiveReticles] = useState<ReticlePoint[]>([]);
 
-  // Watcher & Safety Stop state (Features A3/A4)
+  // Watcher & Safety Stop state
   const [isSafetyStopOpen, setIsSafetyStopOpen] = useState<boolean>(false);
   const [activeHazardRule, setActiveHazardRule] = useState<string | null>(null);
   const [isCheckingTool, setIsCheckingTool] = useState<boolean>(false);
@@ -88,7 +86,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const [watchP50Ms, setWatchP50Ms] = useState<number | null>(null);
   const [decisionToAudioDisplay, setDecisionToAudioDisplay] = useState<string>('n/a');
 
-  // Master & Mistake Clips State (Features A5/A8)
+  // Master & Mistake Clips State
   const [activeClip, setActiveClip] = useState<{
     url: string;
     start_s?: number;
@@ -325,13 +323,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     setIsLessonComplete(true);
     if (sessionIdRef.current) {
       try {
-        const res = await endSession(sessionIdRef.current, 'completed');
-        if (res?.passport_id) {
-          setEarnedPassportId(res.passport_id);
-        }
-        if (typeof res?.clean_runs === 'number') {
-          setCleanRunsProgress(res.clean_runs);
-        }
+        await endSession(sessionIdRef.current, 'completed');
       } catch (err) {
         console.warn('Failed to complete session:', err);
       }
@@ -352,8 +344,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     if (isDebug) {
       (window as unknown as { __TAKUMI_ADVANCE_STEP__?: (fromStep?: number) => boolean }).__TAKUMI_ADVANCE_STEP__ =
         (fromStep?: number) => advanceStep(fromStep ?? currentStepRef.current);
+      (window as unknown as { __TAKUMI_SIMULATE_TRANSCRIPT__?: (item: LiveTranscriptItem) => void }).__TAKUMI_SIMULATE_TRANSCRIPT__ = handleTranscript;
     }
-    (window as unknown as { __TAKUMI_SIMULATE_TRANSCRIPT__?: (item: LiveTranscriptItem) => void }).__TAKUMI_SIMULATE_TRANSCRIPT__ = handleTranscript;
     return () => {
       delete (window as unknown as { __TAKUMI_ADVANCE_STEP__?: unknown }).__TAKUMI_ADVANCE_STEP__;
       delete (window as unknown as { __TAKUMI_SIMULATE_TRANSCRIPT__?: unknown }).__TAKUMI_SIMULATE_TRANSCRIPT__;
@@ -1011,7 +1003,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     clientRef.current?.setSpeakerMode(speakerMode);
   }, [speakerMode]);
 
-  // 3. Watcher Loop (Features A3 & A4)
+  // 3. Watcher Loop
   useEffect(() => {
     if (connectionState !== 'connected' || isLessonComplete || isSafetyStopOpen) {
       return;
@@ -1398,45 +1390,6 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               </span>
             </div>
 
-            {/* Passport Earned or Clean Runs Progress */}
-            {earnedPassportId ? (
-              <div className="mt-5 w-full p-4 rounded-2xl bg-primary-container/15 border-2 border-primary-container/60 flex flex-col items-center gap-2.5 text-center shadow-md">
-                <div className="flex items-center gap-2 text-primary-container font-extrabold text-[17px]">
-                  <span className="material-symbols-outlined text-[24px]">verified</span>
-                  <span>{t('station.complete_passport_earned')}</span>
-                </div>
-                <p className="text-xs text-on-surface-variant max-w-[280px]">
-                  {t('station.complete_passport_well_done', { count: 3 })}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/passport/${earnedPassportId}`)}
-                  className="w-full min-h-[44px] px-3 py-2 bg-primary-container text-on-primary-container font-bold text-sm rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-95 transition-all shadow cursor-pointer mt-1"
-                >
-                  <span>{t('station.complete_view_passport')}</span>
-                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-                </button>
-              </div>
-            ) : (
-              <div className="mt-5 w-full p-3 rounded-xl bg-surface-container border border-outline-variant/60 flex items-center justify-between gap-2 text-left">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="material-symbols-outlined text-primary-container text-[22px]">
-                    workspace_premium
-                  </span>
-                  <div>
-                    <p className="text-xs uppercase tracking-wider font-extrabold text-primary-container">
-                      {t('station.complete_passport_progress')}
-                    </p>
-                    <p className="text-sm font-semibold text-on-surface">
-                      {t('station.complete_clean_runs_progress', { count: cleanRunsProgress, total: 3 })}
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-mono font-bold px-2 py-1 bg-surface-container-high rounded border border-outline-variant/40">
-                  {cleanRunsProgress}/3
-                </span>
-              </div>
-            )}
           </section>
 
           <section className="bg-surface-container border border-outline-variant/50 rounded-xl p-4 my-4 space-y-3">
@@ -1911,7 +1864,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   </span>
                 )}
 
-                {/* Watcher Status Chip (A3 Step Watcher) */}
+                {/* Watcher status chip */}
                 {connectionState === 'connected' && (
                   <span
                     data-testid="watcher-status-chip"
@@ -1976,7 +1929,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         </section>
       </div>
 
-      {/* Safety Stop Full-Screen Overlay (A4 Safety Sentinel) */}
+      {/* Full-screen safety stop */}
       {isSafetyStopOpen && (
         <SafetyStop
           rule={activeHazardRule}
@@ -1985,7 +1938,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         />
       )}
 
-      {/* Picture-in-Picture Clip Player (Features A5 & A8) */}
+      {/* Picture-in-Picture Clip Player */}
       {activeClip && (
         <ClipPlayer
           url={activeClip.url}

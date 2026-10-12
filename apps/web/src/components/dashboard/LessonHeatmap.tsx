@@ -1,9 +1,9 @@
 import React from 'react';
 import { useTranslation } from '../../i18n';
-import type { MatrixSkill, SkillInsightsResponse } from '../../lib/api';
+import type { InsightSkill, SkillInsightsResponse } from '../../lib/api';
 
 interface LessonHeatmapProps {
-  skills: MatrixSkill[];
+  skills: InsightSkill[];
   selectedSkillId: string;
   onSelectSkill: (skillId: string) => void;
   insights: SkillInsightsResponse | null;

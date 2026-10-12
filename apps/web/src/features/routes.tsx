@@ -1,14 +1,11 @@
 /* eslint-disable react-refresh/only-export-components */
-// Owned by Member B: register /capture, /review/:skillId, /library and /forge/:jobId here.
+// Standard Work Studio routes: record a task, follow the Studio run, review and publish, library.
 import type { ReactNode } from 'react';
 import type { Role } from '../lib/auth';
-import { CaptureScreen, CaptureScreenProps } from './capture/CaptureScreen';
+import { CaptureScreen } from './capture/CaptureScreen';
 import { AgentTrace } from './review/AgentTrace';
 import { MasterReview } from './review/MasterReview';
 import { SkillLibrary } from './library/SkillLibrary';
-
-export { CaptureScreen, AgentTrace, MasterReview, SkillLibrary };
-export type { CaptureScreenProps };
 
 export interface FeatureRoute {
   path: string;

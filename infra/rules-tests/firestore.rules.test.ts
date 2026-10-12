@@ -90,13 +90,6 @@ describe('Firestore Security Rules', () => {
         status: 'open',
       });
 
-      // Seed passport
-      await setDoc(doc(db, 'passports', 'pass_1'), {
-        trainee_uid: 'trainee-1',
-        skill_id: 'skill_published',
-        verify_url: 'https://takumi.dev/passports/pass_1',
-      });
-
       // Seed machine
       await setDoc(doc(db, 'machines', 'mach_1'), {
         id: 'mach_1',
@@ -226,16 +219,6 @@ describe('Firestore Security Rules', () => {
     await assertSucceeds(getDoc(doc(supervisorDb, 'skills', 'skill_draft')));
     await assertSucceeds(getDoc(doc(supervisorDb, 'sessions', 'ses_1')));
     await assertSucceeds(getDoc(doc(supervisorDb, 'review_requests', 'rev_1')));
-  });
-
-  it('client reading or listing passports directly is denied', async () => {
-    const unauthDb = testEnv.unauthenticatedContext().firestore();
-    await assertFails(getDoc(doc(unauthDb, 'passports', 'pass_1')));
-    await assertFails(getDocs(collection(unauthDb, 'passports')));
-
-    const traineeDb = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
-    await assertFails(getDoc(doc(traineeDb, 'passports', 'pass_1')));
-    await assertFails(getDoc(doc(traineeDb, 'passport_locks', 'lock_1')));
   });
 
   it('signed-in user with no role can read published skills but not sessions', async () => {

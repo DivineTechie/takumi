@@ -135,10 +135,9 @@ def test_session_with_serial_creates_unit_and_records_station_once():
 
         db.store[f"sessions/{sid}/events/e1"] = {"t": "2026-10-10T08:01:00+00:00", "step": 2, "type": "mistake", "reason": "adapter reversed"}
         db.store[f"sessions/{sid}/events/e2"] = {"t": "2026-10-10T08:02:00+00:00", "step": 1, "type": "step_done"}
-        with patch("services.api.main.issue_passport_if_eligible", return_value=(None, 0)):
-            assert client.patch(f"/api/sessions/{sid}", json={"status": "completed"}, headers=AUTH).status_code == 200
-            # A second PATCH must not add a duplicate station record
-            client.patch(f"/api/sessions/{sid}", json={"status": "completed"}, headers=AUTH)
+        assert client.patch(f"/api/sessions/{sid}", json={"status": "completed"}, headers=AUTH).status_code == 200
+        # A second PATCH must not add a duplicate station record
+        client.patch(f"/api/sessions/{sid}", json={"status": "completed"}, headers=AUTH)
 
     records = db.store["units/SN-0001"]["station_records"]
     assert len(records) == 1

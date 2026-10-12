@@ -11,7 +11,6 @@ This directory contains the canonical JSON Schemas (draft 2020-12), generated Ty
 - **`review_requests.json`** (`review_requests/{id}`): Quality review items proposed by the insight agent for master approval.
 - **`sessions.json`** (`sessions/{sessionId}`): Live coaching sessions tracking trainee progress step by step.
 - **`session_events.json`** (`sessions/{sessionId}/events/{eventId}`): Real-time telemetry events emitted during live coaching.
-- **`passports.json`** (`passports/{passportId}`): Verifiable skill passport credentials issued to trainees.
 - **`bigquery/session_events.json`**: BigQuery schema for streaming session event analytics into `takumi.session_events`.
 
 ## Timestamp Representation

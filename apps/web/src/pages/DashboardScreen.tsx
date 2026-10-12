@@ -6,15 +6,14 @@ import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n'
 import { useTheme } from '../lib/theme';
 import logoSvg from '../assets/logo.svg';
 import {
-  fetchInsightsMatrix,
+  fetchInsightSkills,
   fetchSkillInsights,
   fetchSessionReplay,
   fetchInspectionInsights,
   submitInspectionDecision,
-  type InsightsMatrixResponse,
   type SkillInsightsResponse,
   type SessionReplayResponse,
-  type MatrixSkill,
+  type InsightSkill,
   type InspectionInsightsResponse,
 } from '../lib/api';
 import { LiveNowStrip } from '../components/dashboard/LiveNowStrip';
@@ -40,9 +39,9 @@ export const DashboardScreen: React.FC = () => {
   };
 
   const [activeTab, setActiveTab] = useState<DashboardTab>('inspections');
-  const [matrixData, setMatrixData] = useState<InsightsMatrixResponse | null>(null);
-  const [matrixLoading, setMatrixLoading] = useState(true);
-  const [matrixError, setMatrixError] = useState<string | null>(null);
+  const [skills, setSkills] = useState<InsightSkill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
 
   const [selectedSkillId, setSelectedSkillId] = useState<string>('');
   const [skillInsights, setSkillInsights] = useState<SkillInsightsResponse | null>(null);
@@ -89,27 +88,27 @@ export const DashboardScreen: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Load team matrix
-  const loadMatrix = useCallback(async () => {
-    setMatrixLoading(true);
-    setMatrixError(null);
+  // Published skills (aggregate step quality; no per-worker data)
+  const loadSkills = useCallback(async () => {
+    setSkillsLoading(true);
+    setSkillsError(null);
     try {
-      const data = await fetchInsightsMatrix();
-      setMatrixData(data);
+      const data = await fetchInsightSkills();
+      setSkills(data.skills);
       if (data.skills.length > 0) {
         setSelectedSkillId((prev) => prev || data.skills[0].id);
       }
     } catch (err) {
-      console.error('Failed to load matrix:', err);
-      setMatrixError(t('dashboard_load_failed'));
+      console.error('Failed to load skills:', err);
+      setSkillsError(t('dashboard_load_failed'));
     } finally {
-      setMatrixLoading(false);
+      setSkillsLoading(false);
     }
   }, [t]);
 
   useEffect(() => {
-    loadMatrix();
-  }, [loadMatrix]);
+    loadSkills();
+  }, [loadSkills]);
 
   const loadInspectionInsights = useCallback(async () => {
     setInspectionLoading(true);
@@ -176,40 +175,12 @@ export const DashboardScreen: React.FC = () => {
   }, []);
 
   const skillsMap = useMemo(() => {
-    const map: Record<string, MatrixSkill> = {};
-    matrixData?.skills.forEach((s) => {
+    const map: Record<string, InsightSkill> = {};
+    skills.forEach((s) => {
       map[s.id] = s;
     });
     return map;
-  }, [matrixData?.skills]);
-
-  const traineesMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    matrixData?.trainees.forEach((tr) => {
-      map[tr.uid] = tr.first_name;
-    });
-    return map;
-  }, [matrixData?.trainees]);
-
-  const recentSessionsList = useMemo(() => {
-    if (firestoreSessions.length > 0) return firestoreSessions;
-    const fallback: RecentSessionItem[] = [];
-    matrixData?.cells.forEach((cell) => {
-      if (cell.sessions > 0 && cell.last_session_at) {
-        fallback.push({
-          id: 'ses_1f136365e52d71cd',
-          skill_id: cell.skill_id,
-          trainee_uid: cell.uid,
-          first_name: traineesMap[cell.uid],
-          status: 'completed',
-          started_at: cell.last_session_at,
-          language: 'hi',
-          mistakes: cell.mistakes_trend?.[cell.mistakes_trend.length - 1] || 0,
-        });
-      }
-    });
-    return fallback;
-  }, [firestoreSessions, matrixData, traineesMap]);
+  }, [skills]);
 
   return (
     <div className="bg-background text-on-surface font-body-md min-h-screen antialiased flex flex-col justify-between selection:bg-primary-container selection:text-on-primary-container">
@@ -243,13 +214,13 @@ export const DashboardScreen: React.FC = () => {
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Refresh button */}
           <button
-            onClick={() => loadMatrix()}
-            disabled={matrixLoading}
+            onClick={() => loadSkills()}
+            disabled={skillsLoading}
             aria-label={t('app.dashboard_refresh')}
             className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer disabled:opacity-50 shrink-0"
             type="button"
           >
-            <span className={`material-symbols-outlined text-[19px] sm:text-[20px] ${matrixLoading ? 'animate-spin' : ''}`}>
+            <span className={`material-symbols-outlined text-[19px] sm:text-[20px] ${skillsLoading ? 'animate-spin' : ''}`}>
               refresh
             </span>
           </button>
@@ -309,14 +280,14 @@ export const DashboardScreen: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-6">
         {/* Error State Banner */}
-        {matrixError && (
+        {skillsError && (
           <div className="bg-error/15 border border-error/30 rounded-2xl p-4 flex items-center justify-between gap-3 text-error">
             <div className="flex items-center gap-2.5">
               <span className="material-symbols-outlined text-[22px]">error</span>
-              <span className="text-[14px] font-semibold">{matrixError}</span>
+              <span className="text-[14px] font-semibold">{skillsError}</span>
             </div>
             <button
-              onClick={() => loadMatrix()}
+              onClick={() => loadSkills()}
               className="px-4 py-2 rounded-xl bg-error text-white font-bold text-[13px] hover:opacity-90 transition-opacity cursor-pointer shrink-0"
             >
               {t('dashboard_retry')}
@@ -327,7 +298,6 @@ export const DashboardScreen: React.FC = () => {
         {/* Live Now Strip (Always visible at top of dashboard) */}
         <LiveNowStrip
           skillsMap={skillsMap}
-          traineesMap={traineesMap}
           onSelectSession={handleSelectSession}
         />
 
@@ -372,7 +342,7 @@ export const DashboardScreen: React.FC = () => {
         {/* Tab 2: Lesson Insights (Step Heatmap) */}
         {activeTab === 'heatmap' && (
           <LessonHeatmap
-            skills={matrixData?.skills || []}
+            skills={skills}
             selectedSkillId={selectedSkillId}
             onSelectSkill={(id) => setSelectedSkillId(id)}
             insights={skillInsights}
@@ -385,10 +355,9 @@ export const DashboardScreen: React.FC = () => {
           <SessionReplayViewer
             replay={replayData}
             loading={replayLoading}
-            recentSessions={recentSessionsList}
+            recentSessions={firestoreSessions}
             skillsMap={skillsMap}
-            traineesMap={traineesMap}
-            onSelectSession={handleSelectSession}
+              onSelectSession={handleSelectSession}
             onClose={() => {
               setSelectedSessionId(null);
               setReplayData(null);

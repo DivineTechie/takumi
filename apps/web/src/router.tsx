@@ -11,7 +11,6 @@ const SignInFinishScreen = lazy(() => import('./pages/SignInFinishScreen'));
 const HomeScreen = lazy(() => import('./pages/HomeScreen'));
 const ChooseLessonScreen = lazy(() => import('./pages/ChooseLessonScreen'));
 const CoachBeforeStartScreen = lazy(() => import('./pages/CoachBeforeStartScreen'));
-const PassportScreen = lazy(() => import('./pages/PassportScreen'));
 const StatusScreen = lazy(() => import('./pages/StatusScreen'));
 const DashboardScreen = lazy(() => import('./pages/DashboardScreen'));
 const EvalsScreen = lazy(() => import('./pages/EvalsScreen'));
@@ -58,14 +57,6 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
       element: (
         <Suspense fallback={<LoadingFallback />}>
           <SignInFinishScreen />
-        </Suspense>
-      ),
-    },
-    {
-      path: '/passport/:id',
-      element: (
-        <Suspense fallback={<LoadingFallback />}>
-          <PassportScreen />
         </Suspense>
       ),
     },
@@ -144,7 +135,7 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
       ),
     },
 
-    // Quality Inspection (Pillar 2)
+    // Quality Inspection
     {
       path: '/inspect',
       element: (
@@ -166,7 +157,7 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
       ),
     },
 
-    // Machine Watch (Pillar 3)
+    // Machine Watch
     {
       path: '/machines/virtual',
       element: (
@@ -208,7 +199,7 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
       ),
     },
 
-    // Member B screens dynamically mounted behind RoleGuard
+    // Standard Work Studio screens
     ...extraFeatures.map((feat) => ({
       path: feat.path,
       element: (

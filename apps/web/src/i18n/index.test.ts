@@ -29,7 +29,6 @@ describe('i18n localization system', () => {
   });
 
   it('translates known keys in Japanese, Vietnamese, etc.', () => {
-    expect(getTranslation('ja', 'app_name')).toBe('TAKUMI');
     expect(getTranslation('ja', 'sign_in_google')).toBe('Google でログイン');
     expect(getTranslation('vi', 'sign_in_google')).toBe('Đăng nhập bằng Google');
   });

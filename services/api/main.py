@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from PIL import Image
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from google.cloud import bigquery, firestore
@@ -23,12 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from firebase_admin import auth as fb_auth
 
-from services.api.badges import get_badge_signed_url_if_exists
-from services.api.passports import (
-    check_public_rate_limit,
-    issue_passport_if_eligible,
-    validate_trainee_name,
-)
+from services.api.public_rate_limit import check_public_rate_limit
 
 from services.api.auth import (
     AuthUser,
@@ -245,52 +240,8 @@ def set_in_cache(key: str, val: Any) -> None:
     _insights_cache[key] = (time.time(), val)
 
 
-_user_master_cache: dict[str, tuple[float, bool]] = {}
-
-
 def clear_insights_cache() -> None:
     _insights_cache.clear()
-    _user_master_cache.clear()
-
-
-def is_master_user(uid: str | None) -> bool:
-    """Checks whether user UID has role 'master' in Firebase Auth."""
-    if not uid:
-        return False
-    now = time.time()
-    if uid in _user_master_cache:
-        ts, is_m = _user_master_cache[uid]
-        if now - ts < 300:  # 5 min TTL
-            return is_m
-    init_firebase_admin()
-    is_master = False
-    try:
-        user_record = fb_auth.get_user(uid)
-        claims = getattr(user_record, "custom_claims", None)
-        if isinstance(claims, dict) and claims.get("role") == "master":
-            is_master = True
-    except Exception:
-        pass
-    _user_master_cache[uid] = (now, is_master)
-    return is_master
-
-
-def get_trainee_first_name(uid: str | None) -> str:
-    """Returns a trainee's first name only. Never exposes or logs email addresses."""
-    if not uid:
-        return "Trainee"
-    init_firebase_admin()
-    try:
-        user_record = fb_auth.get_user(uid)
-        dname = user_record.display_name
-        if dname and dname.strip():
-            candidate = dname.strip().split()[0]
-            if validate_trainee_name(candidate):
-                return candidate
-    except Exception:
-        pass
-    last4 = uid[-4:] if len(uid) >= 4 else uid
-    return f"Trainee {last4}"
 
 
 # --- Routes ---
@@ -851,7 +802,6 @@ async def create_session_event(
 async def patch_session(
     session_id: str,
     req: SessionPatchRequest,
-    background_tasks: BackgroundTasks,
     user: AuthUser = Depends(require_any_authenticated_user),
 ) -> dict[str, Any]:
     db = get_firestore_client()
@@ -955,140 +905,24 @@ async def patch_session(
         except Exception as e:
             logger.warning("Failed to append station record for unit %s: %s", unit_id, e)
 
-    # Evaluate passport issuance on clean completion
-    passport_id = None
-    clean_runs = 0
-    if req.status == "completed":
-        skill_id = session_data.get("skill_id", "")
-        passport_id, clean_runs = issue_passport_if_eligible(
-            db=db,
-            trainee_uid=user.uid,
-            skill_id=skill_id,
-            current_session=session_data,
-            user_display_name=user.display_name,
-            background_tasks=background_tasks,
-        )
-
-    session_data["passport_id"] = passport_id
-    session_data["clean_runs"] = clean_runs
     return session_data
 
 
 # --- Supervisor Insight Endpoints (Role: supervisor only) ---
 
 
-@app.get("/api/insights/matrix")
-async def get_insights_matrix(
-    include_masters: bool = Query(default=False),
-    user: AuthUser = Depends(require_supervisor),
-) -> dict[str, Any]:
-    cache_key = f"insights:matrix:include_masters={include_masters}"
-    cached = get_from_cache(cache_key)
+@app.get("/api/insights/skills")
+async def get_insights_skills(user: AuthUser = Depends(require_supervisor)) -> dict[str, Any]:
+    """Published skills for the supervisor dashboard. Aggregate only: no per-worker data."""
+    cached = get_from_cache("insights:skills")
     if cached is not None:
         return cached
-
     db = get_firestore_client()
-
-    # 1. Published skills
-    skills_query = db.collection("skills").where("status", "==", "published").stream()
-    published_skills = []
-    for doc in skills_query:
-        d = doc.to_dict() or {}
-        published_skills.append({"id": doc.id, "title": d.get("title", doc.id)})
-    published_skills.sort(key=lambda x: x["title"])
-
-    # 2. Passports (certified)
-    passports_query = db.collection("passports").stream()
-    certified_pairs = set()
-    for doc in passports_query:
-        pd = doc.to_dict() or {}
-        t_uid = pd.get("trainee_uid")
-        s_id = pd.get("skill_id")
-        if t_uid and s_id and t_uid not in EXCLUDED_UIDS:
-            certified_pairs.add((t_uid, s_id))
-
-    # 3. Sessions
-    now = datetime.now(timezone.utc)
-    cutoff_12m = (now - timedelta(minutes=12)).isoformat()
-    sessions_query = db.collection("sessions").stream()
-
-    trainee_sessions: dict[str, dict[str, list[dict[str, Any]]]] = {}
-    all_trainee_uids: set[str] = set()
-
-    for doc in sessions_query:
-        sd = doc.to_dict() or {}
-        t_uid = sd.get("trainee_uid")
-        s_id = sd.get("skill_id")
-
-        if not t_uid or t_uid in EXCLUDED_UIDS:
-            continue
-        if not include_masters and sd.get("preview") is True:
-            continue
-
-        all_trainee_uids.add(t_uid)
-        if t_uid not in trainee_sessions:
-            trainee_sessions[t_uid] = {}
-        if s_id not in trainee_sessions[t_uid]:
-            trainee_sessions[t_uid][s_id] = []
-        trainee_sessions[t_uid][s_id].append(sd)
-
-    for t_uid, _ in certified_pairs:
-        all_trainee_uids.add(t_uid)
-
-    # 4. Resolve trainee first names
-    trainees_list = []
-    for t_uid in sorted(all_trainee_uids):
-        first_name = get_trainee_first_name(t_uid)
-        trainees_list.append({"uid": t_uid, "first_name": first_name})
-
-    # 5. Build matrix cells
-    cells = []
-    for t_uid in sorted(all_trainee_uids):
-        for sk in published_skills:
-            sk_id = sk["id"]
-            user_skill_sessions = trainee_sessions.get(t_uid, {}).get(sk_id, [])
-
-            is_certified = (t_uid, sk_id) in certified_pairs
-            has_sessions = len(user_skill_sessions) > 0
-
-            if is_certified:
-                cell_status = "certified"
-            elif has_sessions:
-                cell_status = "learning"
-            else:
-                cell_status = "not_started"
-
-            last_session_at = None
-            mistakes_trend = []
-            if has_sessions:
-                sorted_sessions = sorted(
-                    user_skill_sessions,
-                    key=lambda x: str(x.get("started_at") or ""),
-                )
-                last_session_at = sorted_sessions[-1].get("started_at")
-                recent_5 = sorted_sessions[-5:]
-                mistakes_trend = [
-                    int(s.get("result", {}).get("mistakes", 0))
-                    if isinstance(s.get("result"), dict)
-                    else 0
-                    for s in recent_5
-                ]
-
-            cells.append({
-                "uid": t_uid,
-                "skill_id": sk_id,
-                "status": cell_status,
-                "sessions": len(user_skill_sessions),
-                "last_session_at": last_session_at,
-                "mistakes_trend": mistakes_trend,
-            })
-
-    result = {
-        "trainees": trainees_list,
-        "skills": published_skills,
-        "cells": cells,
-    }
-    set_in_cache(cache_key, result)
+    skills = [{"id": doc.id, "title": (doc.to_dict() or {}).get("title", doc.id)}
+              for doc in db.collection("skills").where("status", "==", "published").stream()]
+    skills.sort(key=lambda x: x["title"])
+    result = {"skills": skills}
+    set_in_cache("insights:skills", result)
     return result
 
 
@@ -1307,9 +1141,7 @@ async def get_session_replay(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     session_data = session_doc.to_dict() or {}
-    trainee_uid = session_data.pop("trainee_uid", None)
-    first_name = get_trainee_first_name(trainee_uid)
-    session_data["first_name"] = first_name
+    session_data.pop("trainee_uid", None)  # replays never say who the operator was
 
     # If session is live and started > 12 minutes ago, label as abandoned
     now = datetime.now(timezone.utc)
@@ -1343,80 +1175,6 @@ async def get_session_replay(
     }
     set_in_cache(cache_key, replay_payload)
     return replay_payload
-
-
-# --- Skill Passport Endpoints ---
-
-
-@app.get("/api/passports/{passport_id}")
-async def get_public_passport(
-    passport_id: str,
-    request: Request,
-) -> dict[str, Any]:
-    """Public certificate verification endpoint. Rate-limited per IP (60/min).
-
-    Returns allowlisted fields only. Explicitly omits uid, session_ids, and email.
-    """
-    check_public_rate_limit(request, limit=60, window_s=60)
-    db = get_firestore_client()
-    pdoc = db.collection("passports").document(passport_id).get()
-
-    if not pdoc.exists:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="This certificate could not be found.",
-        )
-
-    pd = pdoc.to_dict() or {}
-    skill_id = pd.get("skill_id", "")
-    badge_url = get_badge_signed_url_if_exists(skill_id, expires_hours=1)
-
-    return {
-        "id": pd.get("id", passport_id),
-        "display_first_name": pd.get("display_first_name", "Trainee"),
-        "skill_title": pd.get("skill_title", ""),
-        "master_display_name": pd.get("master_display_name", "Master Craftsperson"),
-        "language": pd.get("language", "en"),
-        "issued_at": pd.get("issued_at", ""),
-        "sessions_count": len(pd.get("session_ids", [])),
-        "verified": True,
-        "badge_url": badge_url,
-    }
-
-
-@app.get("/api/me/passports")
-async def get_my_passports(
-    user: AuthUser = Depends(verify_auth_token),
-) -> dict[str, Any]:
-    """Returns caller's earned certificates for trainee profile / home screen."""
-    db = get_firestore_client()
-    passports_stream = (
-        db.collection("passports")
-        .where("trainee_uid", "==", user.uid)
-        .stream()
-    )
-
-    results = []
-    for pdoc in passports_stream:
-        pd = pdoc.to_dict() or {}
-        skill_id = pd.get("skill_id", "")
-        badge_url = get_badge_signed_url_if_exists(skill_id, expires_hours=1)
-        results.append({
-            "id": pd.get("id", pdoc.id),
-            "skill_id": skill_id,
-            "skill_title": pd.get("skill_title", ""),
-            "display_first_name": pd.get("display_first_name", "Trainee"),
-            "master_display_name": pd.get("master_display_name", "Master Craftsperson"),
-            "language": pd.get("language", "en"),
-            "issued_at": pd.get("issued_at", ""),
-            "sessions_count": len(pd.get("session_ids", [])),
-            "badge_url": badge_url,
-            "verify_url": pd.get("verify_url", f"https://takumi-cup-2026.web.app/passport/{pd.get('id', pdoc.id)}"),
-        })
-
-    # Sort descending by issued_at
-    results.sort(key=lambda x: x.get("issued_at", ""), reverse=True)
-    return {"passports": results}
 
 
 # --- Public Status & Telemetry ---

@@ -120,24 +120,6 @@ describe('Storage Security Rules', () => {
     await assertFails(uploadBytes(supRef, new Uint8Array([1, 2, 3])));
   });
 
-  it('passports badges path has no client read or write access', async () => {
-    await testEnv.withSecurityRulesDisabled(async (context) => {
-      const storage = context.storage();
-      const badgeRef = ref(storage, 'passports/badges/skill_123.png');
-      await uploadBytes(badgeRef, new Uint8Array([1, 2, 3]));
-    });
-
-    const unauthStorage = testEnv.unauthenticatedContext().storage();
-    const unauthRef = ref(unauthStorage, 'passports/badges/skill_123.png');
-    await assertFails(getBytes(unauthRef));
-    await assertFails(uploadBytes(unauthRef, new Uint8Array([1, 2, 3])));
-
-    const traineeStorage = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).storage();
-    const traineeRef = ref(traineeStorage, 'passports/badges/skill_123.png');
-    await assertFails(getBytes(traineeRef));
-    await assertFails(uploadBytes(traineeRef, new Uint8Array([1, 2, 3])));
-  });
-
   it('products reference images are readable by signed-in users, writable only by supervisors', async () => {
     await testEnv.withSecurityRulesDisabled(async (context) => {
       const storage = context.storage();

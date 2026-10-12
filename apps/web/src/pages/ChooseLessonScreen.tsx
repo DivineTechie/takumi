@@ -83,7 +83,7 @@ export const ChooseLessonScreen: React.FC = () => {
       <main className="flex-1 w-full max-w-md mx-auto px-4 pt-6 pb-8 flex flex-col">
         <section className="mb-6">
           <h1 className="font-headline-xl font-bold text-on-surface tracking-tight">
-            {t('choose_lesson_title')}
+            {t('station.pick_title')}
           </h1>
         </section>
 
@@ -109,10 +109,10 @@ export const ChooseLessonScreen: React.FC = () => {
               <span className="material-symbols-outlined text-[48px]">menu_book</span>
             </div>
             <h2 className="font-headline-md font-bold text-on-surface mb-2 tracking-normal">
-              {t('no_lessons_title')}
+              {t('station.pick_empty_title')}
             </h2>
             <p className="font-body-md text-on-surface-variant max-w-[280px] leading-relaxed">
-              {t('no_lessons_desc')}
+              {t('station.pick_empty_desc')}
             </p>
           </div>
         ) : (

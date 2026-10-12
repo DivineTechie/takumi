@@ -1,4 +1,4 @@
-"""Unit tests for supervisor insight endpoints (/api/insights/matrix, /api/insights/skill/{id}, /api/sessions/{id}/replay)."""
+"""Unit tests for supervisor insight endpoints (/api/insights/skills, /api/insights/skill/{id}, /api/sessions/{id}/replay)."""
 
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
@@ -24,7 +24,7 @@ def reset_cache():
 
 def test_supervisor_endpoints_require_supervisor_role():
     with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "trainee_1", "role": "trainee"}):
-        res1 = client.get("/api/insights/matrix", headers={"Authorization": "Bearer token"})
+        res1 = client.get("/api/insights/skills", headers={"Authorization": "Bearer token"})
         assert res1.status_code == 403
 
         res2 = client.get("/api/insights/skill/skill_wiring", headers={"Authorization": "Bearer token"})
@@ -34,117 +34,32 @@ def test_supervisor_endpoints_require_supervisor_role():
         assert res3.status_code == 403
 
     with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "master_1", "role": "master"}):
-        res4 = client.get("/api/insights/matrix", headers={"Authorization": "Bearer token"})
+        res4 = client.get("/api/insights/skills", headers={"Authorization": "Bearer token"})
         assert res4.status_code == 403
 
 
 # ==========================================
-# 2. GET /api/insights/matrix
+# 2. GET /api/insights/skills
 # ==========================================
 
 
-def test_insights_matrix_excludes_smoke_trainee_and_privacy_first_names():
+def test_insights_skills_lists_published_skills_without_worker_data():
     mock_db = MagicMock()
+    s1, s2 = MagicMock(), MagicMock()
+    s1.id, s2.id = "skill_wiring", "skill_charger"
+    s1.to_dict.return_value = {"title": "Wire DIN rail", "status": "published"}
+    s2.to_dict.return_value = {"title": "Pack a charger kit", "status": "published"}
+    mock_db.collection.return_value.where.return_value.stream.return_value = [s1, s2]
 
-    # Published skills
-    skill_doc = MagicMock()
-    skill_doc.id = "skill_terminal_wiring_v1"
-    skill_doc.to_dict.return_value = {"title": "Wire a DIN-rail terminal block", "status": "published"}
+    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}),          patch("services.api.main.get_firestore_client", return_value=mock_db):
+        res = client.get("/api/insights/skills", headers={"Authorization": "Bearer token"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data == {"skills": [{"id": "skill_charger", "title": "Pack a charger kit"}, {"id": "skill_wiring", "title": "Wire DIN rail"}]}
+    assert "trainees" not in data and "cells" not in data  # no per-worker scoring
+    mock_db.collection.assert_called_with("skills")
 
-    # Passports (certified)
-    passport_doc = MagicMock()
-    passport_doc.to_dict.return_value = {
-        "trainee_uid": "trainee_certified_1",
-        "skill_id": "skill_terminal_wiring_v1",
-    }
 
-    # Sessions
-    ses1 = MagicMock()
-    ses1.to_dict.return_value = {
-        "trainee_uid": "smoke-trainee",  # MUST BE EXCLUDED
-        "skill_id": "skill_terminal_wiring_v1",
-        "status": "completed",
-        "started_at": "2026-10-06T10:00:00Z",
-        "result": {"mistakes": 2},
-    }
-    ses2 = MagicMock()
-    ses2.to_dict.return_value = {
-        "trainee_uid": "user_real_9876",
-        "skill_id": "skill_terminal_wiring_v1",
-        "status": "completed",
-        "started_at": "2026-10-06T11:00:00Z",
-        "result": {"mistakes": 1},
-    }
-    ses3 = MagicMock()
-    ses3.to_dict.return_value = {
-        "trainee_uid": "user_real_9876",
-        "skill_id": "skill_terminal_wiring_v1",
-        "status": "completed",
-        "started_at": "2026-10-06T12:00:00Z",
-        "result": {"mistakes": 0},
-    }
-
-    def mock_collection(col_name):
-        col_mock = MagicMock()
-        if col_name == "skills":
-            col_mock.where.return_value.stream.return_value = [skill_doc]
-        elif col_name == "passports":
-            col_mock.stream.return_value = [passport_doc]
-        elif col_name == "sessions":
-            col_mock.stream.return_value = [ses1, ses2, ses3]
-        return col_mock
-
-    mock_db.collection.side_effect = mock_collection
-
-    def mock_get_user(uid):
-        u = MagicMock()
-        if uid == "user_real_9876":
-            u.display_name = "Alice Smith"
-            u.email = "alice@example.com"  # Must NOT leak
-        else:
-            u.display_name = None
-            u.email = f"{uid}@example.com"
-        return u
-
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}):
-        with patch("services.api.main.get_firestore_client", return_value=mock_db):
-            with patch("services.api.main.fb_auth.get_user", side_effect=mock_get_user):
-                res = client.get("/api/insights/matrix", headers={"Authorization": "Bearer token"})
-                assert res.status_code == 200
-                data = res.json()
-
-                # Trainees
-                trainee_uids = [t["uid"] for t in data["trainees"]]
-                assert "smoke-trainee" not in trainee_uids
-                assert "user_real_9876" in trainee_uids
-                assert "trainee_certified_1" in trainee_uids
-
-                # First names only
-                alice = next(t for t in data["trainees"] if t["uid"] == "user_real_9876")
-                assert alice["first_name"] == "Alice"  # First token only
-
-                cert_user = next(t for t in data["trainees"] if t["uid"] == "trainee_certified_1")
-                assert cert_user["first_name"] == "Trainee ed_1"  # Trainee <last4> fallback
-
-                # NEVER leak emails
-                raw_json = res.text
-                assert "@example.com" not in raw_json
-                assert "email" not in raw_json.lower()
-
-                # Cells verification
-                alice_cell = next(
-                    c for c in data["cells"]
-                    if c["uid"] == "user_real_9876" and c["skill_id"] == "skill_terminal_wiring_v1"
-                )
-                assert alice_cell["status"] == "learning"
-                assert alice_cell["sessions"] == 2
-                assert alice_cell["mistakes_trend"] == [1, 0]
-
-                cert_cell = next(
-                    c for c in data["cells"]
-                    if c["uid"] == "trainee_certified_1" and c["skill_id"] == "skill_terminal_wiring_v1"
-                )
-                assert cert_cell["status"] == "certified"
 
 
 # ==========================================
@@ -255,7 +170,7 @@ def test_insights_skill_parameterized_sql_and_step_lag_timing():
 # ==========================================
 
 
-def test_session_replay_replaces_trainee_uid_with_first_name_and_signs_urls():
+def test_session_replay_hides_the_operator_and_signs_urls():
     mock_db = MagicMock()
     session_doc = MagicMock()
     session_doc.exists = True
@@ -307,9 +222,10 @@ def test_session_replay_replaces_trainee_uid_with_first_name_and_signs_urls():
                     assert res.status_code == 200
                     data = res.json()
 
-                    # Privacy verification: trainee_uid replaced with first_name
-                    assert data["session"]["first_name"] == "Bob"
+                    # Privacy: the replay never says who the operator was
                     assert "trainee_uid" not in data["session"]
+                    assert "first_name" not in data["session"]
+                    assert "Bob" not in res.text
 
                     # No email in response
                     raw_text = res.text
@@ -321,56 +237,6 @@ def test_session_replay_replaces_trainee_uid_with_first_name_and_signs_urls():
                     assert events[1]["frame_uri"] == "https://storage.googleapis.com/signed/evt_abc.jpg?token=mock_15m"
 
 
-def test_insights_matrix_stale_live_session_counts_as_learning():
-    mock_db = MagicMock()
-
-    # Published skills
-    skill_doc = MagicMock()
-    skill_doc.id = "skill_terminal_wiring_v1"
-    skill_doc.to_dict.return_value = {"title": "Wire a DIN-rail terminal block", "status": "published"}
-
-    # Passports (none)
-    mock_db.collection("skills").where.return_value.stream.return_value = [skill_doc]
-    mock_db.collection("passports").stream.return_value = []
-
-    # Stale live session (> 12 minutes old)
-    ses_stale = MagicMock()
-    ses_stale.to_dict.return_value = {
-        "trainee_uid": "trainee_stale_1",
-        "skill_id": "skill_terminal_wiring_v1",
-        "status": "live",
-        "started_at": "2026-10-06T00:00:00Z",  # hours ago
-    }
-
-    mock_db.collection("sessions").stream.return_value = [ses_stale]
-
-    def mock_collection(col_name):
-        col_mock = MagicMock()
-        if col_name == "skills":
-            col_mock.where.return_value.stream.return_value = [skill_doc]
-        elif col_name == "passports":
-            col_mock.stream.return_value = []
-        elif col_name == "sessions":
-            col_mock.stream.return_value = [ses_stale]
-        return col_mock
-
-    mock_db.collection.side_effect = mock_collection
-
-    mock_user = MagicMock()
-    mock_user.display_name = "Charlie Chaplin"
-
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}):
-        with patch("services.api.main.get_firestore_client", return_value=mock_db):
-            with patch("services.api.main.fb_auth.get_user", return_value=mock_user):
-                res = client.get("/api/insights/matrix", headers={"Authorization": "Bearer token"})
-                assert res.status_code == 200
-                data = res.json()
-                charlie_cell = next(
-                    c for c in data["cells"]
-                    if c["uid"] == "trainee_stale_1" and c["skill_id"] == "skill_terminal_wiring_v1"
-                )
-                assert charlie_cell["status"] == "learning"
-                assert charlie_cell["sessions"] == 1
 
 
 def test_insights_skill_unreached_steps_and_incomplete_sessions_return_null():
@@ -502,143 +368,10 @@ def test_master_preview_and_exclusion_from_insights():
         assert sess_data["status"] == "live"
         assert sess_data["preview"] is True
 
-    # 3. Master preview session is excluded from /api/insights/matrix by default
-    skill_item = MagicMock()
-    skill_item.id = "skill_wiring"
-    skill_item.to_dict.return_value = {"title": "Wire DIN rail", "status": "published"}
 
-    trainee_ses = MagicMock()
-    trainee_ses.to_dict.return_value = {
-        "trainee_uid": "trainee_real_1",
-        "skill_id": "skill_wiring",
-        "status": "completed",
-        "started_at": "2026-10-07T10:00:00Z",
-        "result": {"mistakes": 1},
-        "preview": False,
-    }
-    master_ses = MagicMock()
-    master_ses.to_dict.return_value = {
-        "trainee_uid": "master_uid_1",
-        "skill_id": "skill_wiring",
-        "status": "completed",
-        "started_at": "2026-10-07T11:00:00Z",
-        "result": {"mistakes": 0},
-        "preview": True,
-    }
-
-    def mock_cols(col_name):
-        c = MagicMock()
-        if col_name == "skills":
-            c.where.return_value.stream.return_value = [skill_item]
-        elif col_name == "passports":
-            c.stream.return_value = []
-        elif col_name == "sessions":
-            c.stream.return_value = [trainee_ses, master_ses]
-        return c
-
-    mock_db.collection.side_effect = mock_cols
-
-    def mock_fb_user(uid):
-        u = MagicMock()
-        if uid == "master_uid_1":
-            u.display_name = "Master Ken"
-            u.custom_claims = {"role": "master"}
-        else:
-            u.display_name = "Trainee Tim"
-            u.custom_claims = {"role": "trainee"}
-        return u
-
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}), \
-         patch("services.api.main.get_firestore_client", return_value=mock_db), \
-         patch("services.api.main.fb_auth.get_user", side_effect=mock_fb_user):
-        # Default: master excluded
-        clear_insights_cache()
-        res_matrix_default = client.get("/api/insights/matrix", headers={"Authorization": "Bearer token"})
-        assert res_matrix_default.status_code == 200
-        data_default = res_matrix_default.json()
-        uids_default = [t["uid"] for t in data_default["trainees"]]
-        assert "master_uid_1" not in uids_default
-        assert "trainee_real_1" in uids_default
-
-        # include_masters=true: master included
-        clear_insights_cache()
-        res_matrix_all = client.get("/api/insights/matrix?include_masters=true", headers={"Authorization": "Bearer token"})
-        assert res_matrix_all.status_code == 200
-        data_all = res_matrix_all.json()
-        uids_all = [t["uid"] for t in data_all["trainees"]]
-        assert "master_uid_1" in uids_all
-        assert "trainee_real_1" in uids_all
-
-
-def test_user_with_preview_and_trainee_session_only_counts_trainee():
-    """A user who ran a preview session AND a real trainee session:
-
-    In /api/insights/matrix (default, include_masters=False):
-    The user appears as a trainee, but only the trainee session counts towards progress.
-    In /api/insights/skill:
-    BigQuery query receives AND COALESCE(preview, FALSE) = FALSE, filtering out the preview row.
-    """
+def test_skill_insights_exclude_preview_sessions():
+    """Every skill insight query filters out master preview sessions."""
     mock_db = MagicMock()
-    skill_item = MagicMock()
-    skill_item.id = "skill_wiring"
-    skill_item.to_dict.return_value = {"title": "Wire DIN rail", "status": "published"}
-
-    # User 'dual_user' has 1 preview session (abandoned or step 1) and 1 trainee session (completed)
-    preview_ses = MagicMock()
-    preview_ses.to_dict.return_value = {
-        "trainee_uid": "dual_user",
-        "skill_id": "skill_wiring",
-        "status": "abandoned",
-        "started_at": "2026-10-07T08:00:00Z",
-        "preview": True,
-        "result": {"steps_done": 1, "mistakes": 5, "safety_stops": 1},
-    }
-    trainee_ses = MagicMock()
-    trainee_ses.to_dict.return_value = {
-        "trainee_uid": "dual_user",
-        "skill_id": "skill_wiring",
-        "status": "completed",
-        "started_at": "2026-10-07T09:00:00Z",
-        "preview": False,
-        "result": {"steps_done": 4, "mistakes": 0, "safety_stops": 0},
-    }
-
-    def mock_cols(col_name):
-        c = MagicMock()
-        if col_name == "skills":
-            c.where.return_value.stream.return_value = [skill_item]
-        elif col_name == "passports":
-            c.stream.return_value = []
-        elif col_name == "sessions":
-            c.stream.return_value = [preview_ses, trainee_ses]
-        return c
-
-    mock_db.collection.side_effect = mock_cols
-
-    def mock_fb_user(uid):
-        u = MagicMock()
-        u.display_name = "Dual Worker"
-        u.custom_claims = {"role": "trainee"}
-        return u
-
-    with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "sup_1", "role": "supervisor"}), \
-         patch("services.api.main.get_firestore_client", return_value=mock_db), \
-         patch("services.api.main.fb_auth.get_user", side_effect=mock_fb_user):
-        clear_insights_cache()
-        res = client.get("/api/insights/matrix", headers={"Authorization": "Bearer token"})
-        assert res.status_code == 200
-        data = res.json()
-        assert len(data["trainees"]) == 1
-        assert data["trainees"][0]["uid"] == "dual_user"
-        # The user's cell should show 1 session (the trainee session only, preview excluded)
-        cells = data["cells"]
-        assert len(cells) == 1
-        assert cells[0]["uid"] == "dual_user"
-        assert cells[0]["status"] == "learning"
-        assert cells[0]["sessions"] == 1
-        assert cells[0]["mistakes_trend"] == [0]
-
-    # Also check /api/insights/skill query generation
     skill_doc = MagicMock()
     skill_doc.exists = True
     skill_doc.to_dict.return_value = {

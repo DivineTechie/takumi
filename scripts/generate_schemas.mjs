@@ -20,7 +20,6 @@ const schemas = [
   'review_requests',
   'sessions',
   'session_events',
-  'passports',
   'products',
   'units',
   'inspections',

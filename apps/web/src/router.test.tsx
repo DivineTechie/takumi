@@ -14,7 +14,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
   const testFeatureRoute: FeatureRoute = {
     path: '/test-feature',
     roles: ['master'],
-    element: <div data-testid="test-feature-content">Member B Custom Feature</div>,
+    element: <div data-testid="test-feature-content">Studio test screen</div>,
   };
 
   it('mounts entries from features/routes.tsx and protects them with RoleGuard for unauthorized role', async () => {
@@ -29,7 +29,6 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
-      updateDisplayName: vi.fn(),
     });
 
     const routes = buildRouteObjects([testFeatureRoute]);
@@ -58,7 +57,6 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
-      updateDisplayName: vi.fn(),
     });
 
     const routes = buildRouteObjects([testFeatureRoute]);
@@ -71,7 +69,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
     // Master should see the feature content
     const content = await screen.findByTestId('test-feature-content');
     expect(content).toBeInTheDocument();
-    expect(content.textContent).toBe('Member B Custom Feature');
+    expect(content.textContent).toBe('Studio test screen');
   });
 
   it('redirects unauthenticated user to /signin when accessing feature route', async () => {
@@ -86,7 +84,6 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
-      updateDisplayName: vi.fn(),
     });
 
     const routes = buildRouteObjects([testFeatureRoute]);
@@ -101,7 +98,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
     expect(screen.queryByTestId('test-feature-content')).toBeNull();
   });
 
-  it('allows master role to access /coach for lesson preview', async () => {
+  it('allows master role to open Station Watch at /coach', async () => {
     vi.spyOn(authModule, 'useAuth').mockReturnValue({
       user: { uid: 'master_user', email: 'master@example.com' } as unknown as User,
       role: 'master',
@@ -112,7 +109,6 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
-      updateDisplayName: vi.fn(),
     });
 
     const routes = buildRouteObjects([]);
@@ -122,11 +118,11 @@ describe('Router & Feature Routes behind RoleGuard', () => {
 
     render(<RouterProvider router={router} />);
 
-    // Master should see the lesson selection screen (Choose a lesson)
-    expect(await screen.findByText('Choose a lesson')).toBeInTheDocument();
+    // Master sees the work instruction picker (lazy-loaded, so allow time under a parallel test run)
+    expect(await screen.findByText('Choose a work instruction', {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
-  it('shows "This part of TAKUMI is still being finished" on 404 for known feature paths', async () => {
+  it('shows the not-found page for a path that is not mounted', async () => {
     vi.spyOn(authModule, 'useAuth').mockReturnValue({
       user: { uid: 'master_user', email: 'master@example.com' } as unknown as User,
       role: 'master',
@@ -137,10 +133,9 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
-      updateDisplayName: vi.fn(),
     });
 
-    // Without featureRoutes mounted, /capture falls through to 404
+    // Without the Studio routes mounted, /capture falls through to the not-found page
     const routes = buildRouteObjects([]);
     const router = createMemoryRouter(routes, {
       initialEntries: ['/capture'],
@@ -148,6 +143,6 @@ describe('Router & Feature Routes behind RoleGuard', () => {
 
     render(<RouterProvider router={router} />);
 
-    expect(await screen.findByText('This part of TAKUMI is still being finished')).toBeInTheDocument();
+    expect(await screen.findByText('404 - Page Not Found')).toBeInTheDocument();
   });
 });

@@ -178,7 +178,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   return (await res.json()) as T;
 }
 
-// --- Endpoints for Member A ---
+// --- Account and Station Watch sessions ---
 
 export async function getMe(): Promise<MeResponse> {
   return await apiFetch<MeResponse>('/api/me');
@@ -234,14 +234,14 @@ export async function postSessionEvent(
 export async function endSession(
   sessionId: string,
   status: 'completed' | 'abandoned'
-): Promise<Session & { passport_id?: string | null; clean_runs?: number }> {
-  return await apiFetch<Session & { passport_id?: string | null; clean_runs?: number }>(`/api/sessions/${sessionId}`, {
+): Promise<Session> {
+  return await apiFetch<Session>(`/api/sessions/${sessionId}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });
 }
 
-// --- Member B functions preserved with same signatures, backed by apiFetch ---
+// --- Live tokens and the Standard Work Studio ---
 
 export async function fetchLiveToken(
   purpose: 'interview' | 'coach' = 'interview'
@@ -273,33 +273,14 @@ export async function regenerateStepPart(
 
 // --- Supervisor Insight Endpoints (Role: supervisor only) ---
 
-export interface MatrixTrainee {
-  uid: string;
-  first_name: string;
-}
-
-export interface MatrixSkill {
+export interface InsightSkill {
   id: string;
   title: string;
 }
 
-export interface MatrixCell {
-  uid: string;
-  skill_id: string;
-  status: 'certified' | 'learning' | 'not_started';
-  sessions: number;
-  last_session_at: string | null;
-  mistakes_trend: number[];
-}
-
-export interface InsightsMatrixResponse {
-  trainees: MatrixTrainee[];
-  skills: MatrixSkill[];
-  cells: MatrixCell[];
-}
-
-export async function fetchInsightsMatrix(): Promise<InsightsMatrixResponse> {
-  return await apiFetch<InsightsMatrixResponse>('/api/insights/matrix');
+/** Published skills for the supervisor dashboard (aggregate only, no per-worker data). */
+export async function fetchInsightSkills(): Promise<{ skills: InsightSkill[] }> {
+  return await apiFetch<{ skills: InsightSkill[] }>('/api/insights/skills');
 }
 
 export interface SkillStepInsight {
@@ -329,7 +310,6 @@ export async function fetchSkillInsights(skillId: string): Promise<SkillInsights
 export interface SessionReplaySession {
   id: string;
   skill_id: string;
-  first_name: string;
   status: 'live' | 'completed' | 'abandoned';
   started_at: string;
   ended_at?: string | null;
@@ -377,48 +357,6 @@ export interface SessionReplayResponse {
 
 export async function fetchSessionReplay(sessionId: string): Promise<SessionReplayResponse> {
   return await apiFetch<SessionReplayResponse>(`/api/sessions/${sessionId}/replay`);
-}
-
-// --- Skill Passport Types & Functions ---
-
-export interface PublicPassport {
-  id: string;
-  display_first_name: string;
-  skill_title: string;
-  master_display_name: string;
-  language: string;
-  issued_at: string;
-  sessions_count: number;
-  verified: boolean;
-  badge_url: string | null;
-}
-
-export interface MyPassport {
-  id: string;
-  skill_id: string;
-  skill_title: string;
-  display_first_name: string;
-  master_display_name: string;
-  language: string;
-  issued_at: string;
-  sessions_count: number;
-  badge_url: string | null;
-  verify_url: string;
-}
-
-export async function fetchPublicPassport(passportId: string): Promise<PublicPassport> {
-  const res = await fetch(`/api/passports/${passportId}`);
-  if (!res.ok) {
-    if (res.status === 404) {
-      throw new ApiError('This certificate could not be found.', 404);
-    }
-    throw new ApiError(await res.text(), res.status);
-  }
-  return await res.json();
-}
-
-export async function fetchMyPassports(): Promise<{ passports: MyPassport[] }> {
-  return await apiFetch<{ passports: MyPassport[] }>('/api/me/passports');
 }
 
 export interface SystemStatusResponse {
@@ -633,10 +571,6 @@ export async function createProductWithImages(req: {
     method: 'POST',
     body: JSON.stringify(req),
   });
-}
-
-export async function fetchProduct(productId: string): Promise<ProductItem> {
-  return await apiFetch<ProductItem>(`/api/products/${encodeURIComponent(productId)}`);
 }
 
 export async function fetchGallery(category?: string): Promise<GalleryItem[]> {
@@ -1022,10 +956,6 @@ export async function fetchMachines(): Promise<Machine[]> {
 
 export async function removeMachine(id: string): Promise<{ id: string; archived: boolean }> {
   return await apiFetch(`/api/machines/${encodeURIComponent(id)}/remove`, { method: 'POST' });
-}
-
-export async function fetchMachine(id: string): Promise<Machine> {
-  return await apiFetch<Machine>(`/api/machines/${encodeURIComponent(id)}`);
 }
 
 export async function setupMachine(

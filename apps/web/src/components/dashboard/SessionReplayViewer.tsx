@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../../i18n';
-import type { SessionReplayResponse, SessionReplayEvent, MatrixSkill } from '../../lib/api';
+import type { SessionReplayResponse, SessionReplayEvent, InsightSkill } from '../../lib/api';
 
 export interface RecentSessionItem {
   id: string;
   skill_id: string;
   trainee_uid: string;
-  first_name?: string;
   status: 'live' | 'completed' | 'abandoned';
   started_at: string;
   language?: string;
@@ -17,8 +16,7 @@ interface SessionReplayViewerProps {
   replay: SessionReplayResponse | null;
   loading: boolean;
   recentSessions?: RecentSessionItem[];
-  skillsMap?: Record<string, MatrixSkill>;
-  traineesMap?: Record<string, string>;
+  skillsMap?: Record<string, InsightSkill>;
   onSelectSession?: (sessionId: string) => void;
   onClose?: () => void;
 }
@@ -28,7 +26,6 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
   loading,
   recentSessions = [],
   skillsMap = {},
-  traineesMap = {},
   onSelectSession,
   onClose,
 }) => {
@@ -82,7 +79,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
             </h4>
             <div className="divide-y divide-outline-variant/40 bg-surface-container rounded-xl border border-outline-variant overflow-hidden">
               {recentSessions.map((s) => {
-                const sTrainee = traineesMap[s.trainee_uid] || s.first_name || t('dashboard_trainee');
+                const sTrainee = s.trainee_uid ? t('app.dashboard_trainee_short_id', { id: s.trainee_uid.slice(-4) }) : t('dashboard_trainee');
                 const sSkill = skillsMap[s.skill_id]?.title || s.skill_id;
                 const sAbandoned =
                   s.status === 'abandoned' ||
@@ -254,7 +251,7 @@ export const SessionReplayViewer: React.FC<SessionReplayViewerProps> = ({
         <div>
           <div className="flex flex-wrap items-center gap-2 mb-1">
             <span className="text-[17px] font-bold text-on-surface">
-              {session.first_name}
+              {skillsMap[session.skill_id]?.title || session.skill_id}
             </span>
             <span
               className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full border ${
