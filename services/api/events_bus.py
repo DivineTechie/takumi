@@ -23,12 +23,12 @@ KINDS = ("station", "inspection", "machine", "unit")
 
 
 def normalise_source(source: str | None) -> str:
-    """Every event carries LIVE, HOME RIG or a PUBLIC DATA label."""
+    """Every event carries LIVE, HOME RIG, a PUBLIC DATA label, or TEST FIXTURES (scripted records)."""
     s = (source or "").strip()
     if s.upper().startswith("PUBLIC DATA"):
         return s
-    if s.upper() == "HOME RIG":
-        return "HOME RIG"
+    if s.upper() in ("HOME RIG", "TEST FIXTURES"):
+        return s.upper()
     return "LIVE"
 
 

@@ -196,3 +196,16 @@ def test_hold_and_release_are_supervisor_only_and_restore_status():
 
             assert client.post("/api/units/A/release", headers=AUTH).json()["status"] == "passed"
             assert client.post("/api/units/A/release", headers=AUTH).status_code == 409
+
+
+def test_hold_and_release_events_keep_a_test_fixture_label():
+    db = FakeDB()
+    db.store["units/FIX-1"] = {"id": "FIX-1", "status": "passed", "source": "TEST FIXTURES", "created_at": "2026-10-12T08:00:00+00:00"}
+    db.store["units/R-1"] = {"id": "R-1", "status": "passed", "created_at": "2026-10-12T08:00:00+00:00"}
+    p1, p2 = _db(db)
+    with p1, p2, _user("sup_1", "supervisor"), patch("services.api.units.publish_event") as pub:
+        client.post("/api/units/hold", json={"unit_ids": ["FIX-1", "R-1"], "reason": "same step", "source": "traceback"}, headers=AUTH)
+        sources = {c.kwargs["unit_id"]: c.kwargs.get("source") for c in pub.call_args_list}
+        assert sources == {"FIX-1": "TEST FIXTURES", "R-1": None}  # None is published as LIVE
+        client.post("/api/units/FIX-1/release", headers=AUTH)
+        assert pub.call_args.kwargs["source"] == "TEST FIXTURES"

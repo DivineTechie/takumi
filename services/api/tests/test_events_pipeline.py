@@ -26,6 +26,7 @@ def test_source_labels():
     assert normalise_source(None) == "LIVE"
     assert normalise_source("manual_upload") == "LIVE"
     assert normalise_source("HOME RIG") == "HOME RIG"
+    assert normalise_source("TEST FIXTURES") == "TEST FIXTURES"
     assert normalise_source("PUBLIC DATA: VisA (CC BY 4.0)") == "PUBLIC DATA: VisA (CC BY 4.0)"
 
 

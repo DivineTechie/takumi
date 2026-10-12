@@ -217,7 +217,8 @@ def hold_units(req: HoldRequest, user: AuthUser = Depends(require_role("supervis
             }]),
         })
         held.append(unit_id)
-        publish_event("unit", "hold", ts=now, unit_id=unit_id, entity_id=unit_id, status="on_hold",
+        # A unit made of scripted test records keeps its label in the events pipeline.
+        publish_event("unit", "hold", ts=now, unit_id=unit_id, entity_id=unit_id, status="on_hold", source=unit.get("source"),
                       detail={"reason": req.reason, "source": req.source, "previous_status": unit.get("status")})
     return {"held": held, "skipped": skipped}
 
@@ -238,5 +239,5 @@ def release_unit(unit_id: str, user: AuthUser = Depends(require_role("supervisor
     holds = unit.get("holds") or []
     previous = (holds[-1].get("previous_status") if holds else None) or "in_progress"
     ref.update({"status": previous, "released_at": datetime.now(timezone.utc).isoformat(), "released_by_uid": user.uid})
-    publish_event("unit", "release", unit_id=unit_id, entity_id=unit_id, status=previous)
+    publish_event("unit", "release", unit_id=unit_id, entity_id=unit_id, status=previous, source=unit.get("source"))
     return {"id": unit_id, "status": previous}
