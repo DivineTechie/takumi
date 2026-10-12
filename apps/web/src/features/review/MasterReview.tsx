@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { regenerateStepPart, ApiError } from '../../lib/api';
+import { regenerateStepPart, ApiError, type RegeneratePart } from '../../lib/api';
 import {
   Sparkles,
   CheckCircle2,
@@ -46,9 +46,13 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
   const { skillId: routeSkillId } = useParams<{ skillId: string }>();
   const navigate = useNavigate();
   const { t } = useI18n();
+  const tf = (key: string, fallback: string, params?: Record<string, string | number>) => {
+    const text = t(key, params);
+    return text === key ? fallback : text;
+  };
   const skillId = propSkillId || routeSkillId || '';
   const [skill, setSkill] = useState<Skill | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'not_found' | 'error'>('loading');
   const [activeLang, setActiveLang] = useState<string>('en');
   const [reviewRequests, setReviewRequests] = useState<ReviewRequestItem[]>([]);
   const [publishing, setPublishing] = useState(false);
@@ -71,34 +75,15 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     getDoc(skillRef)
       .then((snap) => {
         if (snap.exists()) {
-          const data = snap.data() as Skill;
-          // Auto-normalize WebM video_uri to master.mp4 for iOS Safari compatibility
-          if (data.video_uri && data.video_uri.endsWith('.webm')) {
-            data.video_uri = data.video_uri.slice(0, -5) + '.mp4';
-          }
-          setSkill(data);
+          setSkill(snap.data() as Skill);
+          setLoadState('ready');
         } else {
-          // Use seed fallback for initial demo/testing
-          import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-            const data = seed.default as unknown as Skill;
-            if (!data.video_uri) {
-              data.video_uri = 'gs://takumi-cup-2026.firebasestorage.app/captures/cap_master/master.mp4';
-            }
-            setSkill(data);
-          });
+          setLoadState('not_found');
         }
-        setLoading(false);
       })
       .catch((err) => {
-        console.warn('Could not fetch skill doc, using fallback:', err);
-        import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-          const data = seed.default as unknown as Skill;
-          if (!data.video_uri) {
-            data.video_uri = 'gs://takumi-cup-2026.firebasestorage.app/captures/cap_master/master.mp4';
-          }
-          setSkill(data);
-          setLoading(false);
-        });
+        console.warn('Could not load the lesson:', err);
+        setLoadState('error');
       });
 
     // Listen for open review requests
@@ -122,20 +107,49 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     return validateSkillForPublish(skill, videoDuration);
   }, [skill, videoDuration]);
 
-  if (loading || !skill) {
+  if (loadState !== 'ready' || !skill) {
     return (
       <div
+        role={loadState === 'loading' ? 'status' : 'alert'}
         style={{
           minHeight: '100vh',
           backgroundColor: '#09090b',
           color: '#ffffff',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
+          gap: '0.75rem',
+          padding: '1rem',
+          textAlign: 'center',
           fontFamily: 'system-ui, sans-serif',
         }}
       >
-        <span>{t('app.review_loading')}</span>
+        {loadState === 'loading' && <span>{t('app.review_loading')}</span>}
+        {loadState === 'not_found' && <span>{tf('app.review_not_found', 'This lesson could not be found.')}</span>}
+        {loadState === 'error' && (
+          <>
+            <strong>{t('app.route_error_title')}</strong>
+            <span style={{ color: '#a1a1aa' }}>{t('app.route_error_desc')}</span>
+          </>
+        )}
+        {loadState !== 'loading' && (
+          <button
+            type="button"
+            onClick={() => navigate('/library')}
+            style={{
+              backgroundColor: '#27272a',
+              color: '#ffffff',
+              border: '1px solid #3f3f46',
+              borderRadius: '0.5rem',
+              padding: '0.6rem 1.2rem',
+              minHeight: '44px',
+              cursor: 'pointer',
+            }}
+          >
+            {t('back')}
+          </button>
+        )}
       </div>
     );
   }
@@ -268,18 +282,29 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     setSkill({ ...skill, steps: updatedSteps });
   };
 
-  const handleRegeneratePart = async (n: number, part: string) => {
+  /** Asks Gemini for a new version of one part of a step and puts it, with its translations, into the editor. */
+  const handleRegeneratePart = async (n: number, part: RegeneratePart) => {
     setRegeneratingStep(n);
+    setError(null);
     try {
-      await regenerateStepPart(skill.id, n, part);
+      const result = await regenerateStepPart(skill.id, n, part);
+      setSkill((current) => {
+        if (!current) return current;
+        const steps = current.steps.map((s) => {
+          if (s.n !== n) return s;
+          const translations = { ...(s.translations || {}) };
+          for (const [lang, text] of Object.entries(result.translations)) {
+            if (translations[lang]) translations[lang] = { ...translations[lang], [part]: text };
+          }
+          return { ...s, [part]: result.text, translations };
+        });
+        return { ...current, steps };
+      });
     } catch (e: unknown) {
-      if (e instanceof ApiError) {
-        console.warn(`Regenerate failed (${e.status}):`, e.message);
-      } else {
-        console.warn('Regenerate call error:', e);
-      }
+      console.warn('Regenerate failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
+      setError(tf('app.review_regenerate_failed', `Could not regenerate step ${n}. Please try again.`, { n }));
     } finally {
-      setTimeout(() => setRegeneratingStep(null), 800);
+      setRegeneratingStep(null);
     }
   };
 
@@ -752,13 +777,14 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                       title={t('app.review_regenerate')}
                       aria-label={t('app.review_regenerate')}
                       onClick={() => handleRegeneratePart(step.n, 'instruction')}
+                      disabled={regeneratingStep !== null}
                       style={{
                         backgroundColor: '#27272a',
                         border: '1px solid #3f3f46',
                         color: '#fbbf24',
                         padding: '0.4rem',
                         borderRadius: '0.35rem',
-                        cursor: 'pointer',
+                        cursor: regeneratingStep !== null ? 'wait' : 'pointer',
                       }}
                     >
                       <RotateCw
@@ -832,6 +858,30 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                       outline: 'none',
                     }}
                   />
+                  {step.verifier?.conflict && (
+                    <div
+                      data-testid="verifier-flag"
+                      style={{
+                        marginTop: '0.4rem',
+                        fontSize: '0.8rem',
+                        color: '#fcd34d',
+                        display: 'flex',
+                        gap: '0.35rem',
+                        alignItems: 'flex-start',
+                      }}
+                    >
+                      <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+                      <span>
+                        {tf('app.review_verifier_flag', 'AI check: not a visible fact.')} {step.verifier.detail}
+                        {step.verifier.suggestion && (
+                          <>
+                            {' '}
+                            {t('app.review_suggested_criteria')} <em>{step.verifier.suggestion}</em>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Why Text (Editable) */}

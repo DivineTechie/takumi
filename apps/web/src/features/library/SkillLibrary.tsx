@@ -32,31 +32,26 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
     return text === key ? status.replace('_', ' ') : text;
   };
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'in_review'>('all');
 
   useEffect(() => {
-    try {
-      const skillsRef = collection(db, 'skills');
-      const q = query(skillsRef, orderBy('created_at', 'desc'));
-      const unsub = onSnapshot(q, (snapshot) => {
+    const q = query(collection(db, 'skills'), orderBy('created_at', 'desc'));
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
         const loaded: Skill[] = [];
         snapshot.forEach((d) => loaded.push(d.data() as Skill));
-        if (loaded.length > 0) {
-          setSkills(loaded);
-        } else {
-          // Fallback seed
-          import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-            setSkills([seed.default as unknown as Skill]);
-          });
-        }
-      });
-      return () => unsub();
-    } catch {
-      import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-        setSkills([seed.default as unknown as Skill]);
-      });
-    }
+        setSkills(loaded);
+        setLoadState('ready');
+      },
+      (err) => {
+        console.warn('Could not load lessons:', err);
+        setLoadState('error');
+      }
+    );
+    return () => unsub();
   }, []);
 
   const filteredSkills = skills.filter((s) => {
@@ -201,6 +196,34 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
             ))}
           </div>
         </div>
+
+        {loadState !== 'ready' || skills.length === 0 ? (
+          <div
+            role={loadState === 'error' ? 'alert' : 'status'}
+            style={{
+              backgroundColor: '#18181b',
+              border: `1px ${loadState === 'error' ? 'solid #ef4444' : 'dashed #3f3f46'}`,
+              borderRadius: '1rem',
+              padding: '2.5rem 1.5rem',
+              textAlign: 'center',
+              color: '#d4d4d8',
+            }}
+          >
+            {loadState === 'loading' && <div>{t('loading')}</div>}
+            {loadState === 'error' && (
+              <>
+                <div style={{ fontWeight: 700, color: '#fca5a5', marginBottom: '0.35rem' }}>{t('app.route_error_title')}</div>
+                <div style={{ fontSize: '0.9rem', color: '#a1a1aa' }}>{t('app.route_error_desc')}</div>
+              </>
+            )}
+            {loadState === 'ready' && (
+              <>
+                <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '0.35rem' }}>{t('no_lessons_title')}</div>
+                <div style={{ fontSize: '0.9rem', color: '#a1a1aa' }}>{t('card_teach_desc')}</div>
+              </>
+            )}
+          </div>
+        ) : null}
 
         {/* Grid of Skill Cards */}
         <div
