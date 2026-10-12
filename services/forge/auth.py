@@ -26,30 +26,32 @@ def init_firebase_admin() -> None:
 def verify_auth_token(
     authorization: str | None = Header(None),
 ) -> AuthUser:
-    """Verifies Firebase ID token from Authorization header.
+    """Verifies the Firebase ID token from the Authorization header.
+
+    The developer shortcut (no token, or a "dev_" token, becomes a local master user) exists ONLY when
+    LOCAL_DEV=1. In every other environment a real Firebase ID token is required.
 
     Raises:
-        HTTPException(401): If token is missing, invalid, or expired.
+        HTTPException(401): If the token is missing, invalid, or expired.
+        HTTPException(503): If Firebase Admin is not available outside local development.
     """
+    if LOCAL_DEV:
+        return AuthUser(uid="master_dev_user", role="master", email="master@takumi.dev")
+
     if not authorization or not authorization.startswith("Bearer "):
-        if LOCAL_DEV or firebase_admin is None:
-            return AuthUser(uid="master_dev_user", role="master", email="master@takumi.dev")
         raise HTTPException(status_code=401, detail="Invalid or missing authentication token")
 
     token = authorization.split("Bearer ", 1)[1].strip()
     if not token:
         raise HTTPException(status_code=401, detail="Invalid or missing authentication token")
 
-    # In local development or offline test mode, accept mock developer tokens
-    if LOCAL_DEV or token.startswith("dev_") or firebase_admin is None:
-        return AuthUser(uid="master_dev_user", role="master", email="master@takumi.dev")
+    if firebase_admin is None:
+        raise HTTPException(status_code=503, detail="Authentication is unavailable")
 
     init_firebase_admin()
     try:
         decoded_token = auth.verify_id_token(token)
     except Exception as e:
-        if LOCAL_DEV:
-            return AuthUser(uid="master_dev_user", role="master", email="master@takumi.dev")
         raise HTTPException(status_code=401, detail="Invalid or missing authentication token") from e
 
     uid = decoded_token.get("uid")

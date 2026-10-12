@@ -1,9 +1,9 @@
 import React from 'react';
 import { useTranslation } from '../../i18n';
-import type { MatrixSkill, SkillInsightsResponse } from '../../lib/api';
+import type { InsightSkill, SkillInsightsResponse } from '../../lib/api';
 
 interface LessonHeatmapProps {
-  skills: MatrixSkill[];
+  skills: InsightSkill[];
   selectedSkillId: string;
   onSelectSkill: (skillId: string) => void;
   insights: SkillInsightsResponse | null;
@@ -49,12 +49,12 @@ export const LessonHeatmap: React.FC<LessonHeatmapProps> = ({
             {t('dashboard_lesson_insights')}
           </h2>
           <span className="text-[13px] text-on-surface-variant">
-            Step-by-step performance metrics from trainee attempts
+            {t('app.heatmap_subtitle')}
           </span>
         </div>
 
         {/* Skill Selector */}
-        <div className="min-w-[240px]">
+        <div className="min-w-0 sm:min-w-[240px]">
           <select
             value={selectedSkillId}
             onChange={(e) => onSelectSkill(e.target.value)}
@@ -113,10 +113,10 @@ export const LessonHeatmap: React.FC<LessonHeatmapProps> = ({
               </span>
               <span
                 className="text-[28px] font-extrabold text-on-surface mt-1"
-                title={insights.totals.median_duration_s === null ? 'No data yet' : undefined}
+                title={insights.totals.median_duration_s === null ? t('dashboard_no_data') : undefined}
               >
                 {insights.totals.median_duration_s !== null
-                  ? `${insights.totals.median_duration_s}s`
+                  ? t('app.dashboard_seconds', { value: insights.totals.median_duration_s })
                   : '—'}
               </span>
             </div>
@@ -174,7 +174,7 @@ export const LessonHeatmap: React.FC<LessonHeatmapProps> = ({
                         {step.mistake_rate === null ? (
                           <span
                             className="text-on-surface-variant font-mono text-[14px]"
-                            title="No data yet"
+                            title={t('dashboard_no_data')}
                           >
                             —
                           </span>
@@ -202,18 +202,18 @@ export const LessonHeatmap: React.FC<LessonHeatmapProps> = ({
                       {/* Median Duration */}
                       <td className="py-3.5 px-3 text-[14px] font-mono font-semibold text-on-surface">
                         {step.median_secs === null ? (
-                          <span className="text-on-surface-variant" title="No data yet">
+                          <span className="text-on-surface-variant" title={t('dashboard_no_data')}>
                             —
                           </span>
                         ) : (
-                          `${step.median_secs}s`
+                          t('app.dashboard_seconds', { value: step.median_secs })
                         )}
                       </td>
 
                       {/* Safety Stops */}
                       <td className="py-3.5 px-3 text-right">
                         {step.safety_stops === null ? (
-                          <span className="text-on-surface-variant font-mono" title="No data yet">
+                          <span className="text-on-surface-variant font-mono" title={t('dashboard_no_data')}>
                             —
                           </span>
                         ) : step.safety_stops > 0 ? (

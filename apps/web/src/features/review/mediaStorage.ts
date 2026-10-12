@@ -1,6 +1,5 @@
 /**
  * IndexedDB helper for persisting recorded video blobs across page navigations and reloads.
- * Owned by Member B.
  */
 
 const DB_NAME = 'takumi_storage';

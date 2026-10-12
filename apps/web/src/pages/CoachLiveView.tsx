@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import type { Skill } from '../../../../shared/schema/ts/skills';
 import type { LanguageCode } from '../i18n';
 import { useTranslation } from '../i18n';
@@ -13,10 +13,21 @@ import { GeminiLiveClient, computeMedian } from '../lib/live/client';
 import { OutputAudioQueue, setupMicCapture, type MicCaptureHandle } from '../lib/live/audio';
 import { isCameraMirrored, captureVideoFrame, captureVideoFrameAsync } from '../lib/live/video';
 import { SessionCapTimer } from '../lib/live/sessionCap';
-import { renderReticles, type ReticlePoint } from '../lib/live/reticle';
-import { verify, point, watch, createSession, postSessionEvent, endSession, type WatchRequest } from '../lib/api';
+import {
+  verify,
+  point,
+  watch,
+  createSession,
+  postSessionEvent,
+  endSession,
+  fetchSkillMedia,
+  askMaster,
+  type WatchRequest,
+} from '../lib/api';
 import { SafetyStop } from '../components/SafetyStop';
+import { ClipPlayer } from '../components/ClipPlayer';
 import { watcherReducer, INITIAL_WATCHER_STATE, type WatcherStreakState } from '../lib/live/watcher';
+import { renderReticles, type ReticlePoint } from '../lib/live/reticle';
 
 interface CoachLiveViewProps {
   skill: Skill;
@@ -25,6 +36,8 @@ interface CoachLiveViewProps {
   outputAudioContext: AudioContext;
   micAudioContext: AudioContext;
   speakerMode?: boolean;
+  /** Station Watch: serial of the unit being built (optional). */
+  unitId?: string;
   onEnd: () => void;
   handleTranscript?: (item: LiveTranscriptItem) => void;
 }
@@ -36,18 +49,23 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   outputAudioContext,
   micAudioContext,
   speakerMode = true,
+  unitId,
   onEnd,
   handleTranscript: externalHandleTranscript,
 }) => {
   const { t } = useTranslation();
+  const tRef = useRef(t);
+  tRef.current = t;
   const navigate = useNavigate();
-  const isDebug = new URLSearchParams(window.location.search).get('debug') === '1';
+  const location = useLocation();
+  const isDebug = new URLSearchParams(location.search || window.location.search).get('debug') === '1';
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [currentStep, setCurrentStep] = useState<number>(1);
   const [connectionState, setConnectionState] = useState<LiveConnectionState>('connecting');
-  const [connectionErrorText, setConnectionErrorText] = useState<string>("Couldn't connect");
+  // Holds a translation key so the message follows the UI language.
+  const [connectionErrorKey, setConnectionErrorKey] = useState<string>('station.live_error_couldnt_connect');
   const [isCoachSpeaking, setIsCoachSpeaking] = useState<boolean>(false);
   const [latestCoachTranscript, setLatestCoachTranscript] = useState<string>('');
   const [latestTraineeTranscript, setLatestTraineeTranscript] = useState<string>('');
@@ -56,11 +74,9 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const [remainingSeconds, setRemainingSeconds] = useState<number>(600);
   const [debugOpen, setDebugOpen] = useState<boolean>(true);
   const [isLessonComplete, setIsLessonComplete] = useState<boolean>(false);
-  const [earnedPassportId, setEarnedPassportId] = useState<string | null>(null);
-  const [cleanRunsProgress, setCleanRunsProgress] = useState<number>(0);
   const [activeReticles, setActiveReticles] = useState<ReticlePoint[]>([]);
 
-  // Watcher & Safety Stop state (Features A3/A4)
+  // Watcher & Safety Stop state
   const [isSafetyStopOpen, setIsSafetyStopOpen] = useState<boolean>(false);
   const [activeHazardRule, setActiveHazardRule] = useState<string | null>(null);
   const [isCheckingTool, setIsCheckingTool] = useState<boolean>(false);
@@ -69,6 +85,20 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
   const [watchReadsCount, setWatchReadsCount] = useState<number>(0);
   const [watchP50Ms, setWatchP50Ms] = useState<number | null>(null);
   const [decisionToAudioDisplay, setDecisionToAudioDisplay] = useState<string>('n/a');
+
+  // Master & Mistake Clips State
+  const [activeClip, setActiveClip] = useState<{
+    url: string;
+    start_s?: number;
+    end_s?: number;
+    kind: 'master_clip' | 'mistake_clip';
+    why?: string;
+    why_lang?: string;
+    translated?: boolean;
+    label?: string;
+    onFinish: (playedSeconds: number) => void;
+  } | null>(null);
+  const isClipPlayingRef = useRef<boolean>(false);
 
   const [stats, setStats] = useState<LiveClientStats>({
     setupCompleteReceived: false,
@@ -293,13 +323,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     setIsLessonComplete(true);
     if (sessionIdRef.current) {
       try {
-        const res = await endSession(sessionIdRef.current, 'completed');
-        if (res?.passport_id) {
-          setEarnedPassportId(res.passport_id);
-        }
-        if (typeof res?.clean_runs === 'number') {
-          setCleanRunsProgress(res.clean_runs);
-        }
+        await endSession(sessionIdRef.current, 'completed');
       } catch (err) {
         console.warn('Failed to complete session:', err);
       }
@@ -320,8 +344,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     if (isDebug) {
       (window as unknown as { __TAKUMI_ADVANCE_STEP__?: (fromStep?: number) => boolean }).__TAKUMI_ADVANCE_STEP__ =
         (fromStep?: number) => advanceStep(fromStep ?? currentStepRef.current);
+      (window as unknown as { __TAKUMI_SIMULATE_TRANSCRIPT__?: (item: LiveTranscriptItem) => void }).__TAKUMI_SIMULATE_TRANSCRIPT__ = handleTranscript;
     }
-    (window as unknown as { __TAKUMI_SIMULATE_TRANSCRIPT__?: (item: LiveTranscriptItem) => void }).__TAKUMI_SIMULATE_TRANSCRIPT__ = handleTranscript;
     return () => {
       delete (window as unknown as { __TAKUMI_ADVANCE_STEP__?: unknown }).__TAKUMI_ADVANCE_STEP__;
       delete (window as unknown as { __TAKUMI_SIMULATE_TRANSCRIPT__?: unknown }).__TAKUMI_SIMULATE_TRANSCRIPT__;
@@ -386,6 +410,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     createSession({
       skill_id: skill.id,
       language,
+      ...(unitId ? { unit_id: unitId } : {}),
     })
       .then((session) => {
         if (isMounted) {
@@ -399,7 +424,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [skill.id, language]);
+  }, [skill.id, language, unitId]);
 
   // 2. Initialize Live Client, Audio Queue, Mic, and Video Loop
   useEffect(() => {
@@ -555,7 +580,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   errStr.includes('resource_exhausted')
                 ) {
                   setConnectionState('error');
-                  setConnectionErrorText('Coaching is temporarily unavailable, please try again later');
+                  setConnectionErrorKey('station.live_error_unavailable');
                 }
                 const errResult: Record<string, unknown> = {
                   passed: false,
@@ -634,10 +659,163 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   errStr.includes('resource_exhausted')
                 ) {
                   setConnectionState('error');
-                  setConnectionErrorText('Coaching is temporarily unavailable, please try again later');
+                  setConnectionErrorKey('station.live_error_unavailable');
                 }
                 return { result: { status: 'no visible target' } };
               }
+            } finally {
+              setIsCheckingTool(false);
+              isToolInFlightRef.current = false;
+            }
+          }
+
+          // --- Tool 3: show_master_clip ---
+          if (call.name === 'show_master_clip') {
+            isToolInFlightRef.current = true;
+            setIsCheckingTool(true);
+            try {
+              const stepN = currentStepRef.current;
+              const currentSkill = skillRef.current;
+              try {
+                const media = await fetchSkillMedia(currentSkill.id, stepN, 'master_clip', language);
+                if (media && media.url) {
+                  clientRef.current?.setExternalGating(true);
+                  isClipPlayingRef.current = true;
+                  return await new Promise<Record<string, unknown>>((resolve) => {
+                    setActiveClip({
+                      url: media.url,
+                      start_s: media.start_s,
+                      end_s: media.end_s,
+                      kind: 'master_clip',
+                      why: media.why,
+                      why_lang: media.why_lang,
+                      translated: media.translated,
+                      onFinish: (playedSeconds) => {
+                        setActiveClip(null);
+                        isClipPlayingRef.current = false;
+                        clientRef.current?.setExternalGating(false);
+                        if (sessionIdRef.current) {
+                          postSessionEvent(sessionIdRef.current, {
+                            step: stepN,
+                            type: 'ask_why',
+                            source: 'coach',
+                            reason: 'master_clip:played',
+                          }).catch((err) => console.warn('Failed to log ask_why event:', err));
+                        }
+                        resolve({ result: { played: true, seconds: Math.round(playedSeconds) } });
+                      },
+                    });
+                  });
+                }
+              } catch {
+                // Not available (e.g. 404)
+              }
+
+              if (sessionIdRef.current) {
+                postSessionEvent(sessionIdRef.current, {
+                  step: stepN,
+                  type: 'ask_why',
+                  source: 'coach',
+                  reason: 'master_clip:not_available',
+                }).catch((err) => console.warn('Failed to log ask_why event:', err));
+              }
+              return { result: { status: 'not available' } };
+            } finally {
+              setIsCheckingTool(false);
+              isToolInFlightRef.current = false;
+            }
+          }
+
+          // --- Tool 4: show_mistake_clip ---
+          if (call.name === 'show_mistake_clip') {
+            isToolInFlightRef.current = true;
+            setIsCheckingTool(true);
+            try {
+              const stepN = currentStepRef.current;
+              const currentSkill = skillRef.current;
+              try {
+                const media = await fetchSkillMedia(currentSkill.id, stepN, 'mistake_clip', language);
+                if (media && media.url) {
+                  clientRef.current?.setExternalGating(true);
+                  isClipPlayingRef.current = true;
+                  return await new Promise<Record<string, unknown>>((resolve) => {
+                    setActiveClip({
+                      url: media.url,
+                      kind: 'mistake_clip',
+                      // ClipPlayer shows the translated default label when the API sends none.
+                      label: media.label,
+                      onFinish: (playedSeconds) => {
+                        setActiveClip(null);
+                        isClipPlayingRef.current = false;
+                        clientRef.current?.setExternalGating(false);
+                        if (sessionIdRef.current) {
+                          postSessionEvent(sessionIdRef.current, {
+                            step: stepN,
+                            type: 'mistake_clip',
+                            source: 'coach',
+                            reason: 'mistake_clip:played',
+                          }).catch((err) => console.warn('Failed to log mistake_clip event:', err));
+                        }
+                        resolve({ result: { played: true, seconds: Math.round(playedSeconds) } });
+                      },
+                    });
+                  });
+                }
+              } catch {
+                // Not available
+              }
+              return { result: { status: 'not available' } };
+            } finally {
+              setIsCheckingTool(false);
+              isToolInFlightRef.current = false;
+            }
+          }
+
+          // --- Tool 5: ask_master ---
+          if (call.name === 'ask_master') {
+            isToolInFlightRef.current = true;
+            setIsCheckingTool(true);
+            try {
+              const question = String(call.args?.question || '');
+              const currentSkill = skillRef.current;
+              if (sessionIdRef.current && question) {
+                postSessionEvent(sessionIdRef.current, {
+                  step: currentStepRef.current,
+                  type: 'ask_master',
+                  source: 'trainee',
+                  reason: question.slice(0, 200),
+                }).catch((err) => console.warn('Failed to log ask_master event:', err));
+              }
+              const askResp = await askMaster(currentSkill.id, question, language);
+              if (askResp.clip) {
+                const clipStep = askResp.clip.step;
+                fetchSkillMedia(currentSkill.id, clipStep, 'master_clip', language)
+                  .then((media) => {
+                    if (media && media.url) {
+                      clientRef.current?.setExternalGating(true);
+                      isClipPlayingRef.current = true;
+                      setActiveClip({
+                        url: media.url,
+                        start_s: askResp.clip?.start_s ?? media.start_s,
+                        end_s: askResp.clip?.end_s ?? media.end_s,
+                        kind: 'master_clip',
+                        why: media.why,
+                        why_lang: media.why_lang,
+                        translated: media.translated,
+                        onFinish: () => {
+                          setActiveClip(null);
+                          isClipPlayingRef.current = false;
+                          clientRef.current?.setExternalGating(false);
+                        },
+                      });
+                    }
+                  })
+                  .catch((err) => console.warn('Failed to fetch clip for ask_master:', err));
+              }
+              return { result: { answer: askResp.answer, citation: askResp.citation } };
+            } catch (err) {
+              console.warn('ask_master execution failed:', err);
+              return { result: { answer: "Let's come back to that." } };
             } finally {
               setIsCheckingTool(false);
               isToolInFlightRef.current = false;
@@ -649,11 +827,11 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         onError: (err) => {
           console.error('Live client error:', err);
           if (err.message && err.message.includes('temporarily unavailable')) {
-            setConnectionErrorText('Coaching is temporarily unavailable, please try again later');
+            setConnectionErrorKey('station.live_error_unavailable');
           } else if (err.message && err.message.includes('keeps dropping')) {
-            setConnectionErrorText('Connection keeps dropping');
+            setConnectionErrorKey('station.live_error_dropping');
           } else {
-            setConnectionErrorText("Couldn't connect");
+            setConnectionErrorKey('station.live_error_couldnt_connect');
           }
         },
         onClose: (code, reason) => {
@@ -776,7 +954,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         setSessionWarning(true);
       },
       onTimeout: () => {
-        alert('Session time limit of 10 minutes reached.');
+        alert(tRef.current('station.live_session_time_limit'));
         onEndRef.current();
       },
       onTick: (sec) => {
@@ -818,6 +996,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       micHandleRef.current?.stop();
       client.close();
     };
+    // The coaching language is fixed for the whole session; changing it later must not reconnect Live.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream, outputAudioContext, micAudioContext]);
 
   // Sync speakerMode updates dynamically
@@ -825,7 +1005,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     clientRef.current?.setSpeakerMode(speakerMode);
   }, [speakerMode]);
 
-  // 3. Watcher Loop (Features A3 & A4)
+  // 3. Watcher Loop
   useEffect(() => {
     if (connectionState !== 'connected' || isLessonComplete || isSafetyStopOpen) {
       return;
@@ -835,15 +1015,23 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     let loopTimeout: number | null = null;
 
     const runWatcherTick = async () => {
-      if (isCancelled || connectionState !== 'connected' || isLessonComplete || isSafetyStopOpen) {
+      if (
+        isCancelled ||
+        connectionState !== 'connected' ||
+        isLessonComplete ||
+        isSafetyStopOpen ||
+        isClipPlayingRef.current
+      ) {
+        loopTimeout = window.setTimeout(runWatcherTick, 400);
         return;
       }
 
-      // Skip conditions: tool call in flight, watch in flight, or tab hidden
+      // Skip conditions: tool call in flight, watch in flight, tab hidden, or clip playing
       if (
         document.visibilityState === 'hidden' ||
         isToolInFlightRef.current ||
-        isWatchInFlightRef.current
+        isWatchInFlightRef.current ||
+        isClipPlayingRef.current
       ) {
         loopTimeout = window.setTimeout(runWatcherTick, 400);
         return;
@@ -1052,27 +1240,56 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
     }
   }, []);
 
-  // Expose simulated hazard in debug mode for test harness
-  useEffect(() => {
-    if (isDebug) {
-      (window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: () => void }).__TAKUMI_SIMULATE_HAZARD__ =
-        triggerSimulatedHazard;
-    }
-    return () => {
-      delete (window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: unknown }).__TAKUMI_SIMULATE_HAZARD__;
-    };
-  }, [triggerSimulatedHazard, isDebug]);
+  // Handle "Why?" button action: play master clip directly if available, else send voice question
+  const handleAskWhy = async () => {
+    const stepN = currentStepRef.current;
+    const currentSkill = skillRef.current;
 
-  // Handle "Why?" button action
-  const handleAskWhy = () => {
+    try {
+      const media = await fetchSkillMedia(currentSkill.id, stepN, 'master_clip', language);
+      if (media && media.url) {
+        clientRef.current?.setExternalGating(true);
+        clientRef.current?.sendText(
+          `[CLIP] The master's clip for step ${stepN} is playing. Stay silent until it ends, then add at most one short sentence.`
+        );
+        isClipPlayingRef.current = true;
+        setActiveClip({
+          url: media.url,
+          start_s: media.start_s,
+          end_s: media.end_s,
+          kind: 'master_clip',
+          why: media.why,
+          why_lang: media.why_lang,
+          translated: media.translated,
+          onFinish: () => {
+            setActiveClip(null);
+            isClipPlayingRef.current = false;
+            clientRef.current?.setExternalGating(false);
+            if (sessionIdRef.current) {
+              postSessionEvent(sessionIdRef.current, {
+                step: stepN,
+                type: 'ask_why',
+                source: 'trainee',
+                reason: 'master_clip:played',
+              }).catch((err) => console.warn('Failed to log ask_why event:', err));
+            }
+          },
+        });
+        return;
+      }
+    } catch {
+      // Not available (e.g. 404 seed lesson) -> fall back to voice
+    }
+
     if (clientRef.current) {
       clientRef.current.sendText('The trainee asks: why is this step done this way?');
     }
     if (sessionIdRef.current) {
       postSessionEvent(sessionIdRef.current, {
-        step: currentStepRef.current,
+        step: stepN,
         type: 'ask_why',
         source: 'trainee',
+        reason: 'master_clip:not_available',
         latency_ms: 0,
       }).catch((err) => console.warn('Failed to log ask_why event:', err));
     }
@@ -1080,7 +1297,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
   // Handle "End" button action
   const handleEndSession = () => {
-    if (window.confirm('Are you sure you want to end this coaching session?')) {
+    if (window.confirm(t('station.live_end_confirm'))) {
       if (sessionIdRef.current) {
         const currentSkill = skillRef.current;
         const finalStatus =
@@ -1139,7 +1356,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 onEndRef.current();
                 navigate('/coach');
               }}
-              aria-label="Back to lessons"
+              aria-label={t('station.common_back_to_lessons')}
               className="w-12 h-12 -ml-2 flex items-center justify-center text-on-surface hover:bg-surface-container-high rounded transition-transform active:scale-95 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[28px]">arrow_back</span>
@@ -1158,72 +1375,35 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               </span>
             </div>
             <h1 className="text-[28px] leading-[34px] font-extrabold text-on-surface mb-2">
-              All {skill.steps.length} steps done
+              {t('station.complete_all_steps_done', { count: skill.steps.length })}
             </h1>
             <p className="text-[16px] text-on-surface-variant max-w-[320px]">
-              {skill.title} completed
+              {t('station.complete_skill_completed', { title: skill.title })}
             </p>
-            <div className="mt-4 inline-flex items-center gap-2 bg-surface-container-low px-4 py-1.5 rounded-full border border-secondary/40">
+            <div className="mt-4 inline-flex items-center gap-2 bg-surface-container-low px-4 py-1.5 rounded-full border border-secondary/40 max-w-full">
               <span
                 className="material-symbols-outlined text-secondary text-[20px]"
                 style={{ fontVariationSettings: "'FILL' 1" }}
               >
                 verified
               </span>
-              <span className="text-[13px] text-secondary tracking-wide uppercase font-bold">
-                {skill.steps.length} OF {skill.steps.length} STEPS VERIFIED
+              <span className="text-[13px] text-secondary tracking-wide uppercase font-bold min-w-0 break-words">
+                {t('station.complete_steps_verified', { n: skill.steps.length, total: skill.steps.length })}
               </span>
             </div>
 
-            {/* Passport Earned or Clean Runs Progress */}
-            {earnedPassportId ? (
-              <div className="mt-5 w-full p-4 rounded-2xl bg-primary-container/15 border-2 border-primary-container/60 flex flex-col items-center gap-2.5 text-center shadow-md">
-                <div className="flex items-center gap-2 text-primary-container font-extrabold text-[17px]">
-                  <span className="material-symbols-outlined text-[24px]">verified</span>
-                  <span>You earned your Skill Passport!</span>
-                </div>
-                <p className="text-xs text-on-surface-variant max-w-[280px]">
-                  Congratulations! You demonstrated mastery with 3 clean runs.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/passport/${earnedPassportId}`)}
-                  className="w-full h-11 bg-primary-container text-on-primary-container font-bold text-sm rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-95 transition-all shadow cursor-pointer mt-1"
-                >
-                  <span>View Skill Passport</span>
-                  <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
-                </button>
-              </div>
-            ) : (
-              <div className="mt-5 w-full p-3 rounded-xl bg-surface-container border border-outline-variant/60 flex items-center justify-between text-left">
-                <div className="flex items-center gap-2.5">
-                  <span className="material-symbols-outlined text-primary-container text-[22px]">
-                    workspace_premium
-                  </span>
-                  <div>
-                    <p className="text-xs uppercase tracking-wider font-extrabold text-primary-container">
-                      Skill Passport Progress
-                    </p>
-                    <p className="text-sm font-semibold text-on-surface">
-                      {cleanRunsProgress} of 3 clean runs toward your Skill Passport
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-mono font-bold px-2 py-1 bg-surface-container-high rounded border border-outline-variant/40">
-                  {cleanRunsProgress}/3
-                </span>
-              </div>
-            )}
           </section>
 
           <section className="bg-surface-container border border-outline-variant/50 rounded-xl p-4 my-4 space-y-3">
             <div className="flex items-center justify-between pb-3 border-b border-outline-variant/30">
               <div className="flex items-center gap-2 text-on-surface-variant">
                 <span className="material-symbols-outlined text-[22px]">timer</span>
-                <span className="text-[15px]">Time taken</span>
+                <span className="text-[15px]">{t('station.complete_time_taken')}</span>
               </div>
               <span className="text-[17px] font-bold text-on-surface font-mono">
-                {elapsedMin > 0 ? `${elapsedMin} min ${elapsedSec} s` : `${elapsedSec} s`}
+                {elapsedMin > 0
+                  ? t('station.complete_duration_min_sec', { min: elapsedMin, sec: elapsedSec })
+                  : t('station.complete_duration_sec', { sec: elapsedSec })}
               </span>
             </div>
 
@@ -1232,20 +1412,20 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 <span className="material-symbols-outlined text-primary-container text-[22px]">
                   shield_with_heart
                 </span>
-                <span className="text-[15px]">Mistakes caught</span>
+                <span className="text-[15px]">{t('station.complete_mistakes_caught')}</span>
               </div>
               <div className="flex items-center gap-1.5 bg-surface-container-high px-2.5 py-1 rounded border border-primary-container/40">
                 <span className="material-symbols-outlined text-primary-container text-[16px]">
                   check
                 </span>
-                <span className="text-[13px] text-primary-fixed-dim font-bold">0 mistakes</span>
+                <span className="text-[13px] text-primary-fixed-dim font-bold">{t('station.complete_mistakes_none')}</span>
               </div>
             </div>
 
             <div className="flex items-center justify-between pt-1">
               <div className="flex items-center gap-2 text-on-surface-variant">
                 <span className="material-symbols-outlined text-[22px]">school</span>
-                <span className="text-[15px]">Instructor</span>
+                <span className="text-[15px]">{t('station.complete_instructor')}</span>
               </div>
               <div className="text-right">
                 <div className="text-[15px] font-bold text-on-surface">Master K.</div>
@@ -1263,7 +1443,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               }}
               className="w-full min-h-[56px] h-14 bg-primary-container hover:brightness-105 active:scale-[0.98] text-on-primary-container rounded-xl font-bold text-[17px] flex items-center justify-center gap-2 shadow-md cursor-pointer transition-transform"
             >
-              <span>Back to skills</span>
+              <span>{t('station.complete_back_to_skills')}</span>
               <span className="material-symbols-outlined text-[22px]">arrow_forward</span>
             </button>
             <button
@@ -1272,7 +1452,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               className="w-full min-h-[56px] h-14 bg-surface-container-high hover:bg-surface-bright active:scale-[0.98] text-on-surface border border-outline-variant rounded-xl font-semibold text-[17px] flex items-center justify-center gap-2 cursor-pointer transition-transform"
             >
               <span className="material-symbols-outlined text-[22px]">replay</span>
-              <span>Practise again</span>
+              <span>{t('station.complete_practise_again')}</span>
             </button>
           </footer>
         </div>
@@ -1312,17 +1492,17 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         {/* 10-Minute Warning Banner */}
         {sessionWarning && (
           <div className="absolute top-16 left-4 right-4 z-30 p-2.5 rounded-xl bg-amber-500/90 text-black text-center font-bold text-xs tracking-wide shadow-lg">
-            Session will end in {remainingSeconds}s (10-minute cap)
+            {t('station.live_session_warning', { seconds: remainingSeconds })}
           </div>
         )}
 
         {/* Coaching Temporarily Unavailable Banner */}
-        {connectionErrorText === 'Coaching is temporarily unavailable, please try again later' && (
+        {connectionErrorKey === 'station.live_error_unavailable' && (
           <div
             role="alert"
             className="absolute top-16 left-4 right-4 z-40 p-3 rounded-xl bg-red-950/95 border border-red-500/70 text-white text-center font-bold text-sm tracking-wide shadow-2xl backdrop-blur-md"
           >
-            Coaching is temporarily unavailable, please try again later
+            {t('station.live_error_unavailable')}
           </div>
         )}
 
@@ -1330,7 +1510,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         <div className="lg:hidden absolute bottom-[180px] left-0 right-0 z-30 px-4">
           {showCaption && (latestCoachTranscript || latestTraineeTranscript) && (
             <section
-              aria-label="Coach voice guidance"
+              aria-label={t('station.live_caption_aria')}
               className="backdrop-blur-md bg-black/85 border border-white/10 px-4 py-2.5 rounded-xl flex items-center gap-3 shadow-xl max-h-[18vh] overflow-hidden transition-opacity duration-300"
             >
               <div className="w-9 h-9 rounded-lg bg-primary-container/20 border border-primary-container/40 flex items-center justify-center shrink-0 text-primary-container">
@@ -1346,7 +1526,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 )}
                 {latestTraineeTranscript && (
                   <p className="text-[13px] leading-[18px] text-on-surface-variant font-medium truncate mt-0.5">
-                    You: {latestTraineeTranscript}
+                    {t('station.live_caption_you', { text: latestTraineeTranscript })}
                   </p>
                 )}
               </div>
@@ -1366,7 +1546,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
           <button
             type="button"
             onClick={handleEndSession}
-            aria-label="Back to lessons"
+            aria-label={t('station.common_back_to_lessons')}
             className="w-11 h-11 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white active:scale-95 transition-transform cursor-pointer"
           >
             <span className="material-symbols-outlined text-[24px]">arrow_back</span>
@@ -1374,7 +1554,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
           <div className="flex flex-col items-center justify-center">
             <span className="text-[14px] font-semibold tracking-wide text-white">
-              Step {currentStep} of {skill.steps.length}
+              {t('dashboard_step_n_of_m', { n: currentStep, total: skill.steps.length })}
             </span>
             <div className="flex items-center gap-1.5 mt-1">
               {skill.steps.map((step) => {
@@ -1578,7 +1758,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
         <div className="hidden lg:block px-5 py-3">
           {showCaption && (latestCoachTranscript || latestTraineeTranscript) && (
             <section
-              aria-label="Coach voice guidance"
+              aria-label={t('station.live_caption_aria')}
               className="backdrop-blur-md bg-black/60 border border-white/10 p-3.5 rounded-xl flex items-center gap-3 shadow-md"
             >
               <div className="w-8 h-8 rounded-lg bg-primary-container/20 border border-primary-container/40 flex items-center justify-center shrink-0 text-primary-container">
@@ -1594,7 +1774,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                 )}
                 {latestTraineeTranscript && (
                   <p className="text-[12px] leading-[16px] text-on-surface-variant font-medium truncate mt-1">
-                    You: {latestTraineeTranscript}
+                    {t('station.live_caption_you', { text: latestTraineeTranscript })}
                   </p>
                 )}
               </div>
@@ -1616,11 +1796,11 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
               <div className="relative w-[76px] h-[76px] lg:w-[92px] lg:h-[92px] shrink-0 rounded-lg border border-white/20 overflow-hidden bg-surface-container-high shadow-md">
                 <img
                   src={refImage}
-                  alt={`Reference diagram for step ${currentStep}`}
+                  alt={t('station.live_ref_image_alt', { step: currentStep })}
                   className="w-full h-full object-cover"
                 />
                 <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-black/80 border border-white/20 rounded text-[10px] font-bold text-primary tracking-wider uppercase">
-                  REF
+                  {t('station.live_ref_badge')}
                 </span>
               </div>
             )}
@@ -1632,45 +1812,45 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
                     <span className="text-[13px] text-amber-300 uppercase tracking-wider font-bold">
-                      Connecting…
+                      {t('station.live_status_connecting')}
                     </span>
                   </>
                 ) : connectionState === 'reconnecting' ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
                     <span className="text-[13px] text-amber-300 uppercase tracking-wider font-bold">
-                      Reconnecting…
+                      {t('station.live_status_reconnecting')}
                     </span>
                   </>
                 ) : connectionState === 'error' ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0" />
                     <span className="text-[13px] text-red-300 uppercase tracking-wider font-bold">
-                      {connectionErrorText}
+                      {t(connectionErrorKey)}
                     </span>
                     <button
                       type="button"
                       onClick={() => {
-                        setConnectionErrorText("Couldn't connect");
+                        setConnectionErrorKey('station.live_error_couldnt_connect');
                         clientRef.current?.manualRetry();
                       }}
-                      className="px-2.5 py-0.5 rounded bg-white/10 hover:bg-white/20 active:scale-95 text-white text-[12px] font-bold tracking-wide uppercase border border-white/20 transition-all cursor-pointer"
+                      className="min-h-[44px] px-3 py-1 rounded bg-white/10 hover:bg-white/20 active:scale-95 text-white text-[12px] font-bold tracking-wide uppercase border border-white/20 transition-all cursor-pointer"
                     >
-                      Retry
+                      {t('dashboard_retry')}
                     </button>
                   </>
                 ) : isCoachSpeaking ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-primary-container animate-pulse shrink-0" />
                     <span className="text-[13px] text-primary-fixed-dim uppercase tracking-wider font-bold">
-                      Coach speaking
+                      {t('station.live_status_coach_speaking')}
                     </span>
                   </>
                 ) : (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full bg-[#22c55e] animate-pulse shrink-0" />
                     <span className="text-[13px] text-emerald-400 uppercase tracking-wider font-bold">
-                      Listening
+                      {t('station.live_status_listening')}
                     </span>
                   </>
                 )}
@@ -1682,11 +1862,11 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
                     className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-primary-container/20 text-primary-fixed-dim border border-primary-container/40 animate-pulse"
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-primary-container animate-ping" />
-                    Checking…
+                    {t('station.live_tool_checking')}
                   </span>
                 )}
 
-                {/* Watcher Status Chip (A3 Step Watcher) */}
+                {/* Watcher status chip */}
                 {connectionState === 'connected' && (
                   <span
                     data-testid="watcher-status-chip"
@@ -1714,7 +1894,7 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
 
                 {isTranslatedLive && (
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-surface-container-high border border-outline-variant text-on-surface-variant">
-                    Translated live
+                    {t('station.live_translated_badge')}
                   </span>
                 )}
               </div>
@@ -1732,31 +1912,46 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
             <button
               type="button"
               onClick={handleAskWhy}
-              className="h-14 w-1/2 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-white font-semibold text-[17px] flex items-center justify-center gap-2 border border-white/15 transition-all shadow-md cursor-pointer"
+              className="min-h-[56px] py-2 px-2 w-1/2 min-w-0 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-white font-semibold text-[17px] flex items-center justify-center gap-2 border border-white/15 transition-all shadow-md cursor-pointer"
             >
               <span className="material-symbols-outlined text-[22px] text-white/80">help</span>
-              <span>Why?</span>
+              <span className="min-w-0 break-words">{t('station.live_why_btn')}</span>
             </button>
 
             {/* "End" Button (Amber outline, distinct from Safety Stop) */}
             <button
               type="button"
               onClick={handleEndSession}
-              className="h-14 w-1/2 rounded-xl border-2 border-primary-container text-primary-container bg-primary-container/10 hover:bg-primary-container/20 active:scale-95 font-bold text-[17px] flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+              className="min-h-[56px] py-2 px-2 w-1/2 min-w-0 rounded-xl border-2 border-primary-container text-primary-container bg-primary-container/10 hover:bg-primary-container/20 active:scale-95 font-bold text-[17px] flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
             >
               <span className="material-symbols-outlined text-[22px]">stop_circle</span>
-              <span>End</span>
+              <span className="min-w-0 break-words">{t('station.live_end_btn')}</span>
             </button>
           </div>
         </section>
       </div>
 
-      {/* Safety Stop Full-Screen Overlay (A4 Safety Sentinel) */}
+      {/* Full-screen safety stop */}
       {isSafetyStopOpen && (
         <SafetyStop
           rule={activeHazardRule}
           onMadeSafe={handleMadeSafe}
           outputAudioContext={outputAudioContext}
+        />
+      )}
+
+      {/* Picture-in-Picture Clip Player */}
+      {activeClip && (
+        <ClipPlayer
+          url={activeClip.url}
+          start_s={activeClip.start_s}
+          end_s={activeClip.end_s}
+          kind={activeClip.kind}
+          why={activeClip.why}
+          why_lang={activeClip.why_lang}
+          translated={activeClip.translated}
+          label={activeClip.label}
+          onClose={(playedSeconds) => activeClip.onFinish(playedSeconds)}
         />
       )}
     </main>

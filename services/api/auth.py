@@ -2,13 +2,14 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 import firebase_admin
 from firebase_admin import auth
 from google.cloud import firestore
 
 from services.api.config import (
     LIMIT_CHECKS_PER_DAY,
+    LIMIT_INSTANCE_CALLS_PER_DAY,
     LIMIT_LIVE_TOKENS_PER_DAY,
 )
 
@@ -88,7 +89,24 @@ def require_role(*roles: str):
     return _role_checker
 
 
-def check_rate_limit(uid: str, limit_type: str) -> None:
+# Model calls counted by this instance today, across all users: a backstop if many accounts are used at once.
+_instance_calls: dict[str, int] = {}
+
+
+def _check_instance_cap(day: str, cost: int, now: datetime) -> None:
+    used = _instance_calls.get(day, 0)
+    if used + cost > LIMIT_INSTANCE_CALLS_PER_DAY:
+        midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        raise HTTPException(
+            status_code=429,
+            detail="TAKUMI has reached its daily limit of AI calls. Please try again tomorrow.",
+            headers={"Retry-After": str(max(1, int((midnight - now).total_seconds())))},
+        )
+    _instance_calls.clear()
+    _instance_calls[day] = used + cost
+
+
+def check_rate_limit(uid: str, limit_type: str, cost: int = 1) -> None:
     """Enforces daily per-user rate limits in Firestore collection rate_limits/{uid}_{YYYYMMDD}.
 
     limit_type: "live_tokens" (max LIMIT_LIVE_TOKENS_PER_DAY) or "checks" (max LIMIT_CHECKS_PER_DAY).
@@ -100,6 +118,7 @@ def check_rate_limit(uid: str, limit_type: str) -> None:
     day_str = now.strftime("%Y%m%d")
     doc_id = f"{uid}_{day_str}"
 
+    _check_instance_cap(day_str, cost, now)
     db = get_firestore_client()
     doc_ref = db.collection("rate_limits").document(doc_id)
 
@@ -114,11 +133,11 @@ def check_rate_limit(uid: str, limit_type: str) -> None:
             data = snapshot.to_dict() or {}
             current = data.get(limit_type, 0)
 
-        if current >= limit:
+        if current + cost > limit:
             return False, current
 
-        txn.set(doc_ref, {limit_type: current + 1}, merge=True)
-        return True, current + 1
+        txn.set(doc_ref, {limit_type: current + cost}, merge=True)
+        return True, current + cost
 
     allowed, current_val = txn_rate_limit(transaction)
 
@@ -131,3 +150,4 @@ def check_rate_limit(uid: str, limit_type: str) -> None:
             detail=f"Daily rate limit for {limit_type} exceeded ({current_val}/{limit})",
             headers={"Retry-After": str(retry_after)},
         )
+

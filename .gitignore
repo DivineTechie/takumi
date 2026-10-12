@@ -76,3 +76,10 @@ Thumbs.db
 # Private submission materials (safety net)
 takumi-private/
 *PRIVATE*
+
+# Build artifacts generated during deployment
+apps/web/public/version.json
+.firebase/
+
+# Local tool settings
+.claude/

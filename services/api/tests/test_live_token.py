@@ -50,3 +50,15 @@ def test_live_token_configuration_and_headers():
                 new_session_diff = (config.new_session_expire_time - t_before).total_seconds()
                 assert 660 <= expire_diff <= 780  # ~12 minutes
                 assert 50 <= new_session_diff <= 70  # ~1 minute
+
+
+def test_copilot_token_is_supervisor_only():
+    mock_token = MagicMock()
+    mock_token.name = "auth_tokens/mock"
+    mock_genai_client = MagicMock()
+    mock_genai_client.auth_tokens.create.return_value = mock_token
+    with patch("services.api.main.check_rate_limit"), patch("services.api.gemini.get_genai_client", return_value=mock_genai_client):
+        for role, expected in (("trainee", 403), ("master", 403), ("supervisor", 200)):
+            with patch("services.api.auth.auth.verify_id_token", return_value={"uid": "u1", "role": role}):
+                r = client.post("/api/live-token", json={"purpose": "copilot"}, headers={"Authorization": "Bearer t"})
+                assert r.status_code == expected, role

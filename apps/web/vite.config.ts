@@ -1,5 +1,5 @@
 /// <reference types="vitest" />
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -12,11 +12,17 @@ function versionPlugin() {
     name: 'generate-version-file',
     buildStart() {
       try {
-        let commit = 'dev';
-        try {
-          commit = execSync('git rev-parse --short HEAD').toString().trim();
-        } catch {
-          // fallback
+        let commit =
+          process.env.SHORT_SHA ||
+          (process.env.COMMIT_SHA ? process.env.COMMIT_SHA.slice(0, 7) : '') ||
+          process.env.VITE_COMMIT_SHA ||
+          '';
+        if (!commit) {
+          try {
+            commit = execSync('git rev-parse --short HEAD').toString().trim();
+          } catch {
+            commit = 'dev';
+          }
         }
         const versionData = {
           version: '1.0.0',
@@ -38,19 +44,50 @@ function versionPlugin() {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), tailwindcss(), versionPlugin()],
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
-    env: {
-      VITE_FIREBASE_API_KEY: 'test-api-key', // gitleaks:allow
-      VITE_FIREBASE_AUTH_DOMAIN: 'takumi-cup-2026.web.app',
-      VITE_FIREBASE_PROJECT_ID: 'takumi-cup-2026',
-      VITE_FIREBASE_STORAGE_BUCKET: 'takumi-cup-2026.firebasestorage.app',
-      VITE_FIREBASE_MESSAGING_SENDER_ID: '123456789012',
-      VITE_FIREBASE_APP_ID: '1:123456789012:web:abcdef1234567890',
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, __dirname, '');
+  const apiTarget = env.VITE_DEV_API_TARGET || process.env.VITE_DEV_API_TARGET;
+  // Optional: a separately running Forge service (agents, Studio); defaults to the API target.
+  const forgeTarget = env.VITE_DEV_FORGE_TARGET || process.env.VITE_DEV_FORGE_TARGET || apiTarget;
+
+  if (mode === 'development') {
+    if (apiTarget) {
+      console.info(`[vite] Proxying /api to ${apiTarget} and /forge to ${forgeTarget}`);
+    } else {
+      console.info(
+        '[vite] VITE_DEV_API_TARGET is not set; API proxy is disabled. Set VITE_DEV_API_TARGET in .env.development.local to proxy /api and /forge.'
+      );
+    }
+  }
+
+  return {
+    plugins: [react(), tailwindcss(), versionPlugin()],
+    server: apiTarget
+      ? {
+          proxy: {
+            '/api': {
+              target: apiTarget,
+              changeOrigin: true,
+            },
+            '/forge': {
+              target: forgeTarget,
+              changeOrigin: true,
+            },
+          },
+        }
+      : undefined,
+    test: {
+      globals: true,
+      environment: 'jsdom',
+      setupFiles: ['./src/test/setup.ts'],
+      env: {
+        VITE_FIREBASE_API_KEY: 'test-api-key', // gitleaks:allow
+        VITE_FIREBASE_AUTH_DOMAIN: 'takumi-cup-2026.web.app',
+        VITE_FIREBASE_PROJECT_ID: 'takumi-cup-2026',
+        VITE_FIREBASE_STORAGE_BUCKET: 'takumi-cup-2026.firebasestorage.app',
+        VITE_FIREBASE_MESSAGING_SENDER_ID: '123456789012',
+        VITE_FIREBASE_APP_ID: '1:123456789012:web:abcdef1234567890',
+      },
     },
-  },
+  };
 });

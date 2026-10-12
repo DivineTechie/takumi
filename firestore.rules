@@ -89,13 +89,56 @@ service cloud.firestore {
       }
     }
 
-    // passports & passport_locks: NO client access. Served exclusively via takumi-api.
-    match /passports/{passportId} {
+    // products: readable by any signed-in user, written by supervisors.
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow write: if isSupervisor();
+    }
+
+    // units: readable by supervisors and the creator, server-written only.
+    match /units/{unitId} {
+      allow read: if isSupervisor() || (isSignedIn() && resource.data.created_by == request.auth.uid);
+      allow write: if false;
+    }
+
+    // inspections: readable by supervisors and the inspecting creator, server-written only.
+    match /inspections/{inspectionId} {
+      allow read: if isSupervisor() || (isSignedIn() && resource.data.inspector_uid == request.auth.uid);
+      allow write: if false;
+    }
+
+    // gallery: NO client access (dataset labels kept hidden from browser until inspection). Served via takumi-api.
+    match /gallery/{galleryId} {
       allow read, write: if false;
     }
 
-    match /passport_locks/{lockId} {
-      allow read, write: if false;
+    // machines: readable by any signed-in user, server-written only.
+    match /machines/{machineId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // orders (demand agent): readable by supervisors, written only by takumi-api.
+    match /orders/{orderId} {
+      allow read: if isSupervisor();
+      allow write: if false;
+    }
+
+    // machine_events: readable by supervisors only (no created_by on events).
+    match /machine_events/{eventId} {
+      allow read: if isSupervisor();
+      allow write: if false;
+    }
+
+    // soak_runs and soak_runs/{id}/truth: readable by supervisors or the run's creator (created_by).
+    match /soak_runs/{runId} {
+      allow read: if isSupervisor() || (isSignedIn() && resource.data.created_by == request.auth.uid);
+      allow write: if false;
+
+      match /truth/{truthId} {
+        allow read: if isSupervisor() || (isSignedIn() && get(/databases/$(database)/documents/soak_runs/$(runId)).data.created_by == request.auth.uid);
+        allow write: if false;
+      }
     }
   }
 }

@@ -1,44 +1,45 @@
-# TAKUMI — Google Models and Cloud Services Feature Status
+# TAKUMI — feature status
 
-This inventory records the deployment status and ownership for all Google AI models and Google Cloud services across the TAKUMI codebase as of October 2026.
+What is deployed on [takumi-cup-2026.web.app](https://takumi-cup-2026.web.app) today, which Google model or service does the work, and how it has been checked. Every number shown in the app is labelled **LIVE** (our deployment), **HOME RIG** (our test bench filmed by a real camera) or **PUBLIC DATA** (dataset + licence).
 
-## Status Definitions
-- **Live**: Implemented, tested, deployed, and serving traffic in production on `https://takumi-cup-2026.web.app` and Cloud Run.
-- **In Progress (Member B)**: Implemented in code on branch `forge` or deployed in staging; pipeline integration active.
-- **Planned**: Defined in architectural specifications and configuration files; planned for future milestones.
+**Status:** **Live** = deployed and working in production. **Evaluated** = also measured, with results on [/evals](https://takumi-cup-2026.web.app/evals). **Live, awaiting real data** = deployed and tested, not yet exercised on a full real scenario.
 
----
+## Features
 
-## 1. Google AI Models (`google-genai` SDK)
-
-| Model ID | Responsibility / Job in TAKUMI | Source Code Call Site | Production Status | Owner |
+| Feature | What it does | Google AI / Cloud | Code | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| `gemini-3.8-live` | Real-time bidirectional voice coaching with low-latency interruption support. Streams 16 kHz PCM audio in, 24 kHz PCM audio out. | [`apps/web/src/lib/live/client.ts`](file:///c:/takumi/apps/web/src/lib/live/client.ts), [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) | **Live** | Member A |
-| `gemini-3.5-flash-lite` | High-frequency (1 FPS) visual step watcher detecting task progression, common mistakes, and safety rule hazards; deep health pings. | [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) (`call_watch`, `check_deep_health`) | **Live** | Member A |
-| `gemini-3.8-flash` | Strict objective step verification against visible success criteria and safety rules; supervisor insight aggregation. | [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) (`call_verify`), [`services/api/main.py`](file:///c:/takumi/services/api/main.py) | **Live** | Member A |
-| `gemini-robotics-er-2-preview` | Spatial coordinate extraction and workbench reticle pointing (`[y, x]` normalized coordinates). | [`services/api/gemini.py`](file:///c:/takumi/services/api/gemini.py) (`call_point`) | **Live** | Member A |
-| `gemini-omni-1.1-flash` | Multimodal analysis of raw master craftsman video recordings into structured assembly steps. | `services/forge/graph/nodes/segmenter.py` (branch `forge`) | **In progress** | Member B |
-| `gemini-3.8-flash` (Forge) | Extraction of underlying rationale ("why" explanations) and multilingual localization across JAPAC target languages. | `services/forge/graph/nodes/why_extractor.py`, `localizer.py` (branch `forge`) | **In progress** | Member B |
-| `gemini-robotics-er-2-preview` (Forge) | Spatial coordinate keyframe annotation and technical manual alignment in master captures. | `services/forge/graph/nodes/spatial_annotator.py` (branch `forge`) | **In progress** | Member B |
-| `gemini-3.1-flash-image` | Step illustration and visual guidance card synthesis from technical manual text and step definitions. | `services/forge/graph/nodes/illustrator.py` (branch `forge`) | **In progress** | Member B |
-| `veo-3.1-fast-generate-preview` | Counterfactual mistake simulation video generation (budget-guarded: max 3 per skill). | `services/forge/graph/nodes/mistake_simulator.py` (branch `forge`) | **In progress** | Member B |
-| `gemini-3.8-flash-tts` | Multilingual speech audio synthesis for generated step guidance. | `services/forge/config.py` | **Planned** | Member B |
-| `gemini-embedding-2-preview` | Semantic embedding of technical manuals and assembly documentation for grounding retrieval. | `services/api/config.py`, `services/forge/config.py` | **Planned** | Both |
+| End-of-line inspection | Photo of each finished unit, screened against 3 known-good references; suspected defects confirmed by a stronger model; a supervisor confirms or overrides every flag. Supervisors add products from 3 photos. | `gemini-3.5-flash-lite` (screen), `gemini-3.8-flash` (confirm) | [services/api/main.py](../services/api/main.py), [InspectScreen.tsx](../apps/web/src/pages/InspectScreen.tsx) | **Evaluated** (PUBLIC DATA: VisA, 2,162 images) |
+| VisA gallery | Judges inspect real VisA test parts; the ground truth is revealed after the verdict. | same as above | [GalleryScreen.tsx](../apps/web/src/pages/GalleryScreen.tsx) | **Live** |
+| Machine Watch | A phone reads stack lights, counters and alarm screens: one setup call finds the regions, the browser checks them every 500 ms for free, Gemini reads only on change (plus a counter read every 2 min and a check-in every 10 min). Stop banner, beep and vibration on the phone. | `gemini-robotics-er-2-preview` (setup), `gemini-3.5-flash-lite` (reads) | [services/api/machines.py](../services/api/machines.py), [MachineWatchScreen.tsx](../apps/web/src/pages/MachineWatchScreen.tsx) | **Evaluated** (HOME RIG soak runs) |
+| Test bench | 1–3 simulated machines with a seeded fault schedule and ground truth for scoring; a detection stopwatch shows how long TAKUMI took to see each change. | — | [VirtualMachineScreen.tsx](../apps/web/src/pages/VirtualMachineScreen.tsx), [evals/machine_watch](../evals/machine_watch) | **Live** |
+| Maintenance agent | When a machine stops, drafts a work order: likely causes with evidence, steps, safety, parts, time. Supervisor approves or dismisses. The floor alert is spoken in 6 languages. | Google ADK agents on `gemini-3.8-flash` + `gemini-3.5-flash-lite`, `gemini-3.8-flash-tts` | [services/forge/agents/maintenance.py](../services/forge/agents/maintenance.py), [services/api/work_orders.py](../services/api/work_orders.py) | **Evaluated** (TEST FIXTURES: 12/12 scripted stops) |
+| Ask TAKUMI (voice copilot) | Supervisors ask by voice in any language; Gemini Live answers by voice using tools over TAKUMI's own data (machines, orders, quality, work orders, the planner and maintenance agents). It cannot approve anything. | `gemini-3.8-live` (single-use tokens), function calling | [apps/web/src/lib/live/copilot.ts](../apps/web/src/lib/live/copilot.ts) | **Live** |
+| Station Watch | Follows each step of a work instruction at a manual station, speaks in the operator's language, points at the fix, verifies steps on visible facts only, full-screen STOP on a hazard. | `gemini-3.8-live`, `gemini-3.5-flash-lite` (step watcher), `gemini-3.8-flash` (verifier), `gemini-robotics-er-2-preview` (pointing), Model Armor | [CoachLiveView.tsx](../apps/web/src/pages/CoachLiveView.tsx), [services/api/main.py](../services/api/main.py) | **Live** (latencies in BigQuery `takumi.api_calls`) |
+| Unit records | A serial links a unit's station records (with evidence frames) and inspections; supervisors hold and release units. | Firestore, Cloud Storage | [services/api/units.py](../services/api/units.py), [UnitScreen.tsx](../apps/web/src/pages/UnitScreen.tsx) | **Live** |
+| Quality trace-back | From a failed unit, finds the station and step where the defect started, other units through the same step, and an instruction fix; drawn as an animated graph. Holds and fixes need approval. | Google ADK agents on `gemini-3.8-flash` | [services/forge/agents/traceback.py](../services/forge/agents/traceback.py) | **Evaluated** on TEST FIXTURES (4/4); awaiting real factory data |
+| Demand planner | Orders projected in plain code from real machine counts and inspection yield; an agent explains the risk and proposes actions. | Google ADK agents on `gemini-3.8-flash` | [shared/ops/demand.py](../shared/ops/demand.py), [services/forge/agents/demand.py](../services/forge/agents/demand.py) | **Live** |
+| Standard Work Studio | A master demonstrates a task once; a workflow turns the video into steps with success criteria, reasons, pointing hints and translations, checks that criteria are visible facts, and the master reviews; review requests from trace-back are applied per step. | Google ADK 2 Workflow graph, `gemini-3.8-flash` (video, translation), `gemini-robotics-er-2-preview`, `gemini-3.5-flash-lite` | [services/forge/graph/workflow.py](../services/forge/graph/workflow.py) | **Live** |
+| Events pipeline and control tower | Every station step, inspection, machine event, hold and work-order decision goes to Pub/Sub; a BigQuery subscription stores it; the control tower shows totals per source label and a live feed. | Pub/Sub, BigQuery | [services/api/events_bus.py](../services/api/events_bus.py), [ControlTowerScreen.tsx](../apps/web/src/pages/ControlTowerScreen.tsx) | **Live** |
+| Supervisor dashboard | End-of-line quality, machines (timeline, availability, stops), step quality per instruction step, station replay. No per-worker scoring. | Firestore, BigQuery | [DashboardScreen.tsx](../apps/web/src/pages/DashboardScreen.tsx) | **Live** |
+| Six languages | Every screen in English, Japanese, Vietnamese, Hindi, Bahasa Indonesia and Filipino. Translations are machine-made with Gemini and marked for native review. | `gemini-3.8-flash` (offline, [infra/translate_i18n.py](../infra/translate_i18n.py)) | [apps/web/src/i18n](../apps/web/src/i18n) | **Live** |
+| Evaluations page | Public results with method, caveats and cost per part or machine; live production timings over 90 days. | — | [EvalsScreen.tsx](../apps/web/src/pages/EvalsScreen.tsx) | **Live** |
+| Status page | API health, a live (cached) Gemini check and 7-day latency percentiles, public. | Cloud Run, BigQuery | [StatusScreen.tsx](../apps/web/src/pages/StatusScreen.tsx) | **Live** |
 
----
+## Platform
 
-## 2. Google Cloud Infrastructure & Platform Services
+| Service | Use | Status |
+| :--- | :--- | :--- |
+| Cloud Run `takumi-api` | FastAPI: auth, Live tokens, inspection, Machine Watch reads, units, orders, work orders, events | **Live** |
+| Cloud Run `takumi-forge` | Google ADK agents (maintenance, trace-back, demand) and the Studio workflow | **Live** |
+| Firebase Hosting + Auth | Web app; Google sign-in, email link, judge test accounts; roles in a custom claim | **Live** |
+| Firestore, Cloud Storage | Records, evidence frames, reference photos, cached spoken alerts; access enforced by rules (tested in CI) | **Live** |
+| Pub/Sub → BigQuery | `takumi-events` topic, BigQuery subscription to `takumi.events`; plus `api_calls`, `session_events`, `inspection_events`, `machine_events` | **Live** |
+| Secret Manager | The Gemini API key; the browser never sees a key | **Live** |
+| Model Armor | Screens user-supplied text (questions, pointing targets, work-order notes) | **Live** |
+| Cloud Monitoring, Cloud Build | Uptime checks and alerts on the API, a live Gemini call and Forge, plus Gemini errors and server errors; CI runs every test suite and deploys on each push to `main` | **Live** |
 
-| Service | Responsibility in TAKUMI | Configuration / Deployment | Production Status | Owner |
-| :--- | :--- | :--- | :--- | :--- |
-| **Cloud Run (`takumi-api`)** | Stateless container running FastAPI Python 3.12 backend (auth verification, live tokens, watcher proxy, BigQuery ingestion, rate limiting). | Region: `asia-southeast1`<br>URL: `https://takumi-api-692366725458.asia-southeast1.run.app` | **Live** | Member A |
-| **Cloud Run (`takumi-forge`)** | Google ADK 2.0 graph workflow container for processing master capture videos. | Region: `asia-southeast1`<br>URL: `https://takumi-forge-692366725458.asia-southeast1.run.app` | **In progress** | Member B |
-| **Firebase Hosting** | Global CDN hosting for React 19 + TypeScript + Vite Progressive Web Application with security headers and API rewrites. | Project: `takumi-cup-2026`<br>URL: `https://takumi-cup-2026.web.app` | **Live** | Member A |
-| **Firebase Authentication** | Identity management supporting Google Sign-In and email authentication with custom role claims (`role: trainee \| master \| supervisor`). | Project: `takumi-cup-2026` | **Live** | Member A |
-| **Cloud Firestore (Native)** | Document database storing sessions, real-time session events, skills, review requests, and skill passports with role-based security rules. | Database: `(default)`, Region: `asia-southeast1` | **Live** | Both |
-| **Cloud Storage** | Object storage bucket for workbench video frames, badge media, and master capture assets with strict access rules. | Bucket: `takumi-cup-2026.firebasestorage.app` | **Live** | Both |
-| **BigQuery** | Analytics data warehouse holding partitioned tables `takumi.session_events` and `takumi.api_calls` for latency metrics and supervisor insight aggregation. | Dataset: `takumi`, Region: `asia-southeast1` | **Live** | Member A |
-| **Secret Manager** | Centralized credential vault holding `GEMINI_API_KEY` and Firebase configurations; keys never exposed to browsers. | Project: `takumi-cup-2026` | **Live** | Member A |
-| **Model Armor** | Security screening engine filtering prompt injection, jailbreaks, and toxicity on user inputs before model ingestion. | Template in `asia-southeast1` | **Live** | Member A |
-| **Cloud Monitoring & Logging** | Structured JSON logging with trace context, log-based metrics for availability, and automated alert policies. | Project: `takumi-cup-2026` | **Live** | Member A |
-| **Cloud Build** | Automated CI/CD running linting, Python pytest, web Vitest, emulator security rules tests, container builds, and deployment. | Region: `asia-southeast1` | **Live** | Both |
+## Not built (yet)
+
+- Windowed aggregation in Dataflow (the control tower aggregates in BigQuery).
+- Gemma on-device for the edge loop (today the edge check is plain colour and pixel change).
+- Real factory footage evaluation for Machine Watch (the soak runs use the test bench filmed by a real phone).

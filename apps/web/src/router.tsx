@@ -4,16 +4,23 @@ import { createBrowserRouter, Outlet, type RouteObject } from 'react-router-dom'
 import { RoleGuard } from './components/RoleGuard';
 import { featureRoutes, type FeatureRoute } from './features/routes';
 import { VersionBanner } from './components/VersionBanner';
+import { RouteError } from './components/RouteError';
 
 const SignInScreen = lazy(() => import('./pages/SignInScreen'));
 const SignInFinishScreen = lazy(() => import('./pages/SignInFinishScreen'));
 const HomeScreen = lazy(() => import('./pages/HomeScreen'));
 const ChooseLessonScreen = lazy(() => import('./pages/ChooseLessonScreen'));
 const CoachBeforeStartScreen = lazy(() => import('./pages/CoachBeforeStartScreen'));
-const PassportScreen = lazy(() => import('./pages/PassportScreen'));
 const StatusScreen = lazy(() => import('./pages/StatusScreen'));
 const DashboardScreen = lazy(() => import('./pages/DashboardScreen'));
 const EvalsScreen = lazy(() => import('./pages/EvalsScreen'));
+const TourScreen = lazy(() => import('./pages/TourScreen'));
+const InspectScreen = lazy(() => import('./pages/InspectScreen'));
+const GalleryScreen = lazy(() => import('./pages/GalleryScreen'));
+const VirtualMachineScreen = lazy(() => import('./pages/VirtualMachineScreen'));
+const MachineWatchScreen = lazy(() => import('./pages/MachineWatchScreen'));
+const UnitScreen = lazy(() => import('./pages/UnitScreen'));
+const ControlTowerScreen = lazy(() => import('./pages/ControlTowerScreen'));
 const NotFoundScreen = lazy(() => import('./pages/NotFoundScreen'));
 
 export const LoadingFallback: React.FC = () => (
@@ -34,6 +41,7 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
           <Outlet />
         </>
       ),
+      errorElement: <RouteError />,
       children: [
         // Public routes
         {
@@ -49,14 +57,6 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
       element: (
         <Suspense fallback={<LoadingFallback />}>
           <SignInFinishScreen />
-        </Suspense>
-      ),
-    },
-    {
-      path: '/passport/:id',
-      element: (
-        <Suspense fallback={<LoadingFallback />}>
-          <PassportScreen />
         </Suspense>
       ),
     },
@@ -81,11 +81,11 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
       ),
     },
 
-    // Trainee or supervisor
+    // Trainee, supervisor, or master (lesson preview)
     {
       path: '/coach',
       element: (
-        <RoleGuard allowedRoles={['trainee', 'supervisor']}>
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
           <Suspense fallback={<LoadingFallback />}>
             <ChooseLessonScreen />
           </Suspense>
@@ -95,7 +95,7 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
     {
       path: '/coach/:skillId',
       element: (
-        <RoleGuard allowedRoles={['trainee', 'supervisor']}>
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
           <Suspense fallback={<LoadingFallback />}>
             <CoachBeforeStartScreen />
           </Suspense>
@@ -117,17 +117,89 @@ export function buildRouteObjects(extraFeatures: FeatureRoute[] = featureRoutes)
 
     // Any authenticated user
     {
+      // Public: the tour needs no sign-in
+      path: '/tour',
+      element: (
+        <Suspense fallback={<LoadingFallback />}>
+          <TourScreen />
+        </Suspense>
+      ),
+    },
+    {
+      // Public: the evidence page needs no sign-in (aggregates only)
       path: '/evals',
+      element: (
+        <Suspense fallback={<LoadingFallback />}>
+          <EvalsScreen />
+        </Suspense>
+      ),
+    },
+
+    // Quality Inspection
+    {
+      path: '/inspect',
       element: (
         <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
           <Suspense fallback={<LoadingFallback />}>
-            <EvalsScreen />
+            <InspectScreen />
+          </Suspense>
+        </RoleGuard>
+      ),
+    },
+    {
+      path: '/inspect/gallery',
+      element: (
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
+          <Suspense fallback={<LoadingFallback />}>
+            <GalleryScreen />
           </Suspense>
         </RoleGuard>
       ),
     },
 
-    // Member B screens dynamically mounted behind RoleGuard
+    // Machine Watch
+    {
+      path: '/machines/virtual',
+      element: (
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
+          <Suspense fallback={<LoadingFallback />}>
+            <VirtualMachineScreen />
+          </Suspense>
+        </RoleGuard>
+      ),
+    },
+    {
+      path: '/control',
+      element: (
+        <RoleGuard allowedRoles={['supervisor']}>
+          <Suspense fallback={<LoadingFallback />}>
+            <ControlTowerScreen />
+          </Suspense>
+        </RoleGuard>
+      ),
+    },
+    {
+      path: '/units/:unitId',
+      element: (
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
+          <Suspense fallback={<LoadingFallback />}>
+            <UnitScreen />
+          </Suspense>
+        </RoleGuard>
+      ),
+    },
+    {
+      path: '/machines/watch',
+      element: (
+        <RoleGuard allowedRoles={['trainee', 'supervisor', 'master']}>
+          <Suspense fallback={<LoadingFallback />}>
+            <MachineWatchScreen />
+          </Suspense>
+        </RoleGuard>
+      ),
+    },
+
+    // Standard Work Studio screens
     ...extraFeatures.map((feat) => ({
       path: feat.path,
       element: (

@@ -1,9 +1,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
+/** A user-facing message as a translation key plus placeholder values; the screen translates it. */
+export interface CaptureMessage {
+  key: string;
+  params?: Record<string, string | number>;
+}
+
 export interface UseCameraStreamResult {
   stream: MediaStream | null;
   videoRef: React.RefObject<HTMLVideoElement | null>;
-  error: string | null;
+  error: CaptureMessage | null;
   isStarting: boolean;
   startCamera: () => Promise<MediaStream | null>;
   stopCamera: () => void;
@@ -124,7 +130,7 @@ function createSimulatedStream(): MediaStream {
 
 export function useCameraStream(): UseCameraStreamResult {
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CaptureMessage | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -194,8 +200,11 @@ export function useCameraStream(): UseCameraStreamResult {
         return simulatedStream;
       }
 
-      const msg = err instanceof Error ? err.message : 'Camera or microphone access denied or unavailable.';
-      setError(`Camera error: ${msg}`);
+      setError(
+        err instanceof Error
+          ? { key: 'app.capture_camera_error', params: { message: err.message } }
+          : { key: 'app.capture_camera_unavailable' }
+      );
       setIsStarting(false);
       throw err;
     }

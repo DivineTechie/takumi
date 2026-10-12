@@ -1,3 +1,4 @@
 # Gitleaks ignore list for TAKUMI
 # Mock test environment placeholder in vite.config.ts
 4c3f9486182f39e341a2f61d740b20f81c69dd59:apps/web/vite.config.ts:generic-api-key:14
+fee92ca4a18576321db8671cd06629316e2e2b83:apps/web/vite.config.ts:generic-api-key:83

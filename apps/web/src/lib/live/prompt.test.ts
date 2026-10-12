@@ -21,10 +21,17 @@ describe('buildLiveSystemInstruction', () => {
       'Only verify_step results or [CAMERA EVENT] messages decide that a step is done; never decide it from your own view of the video.'
     );
     expect(prompt).toContain(
-      'React to [CAMERA EVENT] messages immediately, without waiting for the trainee to speak.'
+      '- React to [CAMERA EVENT] messages immediately, without waiting for the trainee to speak.'
+    );
+    expect(prompt).toContain('- Never repeat a verified step.');
+    expect(prompt).toContain(
+      '- When the trainee asks why (in any language), call show_master_clip for the current step instead of explaining it yourself; after it plays, add at most one short sentence.'
     );
     expect(prompt).toContain(
-      "Never repeat a verified step; when the trainee asks why, explain using the master's words."
+      '- When a mistake event happens and a mistake clip exists, you may call show_mistake_clip once per step.'
+    );
+    expect(prompt).toContain(
+      "- For questions about the craft that the lesson text doesn't answer, call ask_master and relay the answer in one or two short sentences, naming the master as the source."
     );
     expect(prompt).toContain(
       'When the trainee says they are done, call verify_step for the current step.'

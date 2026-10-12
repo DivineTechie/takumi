@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Camera, FileText, Globe, Sparkles, AlertCircle } from 'lucide-react';
+import { useI18n } from '../../../i18n';
 
 export interface SetupFormData {
   skillTitle: string;
@@ -13,16 +14,18 @@ interface SetupFormProps {
   error?: string | null;
 }
 
-const LANGUAGES: Array<{ code: SetupFormData['sourceLanguage']; label: string; native: string }> = [
-  { code: 'ja', label: 'Japanese', native: '日本語' },
-  { code: 'en', label: 'English', native: 'English' },
-  { code: 'vi', label: 'Vietnamese', native: 'Tiếng Việt' },
-  { code: 'hi', label: 'Hindi', native: 'हिन्दी' },
-  { code: 'id', label: 'Indonesian', native: 'Bahasa Indonesia' },
-  { code: 'fil', label: 'Filipino', native: 'Tagalog' },
+// labelKey: language name in the viewer's language (shown under the native name).
+const LANGUAGES: Array<{ code: SetupFormData['sourceLanguage']; labelKey: string; native: string }> = [
+  { code: 'ja', labelKey: 'app.capture_lang_ja', native: '日本語' },
+  { code: 'en', labelKey: 'app.capture_lang_en', native: 'English' },
+  { code: 'vi', labelKey: 'app.capture_lang_vi', native: 'Tiếng Việt' },
+  { code: 'hi', labelKey: 'app.capture_lang_hi', native: 'हिन्दी' },
+  { code: 'id', labelKey: 'app.capture_lang_id', native: 'Bahasa Indonesia' },
+  { code: 'fil', labelKey: 'app.capture_lang_fil', native: 'Tagalog' },
 ];
 
 export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error }) => {
+  const { t } = useI18n();
   const [skillTitle, setSkillTitle] = useState('Wire a DIN-rail terminal block');
   const [sourceLanguage, setSourceLanguage] = useState<SetupFormData['sourceLanguage']>('ja');
   const [manualFile, setManualFile] = useState<File | null>(null);
@@ -31,7 +34,7 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!skillTitle.trim()) {
-      setValidationError('Please enter a skill title to begin capture');
+      setValidationError('app.capture_title_required');
       return;
     }
     setValidationError(null);
@@ -86,7 +89,7 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
             }}
           >
             <Sparkles size={16} />
-            <span>TAKUMI 匠 · Master Capture</span>
+            <span>TAKUMI 匠 · {t('app.capture_studio')}</span>
           </div>
           <h1
             style={{
@@ -97,10 +100,10 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
               color: '#ffffff',
             }}
           >
-            Record Master Task
+            {t('app.capture_title')}
           </h1>
           <p style={{ color: '#a1a1aa', fontSize: '0.95rem', margin: 0 }}>
-            Gemini Live will watch the back camera and ask short &ldquo;why&rdquo; questions while you work.
+            {t('app.capture_subtitle')}
           </p>
         </div>
 
@@ -120,7 +123,7 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
             }}
           >
             <AlertCircle size={20} style={{ flexShrink: 0 }} />
-            <span>{error || validationError}</span>
+            <span>{error || (validationError ? t(validationError) : null)}</span>
           </div>
         )}
 
@@ -137,14 +140,14 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
                 marginBottom: '0.5rem',
               }}
             >
-              Task / Skill Title
+              {t('app.capture_title_label')}
             </label>
             <input
               id="skillTitle"
               type="text"
               value={skillTitle}
               onChange={(e) => setSkillTitle(e.target.value)}
-              placeholder="e.g. Wire a DIN-rail terminal block"
+              placeholder={t('app.capture_title_placeholder')}
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
@@ -175,7 +178,7 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
               }}
             >
               <Globe size={16} />
-              <span>Master&apos;s Spoken Language</span>
+              <span>{t('app.capture_language_label')}</span>
             </label>
             <div
               style={{
@@ -209,7 +212,7 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
                     }}
                   >
                     <span style={{ fontSize: '0.95rem' }}>{lang.native}</span>
-                    <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{lang.label}</span>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>{t(lang.labelKey)}</span>
                   </button>
                 );
               })}
@@ -230,7 +233,7 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
               }}
             >
               <FileText size={16} />
-              <span>Standard Manual PDF (Optional)</span>
+              <span>{t('app.capture_manual_label')}</span>
             </label>
             <label
               style={{
@@ -261,12 +264,11 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
                 style={{
                   fontSize: '0.9rem',
                   color: manualFile ? '#34d399' : '#a1a1aa',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  minWidth: 0,
+                  overflowWrap: 'anywhere',
                 }}
               >
-                {manualFile ? `Attached: ${manualFile.name}` : 'Tap to upload technical manual (PDF)'}
+                {manualFile ? t('app.capture_manual_attached', { name: manualFile.name }) : t('app.capture_manual_upload')}
               </span>
             </label>
           </div>
@@ -289,13 +291,15 @@ export const SetupForm: React.FC<SetupFormProps> = ({ onStart, isStarting, error
               alignItems: 'center',
               justifyContent: 'center',
               gap: '0.75rem',
+              padding: '0.75rem 1rem',
+              textAlign: 'center',
               cursor: isStarting ? 'not-allowed' : 'pointer',
               boxShadow: '0 10px 15px -3px rgba(245, 158, 11, 0.3)',
               transition: 'background-color 0.2s',
             }}
           >
             <Camera size={26} />
-            <span>{isStarting ? 'INITIALIZING CAMERA...' : 'START CAPTURE'}</span>
+            <span>{isStarting ? t('app.capture_starting') : t('app.capture_start_btn')}</span>
           </button>
         </form>
       </div>

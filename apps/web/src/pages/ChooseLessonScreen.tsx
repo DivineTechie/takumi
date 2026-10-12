@@ -37,8 +37,8 @@ export const ChooseLessonScreen: React.FC = () => {
   return (
     <div className="bg-background text-on-surface font-body-md min-h-screen antialiased flex flex-col justify-between selection:bg-primary-container selection:text-on-primary-container">
       {/* Top App Bar */}
-      <header className="w-full bg-surface-container-low min-h-[64px] flex items-center justify-between px-4 sticky top-0 z-40 border-b border-outline-variant">
-        <div className="flex items-center gap-3">
+      <header className="w-full bg-surface-container-low min-h-[64px] flex items-center justify-between gap-2 px-4 sticky top-0 z-40 border-b border-outline-variant">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => navigate('/')}
             aria-label={t('back')}
@@ -50,7 +50,7 @@ export const ChooseLessonScreen: React.FC = () => {
           <div className="flex items-center gap-2.5">
             <img
               src={logoSvg}
-              alt="TAKUMI Logo"
+              alt={t('station.common_logo_alt')}
               className="w-8 h-8 rounded-lg shrink-0 object-contain shadow-sm"
               width={32}
               height={32}
@@ -60,12 +60,12 @@ export const ChooseLessonScreen: React.FC = () => {
         </div>
 
         {/* Language selector */}
-        <div className="relative flex items-center">
+        <div className="relative flex items-center min-w-0 shrink">
           <select
-            aria-label="Select Language"
+            aria-label={t('station.choose_language_aria')}
             value={language}
             onChange={(e) => setLanguage(e.target.value as LanguageCode)}
-            className="appearance-none bg-surface-container-high text-on-surface font-label-md text-sm pl-3 pr-8 py-2 rounded-lg border border-outline-variant focus:outline-none focus:border-primary-container transition-colors cursor-pointer"
+            className="appearance-none max-w-[42vw] truncate min-h-[44px] bg-surface-container-high text-on-surface font-label-md text-sm pl-3 pr-8 py-2 rounded-lg border border-outline-variant focus:outline-none focus:border-primary-container transition-colors cursor-pointer"
           >
             {SUPPORTED_LANGUAGES.map((lang) => (
               <option key={lang.code} value={lang.code}>
@@ -83,7 +83,7 @@ export const ChooseLessonScreen: React.FC = () => {
       <main className="flex-1 w-full max-w-md mx-auto px-4 pt-6 pb-8 flex flex-col">
         <section className="mb-6">
           <h1 className="font-headline-xl font-bold text-on-surface tracking-tight">
-            {t('choose_lesson_title')}
+            {t('station.pick_title')}
           </h1>
         </section>
 
@@ -109,10 +109,10 @@ export const ChooseLessonScreen: React.FC = () => {
               <span className="material-symbols-outlined text-[48px]">menu_book</span>
             </div>
             <h2 className="font-headline-md font-bold text-on-surface mb-2 tracking-normal">
-              {t('no_lessons_title')}
+              {t('station.pick_empty_title')}
             </h2>
             <p className="font-body-md text-on-surface-variant max-w-[280px] leading-relaxed">
-              {t('no_lessons_desc')}
+              {t('station.pick_empty_desc')}
             </p>
           </div>
         ) : (
@@ -127,8 +127,10 @@ export const ChooseLessonScreen: React.FC = () => {
                   <h2 className="font-headline-md font-bold text-on-surface leading-snug">
                     {skill.title}
                   </h2>
-                  <p className="font-body-md text-slate-300 mt-2 font-normal">
-                    {skill.master ? `${skill.master.display_name}, ${skill.master.role}` : 'Master Instructor'}
+                  <p className="font-body-md text-on-surface-variant mt-2 font-normal">
+                    {skill.master
+                      ? t('station.choose_master_line', { name: skill.master.display_name, role: skill.master.role })
+                      : t('station.choose_master_fallback')}
                   </p>
                   <div className="flex items-center gap-2 mt-3 text-on-surface-variant font-label-md text-sm">
                     <span className="material-symbols-outlined text-[20px]">schedule</span>
@@ -152,7 +154,7 @@ export const ChooseLessonScreen: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => navigate(`/coach/${skill.id}`)}
-                    className="w-full min-h-[56px] h-14 bg-primary-container text-on-primary-container font-label-lg font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer"
+                    className="w-full min-h-[56px] px-3 py-2 bg-primary-container text-on-primary-container font-label-lg font-bold rounded-xl flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer"
                   >
                     <span>{t('start_btn')}</span>
                     <span className="material-symbols-outlined text-[22px]">play_arrow</span>

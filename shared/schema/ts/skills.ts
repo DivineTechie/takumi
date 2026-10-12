@@ -19,7 +19,10 @@ export interface Skill {
   capture_id?: string;
   source_language: "en" | "ja" | "vi" | "hi" | "id" | "fil";
   languages: ("en" | "ja" | "vi" | "hi" | "id" | "fil")[];
-  status: "draft" | "in_review" | "published";
+  /**
+   * archived: withdrawn from the library and from Station Watch, kept for the record
+   */
+  status: "draft" | "in_review" | "published" | "archived";
   master: {
     display_name: string;
     role: string;
@@ -29,6 +32,10 @@ export interface Skill {
   file_search_store?: string;
   steps: {
     n: number;
+    /**
+     * Short name of the step
+     */
+    title?: string;
     instruction: string;
     success_criteria: string;
     why: string;
@@ -61,12 +68,15 @@ export interface Skill {
       conflict: boolean;
       detail: string;
       suggestion: string;
-      citation: string;
+      citation?: string;
     };
     translations: {
       [k: string]: {
+        title?: string;
         instruction: string;
+        success_criteria?: string;
         why: string;
+        hazards?: string[];
         audio_uri?: string;
       };
     };

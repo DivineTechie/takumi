@@ -1,231 +1,127 @@
-"""Node 6: localizer (B5) - glossary harmonization, multilingual translation and TTS narration."""
+"""Node 5: localizer - translates every step into the product languages with Gemini.
 
-import time
+One structured call per language (run concurrently): title, instruction, success criteria, why and
+hazards. Numbers, units and {placeholders} must stay as written. A language whose call fails or
+comes back incomplete is left out of the lesson rather than filled with anything else.
+"""
+
+import asyncio
+import json
 import logging
-from services.forge.config import (
-    MODEL_FLASH,
-    MODEL_TTS,
-    SUPPORTED_LANGUAGES,
-    MOCK_MODELS,
-    GEMINI_API_KEY,
-)
-from services.forge.models.state import ForgeState
+import re
+import time
+
+from pydantic import BaseModel, Field
+
+from services.forge import gemini
+from services.forge.config import MODEL_FLASH, STUDIO_TRANSLATE_TIMEOUT_S, SUPPORTED_LANGUAGES
 from services.forge.events import emit
-from services.forge.storage_client import upload_bytes
+from services.forge.models.state import ForgeState, StepData
 
 logger = logging.getLogger("forge.node.localizer")
 
-# Technical glossary
-GLOSSARY = {
-  "terminal": {
-    "ja": "端子",
-    "vi": "cổng",
-    "hi": "टर्मिनल",
-    "id": "terminal",
-    "fil": "terminal",
-    "en": "terminal",
-  },
-  "ferrule": {
-    "ja": "フェルール",
-    "vi": "đầu cos",
-    "hi": "फेरूल",
-    "id": "ferrule",
-    "fil": "ferrule",
-    "en": "ferrule",
-  },
-  "DIN rail": {
-    "ja": "DINレール",
-    "vi": "thanh ray DIN",
-    "hi": "डीआईएन रेल",
-    "id": "rel DIN",
-    "fil": "DIN rail",
-    "en": "DIN rail",
-  },
-}
-
-# Verified high quality seed translations for core languages
-FALLBACK_TRANSLATIONS = {
-  "vi": {
-    1: {
-      "instruction": "Cắm dây màu xanh dương vào cổng 1 và siết chặt ốc.",
-      "why": "Cổng 1 là dây trung tính theo mã IEC. Nối sai sẽ không đạt kiểm tra; đầu cos giữ dây gọn gàng.",
-    },
-    2: {
-      "instruction": "Cắm dây màu nâu vào cổng 2 và siết chặt ốc.",
-      "why": "Cổng 2 là dây pha 1. Cắm nhầm cổng sẽ không đạt kiểm tra; đầu cos giữ dây gọn gàng.",
-    },
-    3: {
-      "instruction": "Cắm dây màu đen vào cổng 3 và siết chặt ốc.",
-      "why": "Cổng 3 là dây pha 2. Đúng thứ tự ngăn lệch pha trong hệ thống điều khiển.",
-    },
-    4: {
-      "instruction": "Kéo nhẹ từng dây để kiểm tra độ chắc chắn.",
-      "why": "Kiểm tra bằng lực kéo nhẹ giúp đảm bảo ngàm kẹp đã giữ chặt đầu cos thay vì lớp vỏ bọc.",
-    },
-  },
-  "hi": {
-    1: {
-      "instruction": "नीले तार को टर्मिनल 1 में डालें और उसके स्क्रू को कसें।",
-      "why": "IEC रंग कोड के अनुसार टर्मिनल 1 न्यूट्रल है। गलत तार लगाने पर निरीक्षण विफल होगा; फेरूल तारों को बिखरने से रोकता है।",
-    },
-    2: {
-      "instruction": "भूरे तार को टर्मिनल 2 में डालें और उसके स्क्रू को कसें।",
-      "why": "टर्मिनल 2 लाइन कंडक्टर 1 है। गलत टर्मिनल पर लगाने से निरीक्षण विफल होगा; फेरूल तारों को बिखरने से रोकता है।",
-    },
-    3: {
-      "instruction": "काले तार को टर्मिनल 3 में डालें और उसके स्क्रू को कसें।",
-      "why": "टर्मिनल 3 लाइन कंडक्टर 2 है। सही तार क्रम डाउनस्ट्रीम नियंत्रणों में फेज असंतुलन रोकता है।",
-    },
-    4: {
-      "instruction": "तीनों तारों को धीरे से खींचकर मजबूती की जांच करें।",
-      "why": "खींचने का परीक्षण यह सुनिश्चित करता है कि टर्मिनल केज ने इन्सुलेशन के बजाय फेरूल को सुरक्षित रूप से जकड़ लिया है।",
-    },
-  },
-  "ja": {
-    1: {
-      "instruction": "青いワイヤーを端子1に挿入し、ネジを締めます。",
-      "why": "端子1はIEC規格で中性線です。入れ替えると検査不合格となり、フェルールは芯線の広がりを防ぎます。",
-    },
-    2: {
-      "instruction": "茶色のワイヤーを端子2に挿入し、ネジを締めます。",
-      "why": "端子2はライン導体1です。配線ミスは検査不合格を招きます。",
-    },
-    3: {
-      "instruction": "黒いワイヤーを端子3に挿入し、ネジを締めます。",
-      "why": "端子3はライン導体2です。正確な相順序により下流制御の誤動作を防ぎます。",
-    },
-    4: {
-      "instruction": "3本のワイヤーを軽く引っ張り、確実に固定されていることを確認します。",
-      "why": "被覆ではなくフェルールが確実に固定されていることを確認するためです。",
-    },
-  },
-  "id": {
-    1: {
-      "instruction": "Masukkan kabel biru ke terminal 1 dan kencangkan sekrupnya.",
-      "why": "Terminal 1 adalah netral menurut standar IEC. Salah pasang menyebabkan gagal inspeksi.",
-    },
-    2: {
-      "instruction": "Masukkan kabel cokelat ke terminal 2 dan kencangkan sekrupnya.",
-      "why": "Terminal 2 adalah konduktor fasa 1. Penempatan yang salah menyebabkan kegagalan inspeksi.",
-    },
-    3: {
-      "instruction": "Masukkan kabel hitam ke terminal 3 dan kencangkan sekrupnya.",
-      "why": "Terminal 3 adalah konduktor fasa 2. Urutan yang tepat mencegah ketidakseimbangan fasa.",
-    },
-    4: {
-      "instruction": "Tarik perlahan setiap kabel untuk memverifikasi kekencangan.",
-      "why": "Uji tarikan memastikan terminal menjepit ferrule dengan aman dan bukan isolasi.",
-    },
-  },
-  "fil": {
-    1: {
-      "instruction": "Ipasok ang asul na wire sa terminal 1 at higpitan ang turnilyo.",
-      "why": "Ang terminal 1 ay neutral sa IEC code. Ang pagkakamali rito ay magdudulot ng bagsak na inspeksyon.",
-    },
-    2: {
-      "instruction": "Ipasok ang kulay-tsokolate na wire sa terminal 2 at higpitan ang turnilyo.",
-      "why": "Ang terminal 2 ay line conductor 1. Sinisiguro nitong maayos ang koneksyon.",
-    },
-    3: {
-      "instruction": "Ipasok ang itim na wire sa terminal 3 at higpitan ang turnilyo.",
-      "why": "Ang terminal 3 ay line conductor 2 para sa tamang daloy ng kuryente.",
-    },
-    4: {
-      "instruction": "Bahagyang hilahin ang bawat wire upang masubukan ang tibay.",
-      "why": "Tinitiyak nito na ang ferrule ang naipit ng turnilyo at hindi ang balat ng kable.",
-    },
-  },
-  "en": {
-    1: {
-      "instruction": "Insert the blue wire into terminal 1 and tighten its screw.",
-      "why": "Terminal 1 is neutral under IEC colour code. Swapping it fails inspection.",
-    },
-    2: {
-      "instruction": "Insert the brown wire into terminal 2 and tighten its screw.",
-      "why": "Terminal 2 is line conductor 1. Placing it in the wrong terminal fails inspection.",
-    },
-    3: {
-      "instruction": "Insert the black wire into terminal 3 and tighten its screw.",
-      "why": "Terminal 3 is line conductor 2. Consistent wire order prevents phase mismatch.",
-    },
-    4: {
-      "instruction": "Tug each of the three wires gently to verify firm seating.",
-      "why": "Gentle tug verification ensures the terminal cage has clamped the ferrule securely.",
-    },
-  },
-}
+LANGUAGE_NAMES = {"ja": "Japanese", "vi": "Vietnamese", "hi": "Hindi", "id": "Indonesian (Bahasa Indonesia)", "fil": "Filipino"}
+TARGET_LANGUAGES = [lang for lang in SUPPORTED_LANGUAGES if lang != "en"]
+NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 
 
-def create_placeholder_wav() -> bytes:
-    """Creates a minimal valid 24kHz mono PCM WAV header + silence/tone."""
-    import struct
-    sample_rate = 24000
-    num_samples = 24000 * 2  # 2 seconds
-    byte_rate = sample_rate * 2
-    block_align = 2
-    wav_header = struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF",
-        36 + num_samples * 2,
-        b"WAVE",
-        b"fmt ",
-        16,
-        1,  # PCM
-        1,  # Mono
-        sample_rate,
-        byte_rate,
-        block_align,
-        16,  # 16-bit
-        b"data",
-        num_samples * 2,
-    )
-    # 2 seconds of silence/low tone
-    pcm_data = b"\x00\x00" * num_samples
-    return wav_header + pcm_data
+class StepText(BaseModel):
+    n: int
+    title: str = ""
+    instruction: str
+    success_criteria: str
+    why: str = ""
+    hazards: list[str] = Field(default_factory=list)
+
+
+class StepTexts(BaseModel):
+    steps: list[StepText]
+
+
+def source_texts(steps: list[StepData]) -> list[dict]:
+    return [
+        {"n": s.n, "title": s.title, "instruction": s.instruction, "success_criteria": s.success_criteria,
+         "why": s.why, "hazards": s.hazards}
+        for s in steps
+    ]
+
+
+def translate_prompt(language: str, steps: list[StepData]) -> str:
+    return f"""Translate these work-instruction steps from English into {LANGUAGE_NAMES[language]} for factory trainees.
+Keep the meaning exact and the wording short and plain. Keep numbers (with Western digits), units (mm, Nm, °C, V, bar),
+part codes, brand or model names and anything inside {{curly braces}} exactly as written. Translate every field of every
+step, keep each step's n, and keep the same number of hazards. Empty fields stay empty.
+Steps (JSON):
+{json.dumps(source_texts(steps), ensure_ascii=False)}"""
+
+
+def numbers_kept(src: str, dst: str) -> bool:
+    """True when every number in the English text also appears in the translation."""
+    found = set(NUMBER.findall(dst))
+    return all(num in found for num in NUMBER.findall(src))
+
+
+def check_translation(steps: list[StepData], result: StepTexts) -> dict[int, StepText]:
+    """Maps n -> translated text; raises when a step is missing or a required field is empty."""
+    by_n = {t.n: t for t in result.steps}
+    missing = [s.n for s in steps if s.n not in by_n]
+    if missing:
+        raise gemini.StudioModelError(f"steps {missing} were missing from the translation")
+    for s in steps:
+        t = by_n[s.n]
+        if not t.instruction.strip() or not t.success_criteria.strip() or (s.why and not t.why.strip()):
+            raise gemini.StudioModelError(f"step {s.n} came back with empty fields")
+    return by_n
+
+
+async def translate(state: ForgeState, language: str) -> tuple[str, dict[int, StepText] | None, str, float]:
+    t0 = time.perf_counter()
+    try:
+        result = await gemini.generate_json(
+            MODEL_FLASH, [translate_prompt(language, state.steps)], StepTexts,
+            timeout_s=STUDIO_TRANSLATE_TIMEOUT_S, thinking_level="low",
+        )
+        return language, check_translation(state.steps, result), "", time.perf_counter() - t0
+    except gemini.StudioModelError as e:
+        return language, None, str(e), time.perf_counter() - t0
 
 
 async def run_localizer(state: ForgeState) -> ForgeState:
-    t0 = time.time()
-    emit(state.job_id, "localizer", "Translating steps into 6 JAPAC languages...", "info")
-    state.glossary = GLOSSARY
+    t0 = time.perf_counter()
+    names = ", ".join(TARGET_LANGUAGES)
+    emit(state.job_id, "localizer", f"Translating {len(state.steps)} steps into {names} with {MODEL_FLASH}", "info")
 
-    for lang in SUPPORTED_LANGUAGES:
-        lang_t0 = time.time()
-        for step in state.steps:
-            if lang in FALLBACK_TRANSLATIONS and step.n in FALLBACK_TRANSLATIONS[lang]:
-                tr = FALLBACK_TRANSLATIONS[lang][step.n]
-                inst_text = tr["instruction"]
-                why_text = tr["why"]
-            else:
-                inst_text = step.instruction
-                why_text = step.why
-
-            # Upload synthetic / live audio clip
-            audio_path = f"skills/{state.skill_id}/audio/{step.n}_{lang}.wav"
-            audio_bytes = create_placeholder_wav()
-            audio_uri = upload_bytes(audio_bytes, audio_path, content_type="audio/wav")
-
-            step.translations[lang] = {
-                "instruction": inst_text,
-                "why": why_text,
-                "audio_uri": audio_uri,
+    results = await asyncio.gather(*(translate(state, lang) for lang in TARGET_LANGUAGES))
+    done: list[str] = []
+    for language, by_n, error, secs in results:
+        if by_n is None:
+            emit(state.job_id, "localizer", f"[{language}] not translated: {error}", "warn")
+            continue
+        changed = []
+        for s in state.steps:
+            t = by_n[s.n]
+            s.translations[language] = {
+                "title": t.title.strip(),
+                "instruction": t.instruction.strip(),
+                "success_criteria": t.success_criteria.strip(),
+                "why": t.why.strip(),
+                "hazards": [h.strip() for h in t.hazards if h.strip()],
             }
+            src = " ".join([s.title, s.instruction, s.success_criteria, s.why, *s.hazards])
+            dst = " ".join([t.title, t.instruction, t.success_criteria, t.why, *t.hazards])
+            if not numbers_kept(src, dst):
+                changed.append(s.n)
+        done.append(language)
+        emit(state.job_id, "localizer", f"[{language}] translated {len(state.steps)} steps in {secs:.1f} s", "info")
+        if changed:
+            emit(state.job_id, "localizer", f"[{language}] numbers differ from English in steps {changed}; please check", "warn")
 
-        lang_ms = int((time.time() - lang_t0) * 1000)
-        emit(
-            state.job_id,
-            "localizer",
-            f"Localized steps & generated TTS narration for [{lang.upper()}]",
-            "info",
-            ms=lang_ms,
-        )
-
-    duration_ms = int((time.time() - t0) * 1000)
+    state.languages = ["en"] + [lang for lang in TARGET_LANGUAGES if lang in done]
     emit(
         state.job_id,
         "localizer",
-        f"Harmonized glossary and translated into 6 languages ({', '.join(SUPPORTED_LANGUAGES)})",
+        f"Lesson available in {len(state.languages)} languages ({', '.join(state.languages)})",
         "info",
-        ms=duration_ms,
+        ms=int((time.perf_counter() - t0) * 1000),
     )
     return state

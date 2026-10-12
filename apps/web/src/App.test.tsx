@@ -19,7 +19,6 @@ describe('App', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
-      updateDisplayName: vi.fn(),
     });
 
     render(<App />);

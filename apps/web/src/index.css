@@ -198,3 +198,70 @@ body {
   font-family: "Noto Sans", "Noto Sans JP", "Noto Sans Devanagari", sans-serif;
   font-size: 18px;
 }
+
+/* Motion used by the agent panels, control tower and tour. Disabled for reduced-motion users. */
+@keyframes tk-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes tk-shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+@keyframes tk-ring {
+  0% { box-shadow: 0 0 0 0 rgb(239 68 68 / 0.7); }
+  70% { box-shadow: 0 0 0 14px rgb(239 68 68 / 0); }
+  100% { box-shadow: 0 0 0 0 rgb(239 68 68 / 0); }
+}
+@keyframes tk-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes tk-flow {
+  to { stroke-dashoffset: -24; }
+}
+@keyframes tk-pop {
+  0% { opacity: 0; transform: scale(0.6); }
+  70% { transform: scale(1.06); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.tk-rise { animation: tk-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.tk-pop { animation: tk-pop 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.tk-ring { animation: tk-ring 1.6s ease-out infinite; }
+.tk-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 0.14) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: tk-shimmer 1.6s linear infinite;
+}
+.tk-draw { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: tk-draw 1.2s ease-out forwards; }
+.tk-flow { stroke-dasharray: 6 6; animation: tk-flow 0.8s linear infinite; }
+@keyframes tk-bar {
+  0%, 100% { transform: scaleY(0.25); }
+  50% { transform: scaleY(1); }
+}
+@keyframes tk-halo {
+  0% { transform: scale(1); opacity: 0.55; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.tk-bar { animation: tk-bar 0.9s ease-in-out infinite; transform-origin: center; }
+.tk-halo { animation: tk-halo 1.8s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-rise, .tk-pop, .tk-ring, .tk-shimmer, .tk-draw, .tk-flow, .tk-bar, .tk-halo { animation: none; opacity: 1; stroke-dashoffset: 0; }
+}
+
+/* Tour scene: a bench machine that stops, a camera beam, and events flowing to the agents. */
+@keyframes tk-lamp-green { 0%, 44% { opacity: 1; } 46%, 84% { opacity: 0.12; } 86%, 100% { opacity: 1; } }
+@keyframes tk-lamp-red { 0%, 44% { opacity: 0.12; } 46%, 84% { opacity: 1; } 86%, 100% { opacity: 0.12; } }
+@keyframes tk-alert { 0%, 46% { opacity: 0; transform: scale(0.6); } 50% { opacity: 0.9; } 62% { opacity: 0; transform: scale(2.2); } 100% { opacity: 0; } }
+@keyframes tk-chip { 0%, 49% { opacity: 0; transform: translateY(8px); } 53%, 82% { opacity: 1; transform: none; } 86%, 100% { opacity: 0; } }
+@keyframes tk-beam { 0%, 100% { opacity: 0.18; } 50% { opacity: 0.38; } }
+@keyframes tk-packet { from { left: 0%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } to { left: 100%; opacity: 0; } }
+.tk-lamp-green { animation: tk-lamp-green 9s linear infinite; }
+.tk-lamp-red { animation: tk-lamp-red 9s linear infinite; }
+.tk-alert { animation: tk-alert 9s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.tk-chip { animation: tk-chip 9s ease-out infinite; }
+.tk-beam { animation: tk-beam 3s ease-in-out infinite; }
+.tk-packet { animation: tk-packet 2.4s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tk-lamp-green, .tk-lamp-red, .tk-alert, .tk-chip, .tk-beam, .tk-packet { animation: none; }
+  .tk-chip { opacity: 1; }
+}

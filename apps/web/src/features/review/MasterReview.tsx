@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, updateDoc, collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { regenerateStepPart, ApiError } from '../../lib/api';
+import { regenerateStepPart, ApiError, type RegeneratePart } from '../../lib/api';
 import {
   Sparkles,
   CheckCircle2,
@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { Skill } from '../../../../../shared/schema/ts/skills.ts';
 import { validateSkillForPublish, ValidationResult } from './publishValidation';
+import { useI18n } from '../../i18n';
 
 export interface MasterReviewProps {
   skillId?: string;
@@ -35,15 +36,23 @@ interface ReviewRequestItem {
   step: number;
   reason: string;
   suggested_instruction: string;
+  suggested_success_criteria?: string;
+  source?: 'traceback' | 'supervisor';
+  unit_id?: string | null;
   status: 'open' | 'applied' | 'dismissed';
 }
 
 export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId, onPublished }) => {
   const { skillId: routeSkillId } = useParams<{ skillId: string }>();
   const navigate = useNavigate();
+  const { t } = useI18n();
+  const tf = (key: string, fallback: string, params?: Record<string, string | number>) => {
+    const text = t(key, params);
+    return text === key ? fallback : text;
+  };
   const skillId = propSkillId || routeSkillId || '';
   const [skill, setSkill] = useState<Skill | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'not_found' | 'error'>('loading');
   const [activeLang, setActiveLang] = useState<string>('en');
   const [reviewRequests, setReviewRequests] = useState<ReviewRequestItem[]>([]);
   const [publishing, setPublishing] = useState(false);
@@ -66,34 +75,15 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     getDoc(skillRef)
       .then((snap) => {
         if (snap.exists()) {
-          const data = snap.data() as Skill;
-          // Auto-normalize WebM video_uri to master.mp4 for iOS Safari compatibility
-          if (data.video_uri && data.video_uri.endsWith('.webm')) {
-            data.video_uri = data.video_uri.slice(0, -5) + '.mp4';
-          }
-          setSkill(data);
+          setSkill(snap.data() as Skill);
+          setLoadState('ready');
         } else {
-          // Use seed fallback for initial demo/testing
-          import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-            const data = seed.default as unknown as Skill;
-            if (!data.video_uri) {
-              data.video_uri = 'gs://takumi-cup-2026.firebasestorage.app/captures/cap_master/master.mp4';
-            }
-            setSkill(data);
-          });
+          setLoadState('not_found');
         }
-        setLoading(false);
       })
       .catch((err) => {
-        console.warn('Could not fetch skill doc, using fallback:', err);
-        import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-          const data = seed.default as unknown as Skill;
-          if (!data.video_uri) {
-            data.video_uri = 'gs://takumi-cup-2026.firebasestorage.app/captures/cap_master/master.mp4';
-          }
-          setSkill(data);
-          setLoading(false);
-        });
+        console.warn('Could not load the lesson:', err);
+        setLoadState('error');
       });
 
     // Listen for open review requests
@@ -117,20 +107,49 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     return validateSkillForPublish(skill, videoDuration);
   }, [skill, videoDuration]);
 
-  if (loading || !skill) {
+  if (loadState !== 'ready' || !skill) {
     return (
       <div
+        role={loadState === 'loading' ? 'status' : 'alert'}
         style={{
           minHeight: '100vh',
           backgroundColor: '#09090b',
           color: '#ffffff',
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
+          gap: '0.75rem',
+          padding: '1rem',
+          textAlign: 'center',
           fontFamily: 'system-ui, sans-serif',
         }}
       >
-        <span>Loading lesson for review...</span>
+        {loadState === 'loading' && <span>{t('app.review_loading')}</span>}
+        {loadState === 'not_found' && <span>{tf('app.review_not_found', 'This lesson could not be found.')}</span>}
+        {loadState === 'error' && (
+          <>
+            <strong>{t('app.route_error_title')}</strong>
+            <span style={{ color: '#a1a1aa' }}>{t('app.route_error_desc')}</span>
+          </>
+        )}
+        {loadState !== 'loading' && (
+          <button
+            type="button"
+            onClick={() => navigate('/library')}
+            style={{
+              backgroundColor: '#27272a',
+              color: '#ffffff',
+              border: '1px solid #3f3f46',
+              borderRadius: '0.5rem',
+              padding: '0.6rem 1.2rem',
+              minHeight: '44px',
+              cursor: 'pointer',
+            }}
+          >
+            {t('back')}
+          </button>
+        )}
       </div>
     );
   }
@@ -154,6 +173,34 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
 
     updated.steps[stepIdx] = stepObj;
     setSkill(updated);
+  };
+
+  /** Applies a review request to the step with the same number (base language) and records the decision. */
+  const handleReviewRequest = async (rr: ReviewRequestItem, decision: 'applied' | 'dismissed') => {
+    if (decision === 'applied') {
+      const idx = skill.steps.findIndex((st) => st.n === rr.step);
+      if (idx < 0) return;
+      const updated = { ...skill, steps: [...skill.steps] };
+      updated.steps[idx] = {
+        ...updated.steps[idx],
+        instruction: rr.suggested_instruction,
+        ...(rr.suggested_success_criteria ? { success_criteria: rr.suggested_success_criteria } : {}),
+      };
+      setSkill(updated);
+      try {
+        // The master's Apply is the approval: save the step now so the change is not lost.
+        await updateDoc(doc(db, 'skills', skill.id), { steps: updated.steps });
+      } catch (err) {
+        console.warn('Failed to save the applied step:', err);
+        return;
+      }
+    }
+    try {
+      await updateDoc(doc(db, 'review_requests', rr.id), { status: decision });
+      setReviewRequests((prev) => prev.filter((x) => x.id !== rr.id));
+    } catch (err) {
+      console.warn('Failed to record review request decision:', err);
+    }
   };
 
   const handleUpdateClip = (stepIdx: number, subfield: 'start_s' | 'end_s', val: number) => {
@@ -235,24 +282,35 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     setSkill({ ...skill, steps: updatedSteps });
   };
 
-  const handleRegeneratePart = async (n: number, part: string) => {
+  /** Asks Gemini for a new version of one part of a step and puts it, with its translations, into the editor. */
+  const handleRegeneratePart = async (n: number, part: RegeneratePart) => {
     setRegeneratingStep(n);
+    setError(null);
     try {
-      await regenerateStepPart(skill.id, n, part);
+      const result = await regenerateStepPart(skill.id, n, part);
+      setSkill((current) => {
+        if (!current) return current;
+        const steps = current.steps.map((s) => {
+          if (s.n !== n) return s;
+          const translations = { ...(s.translations || {}) };
+          for (const [lang, text] of Object.entries(result.translations)) {
+            if (translations[lang]) translations[lang] = { ...translations[lang], [part]: text };
+          }
+          return { ...s, [part]: result.text, translations };
+        });
+        return { ...current, steps };
+      });
     } catch (e: unknown) {
-      if (e instanceof ApiError) {
-        console.warn(`Regenerate failed (${e.status}):`, e.message);
-      } else {
-        console.warn('Regenerate call error:', e);
-      }
+      console.warn('Regenerate failed:', e instanceof ApiError ? `${e.status} ${e.message}` : e);
+      setError(tf('app.review_regenerate_failed', `Could not regenerate step ${n}. Please try again.`, { n }));
     } finally {
-      setTimeout(() => setRegeneratingStep(null), 800);
+      setRegeneratingStep(null);
     }
   };
 
   const handlePublish = async () => {
     if (!validation.isValid) {
-      setError(`Cannot publish: Please resolve the ${validation.issues.length} validation checklist issues.`);
+      setError(t('app.review_cannot_publish', { count: validation.issues.length }));
       return;
     }
 
@@ -285,7 +343,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('Failed to publish skill:', msg);
-      setError(`Failed to publish: ${msg}`);
+      setError(t('app.review_publish_failed', { message: msg }));
     } finally {
       setPublishing(false);
     }
@@ -329,17 +387,17 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
               }}
             >
               <Sparkles size={16} />
-              <span>TAKUMI 匠 · Master Review</span>
+              <span>TAKUMI 匠 · {t('app.review_eyebrow')}</span>
             </div>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>
               {skill.title}
             </h1>
             <div style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-              Master: <strong style={{ color: '#d4d4d8' }}>{skill.master.display_name}</strong> ({skill.master.role}) · Video: <code style={{ color: '#fbbf24', fontSize: '0.8rem' }}>{skill.video_uri ? skill.video_uri.split('/').pop() : 'master.mp4'}</code>
+              {t('app.library_master_label')} <strong style={{ color: '#d4d4d8' }}>{skill.master.display_name}</strong> ({skill.master.role}) · {t('app.review_video_label')} <code style={{ color: '#fbbf24', fontSize: '0.8rem' }}>{skill.video_uri ? skill.video_uri.split('/').pop() : 'master.mp4'}</code>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.75rem' }}>
             {/* Language Switcher */}
             <div
               style={{
@@ -379,7 +437,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
             <button
               onClick={handlePublish}
               disabled={publishing || publishSuccess || !validation.isValid}
-              title={!validation.isValid ? 'Fix validation checklist issues below before publishing' : 'Publish lesson'}
+              title={!validation.isValid ? t('app.review_publish_blocked_title') : t('app.review_publish_title')}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -404,12 +462,12 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
               {publishSuccess ? (
                 <>
                   <CheckCircle2 size={18} />
-                  <span>PUBLISHED</span>
+                  <span>{t('app.review_published')}</span>
                 </>
               ) : (
                 <>
                   <Send size={18} />
-                  <span>{publishing ? 'PUBLISHING...' : 'PUBLISH LESSON'}</span>
+                  <span>{publishing ? t('app.review_publishing') : t('app.review_publish_btn')}</span>
                 </>
               )}
             </button>
@@ -441,18 +499,21 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
             marginBottom: '1.5rem',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700 }}>
               {validation.isValid ? (
                 <>
                   <CheckCircle2 size={18} color="#10b981" />
-                  <span style={{ color: '#10b981' }}>Ready to Publish — All Verification Criteria Passed</span>
+                  <span style={{ color: '#10b981' }}>{t('app.review_ready')}</span>
                 </>
               ) : (
                 <>
                   <AlertTriangle size={18} color="#f59e0b" />
                   <span style={{ color: '#fbbf24' }}>
-                    Publish Validation Checklist ({validation.issues.length} item{validation.issues.length === 1 ? '' : 's'} remaining)
+                    {t(
+                      validation.issues.length === 1 ? 'app.review_checklist_one' : 'app.review_checklist_other',
+                      { count: validation.issues.length }
+                    )}
                   </span>
                 </>
               )}
@@ -467,7 +528,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                   color: '#a1a1aa',
                 }}
               >
-                Schema: strict
+                {t('app.review_schema_strict')}
               </span>
               <span
                 style={{
@@ -485,12 +546,12 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
 
           {validation.isValid ? (
             <div style={{ fontSize: '0.85rem', color: '#a7f3d0' }}>
-              ✓ All {skill.steps.length} steps conform to <code>/shared/schema/skills.json</code>. Clip timings are within video duration, objective visible facts verified, common mistakes include visual cues, and both Vietnamese (vi) and Hindi (hi) translations are complete.
+              ✓ {t('app.review_valid_desc', { count: skill.steps.length, schema: '/shared/schema/skills.json' })}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
               <div style={{ fontSize: '0.85rem', color: '#d4d4d8', marginBottom: '0.25rem' }}>
-                Please resolve the following fields in the steps below before publishing:
+                {t('app.review_resolve_fields')}
               </div>
               <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.85rem', color: '#fca5a5' }}>
                 {validation.issues.map((iss, i) => (
@@ -515,7 +576,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#f87171', fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.75rem' }}>
             <ShieldAlert size={16} />
-            <span>Factory Safety Rules (Visible Facts Only)</span>
+            <span>{t('app.review_safety_rules')}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {skill.safety_rules.map((rule, rIdx) => (
@@ -540,33 +601,41 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
           </div>
         </div>
 
-        {/* Review Requests from Trainee Live Coach Dashboard */}
-        {reviewRequests.length > 0 && (
+        {/* Open review requests (from supervisors, often via the quality trace-back agent) */}
+        {reviewRequests.map((rr) => (
           <div
+            key={rr.id}
+            data-testid="review-request"
             style={{
               backgroundColor: 'rgba(245, 158, 11, 0.1)',
               border: '1px solid #f59e0b',
               borderRadius: '0.75rem',
               padding: '1rem 1.25rem',
-              marginBottom: '1.5rem',
+              marginBottom: '1rem',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fbbf24', fontWeight: 700, marginBottom: '0.5rem' }}>
               <AlertTriangle size={18} />
-              <span>Supervisor Insight: Review Request for Step {reviewRequests[0].step}</span>
+              <span>
+                {rr.source === 'traceback'
+                  ? rr.unit_id
+                    ? t('app.review_request_traceback_unit', { step: rr.step, unit: rr.unit_id })
+                    : t('app.review_request_traceback', { step: rr.step })
+                  : t('app.review_request_title', { step: rr.step })}
+              </span>
             </div>
-            <div style={{ fontSize: '0.9rem', color: '#d4d4d8', marginBottom: '0.75rem' }}>
-              {reviewRequests[0].reason}
+            <div style={{ fontSize: '0.9rem', color: '#d4d4d8', marginBottom: '0.5rem' }}>{rr.reason}</div>
+            <div style={{ fontSize: '0.9rem', color: '#fafafa', marginBottom: '0.75rem' }}>
+              {t('app.review_suggested_instruction')} {rr.suggested_instruction}
+              {rr.suggested_success_criteria && (
+                <div>
+                  {t('app.review_suggested_criteria')} {rr.suggested_success_criteria}
+                </div>
+              )}
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               <button
-                onClick={() => {
-                  const stepIdx = reviewRequests[0].step - 1;
-                  if (skill.steps[stepIdx]) {
-                    handleUpdateStepField(stepIdx, 'instruction', reviewRequests[0].suggested_instruction);
-                  }
-                  setReviewRequests([]);
-                }}
+                onClick={() => handleReviewRequest(rr, 'applied')}
                 style={{
                   backgroundColor: '#f59e0b',
                   color: '#000000',
@@ -578,10 +647,10 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                   cursor: 'pointer',
                 }}
               >
-                Apply Suggestion
+                {t('app.review_apply_to_step', { step: rr.step })}
               </button>
               <button
-                onClick={() => setReviewRequests([])}
+                onClick={() => handleReviewRequest(rr, 'dismissed')}
                 style={{
                   backgroundColor: '#27272a',
                   color: '#a1a1aa',
@@ -592,11 +661,11 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                   cursor: 'pointer',
                 }}
               >
-                Dismiss
+                {t('app.review_dismiss')}
               </button>
             </div>
           </div>
-        )}
+        ))}
 
         {/* Step Cards List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -632,7 +701,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                         borderRadius: '0.5rem',
                       }}
                     >
-                      STEP {step.n}
+                      {t('app.trace_step_badge', { n: step.n })}
                     </span>
                     {step.why_inferred && (
                       <span
@@ -646,7 +715,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                           borderRadius: '0.35rem',
                         }}
                       >
-                        Inferred Rationale
+                        {t('app.review_inferred')}
                       </span>
                     )}
                     {missingInStep.length > 0 && (
@@ -661,7 +730,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                           borderRadius: '0.35rem',
                         }}
                       >
-                        Needs attention: {missingInStep.join(', ')}
+                        {t('app.review_needs_attention', { fields: missingInStep.join(', ') })}
                       </span>
                     )}
                   </div>
@@ -669,7 +738,8 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     <button
                       type="button"
-                      title="Move Step Up"
+                      title={t('app.review_move_up')}
+                      aria-label={t('app.review_move_up')}
                       onClick={() => handleMoveStep(idx, 'up')}
                       disabled={idx === 0}
                       style={{
@@ -686,7 +756,8 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                     </button>
                     <button
                       type="button"
-                      title="Move Step Down"
+                      title={t('app.review_move_down')}
+                      aria-label={t('app.review_move_down')}
                       onClick={() => handleMoveStep(idx, 'down')}
                       disabled={idx === skill.steps.length - 1}
                       style={{
@@ -703,15 +774,17 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                     </button>
                     <button
                       type="button"
-                      title="Regenerate Step"
+                      title={t('app.review_regenerate')}
+                      aria-label={t('app.review_regenerate')}
                       onClick={() => handleRegeneratePart(step.n, 'instruction')}
+                      disabled={regeneratingStep !== null}
                       style={{
                         backgroundColor: '#27272a',
                         border: '1px solid #3f3f46',
                         color: '#fbbf24',
                         padding: '0.4rem',
                         borderRadius: '0.35rem',
-                        cursor: 'pointer',
+                        cursor: regeneratingStep !== null ? 'wait' : 'pointer',
                       }}
                     >
                       <RotateCw
@@ -723,7 +796,8 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                     </button>
                     <button
                       type="button"
-                      title="Delete Step"
+                      title={t('app.review_delete')}
+                      aria-label={t('app.review_delete')}
                       onClick={() => handleDeleteStep(idx)}
                       style={{
                         backgroundColor: '#27272a',
@@ -742,7 +816,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                 {/* Instruction (Editable) */}
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#a1a1aa', marginBottom: '0.35rem' }}>
-                    Instruction ({activeLang.toUpperCase()})
+                    {t('app.review_instruction_label', { lang: activeLang.toUpperCase() })}
                   </label>
                   <input
                     type="text"
@@ -766,7 +840,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                 {/* Success Criteria (Visible facts - editable) */}
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#a1a1aa', marginBottom: '0.35rem' }}>
-                    Camera Success Criteria (Visible Facts Only)
+                    {t('app.review_criteria_label')}
                   </label>
                   <input
                     type="text"
@@ -784,12 +858,36 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                       outline: 'none',
                     }}
                   />
+                  {step.verifier?.conflict && (
+                    <div
+                      data-testid="verifier-flag"
+                      style={{
+                        marginTop: '0.4rem',
+                        fontSize: '0.8rem',
+                        color: '#fcd34d',
+                        display: 'flex',
+                        gap: '0.35rem',
+                        alignItems: 'flex-start',
+                      }}
+                    >
+                      <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+                      <span>
+                        {tf('app.review_verifier_flag', 'AI check: not a visible fact.')} {step.verifier.detail}
+                        {step.verifier.suggestion && (
+                          <>
+                            {' '}
+                            {t('app.review_suggested_criteria')} <em>{step.verifier.suggestion}</em>
+                          </>
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Why Text (Editable) */}
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#a1a1aa', marginBottom: '0.35rem' }}>
-                    Craftsman &ldquo;Why&rdquo; Rationale ({activeLang.toUpperCase()})
+                    {t('app.review_why_label', { lang: activeLang.toUpperCase() })}
                   </label>
                   <textarea
                     rows={2}
@@ -814,12 +912,12 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                 <div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.8rem', fontWeight: 600, color: '#a1a1aa', marginBottom: '0.35rem' }}>
                     <MapPin size={14} color="#fbbf24" />
-                    <span>Spatial Point Guidance (point_hint)</span>
+                    <span>{t('app.review_point_label')}</span>
                   </label>
                   <input
                     type="text"
                     value={step.point_hint || ''}
-                    placeholder="e.g. the screw opening of terminal 1"
+                    placeholder={t('app.review_point_placeholder')}
                     onChange={(e) => handleUpdatePointHint(idx, e.target.value)}
                     style={{
                       width: '100%',
@@ -836,11 +934,11 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                 </div>
 
                 {/* Video Clip Range & Why Source Timing Inputs */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
                   <div style={{ backgroundColor: '#27272a', padding: '0.75rem', borderRadius: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#60a5fa', fontWeight: 600, fontSize: '0.8rem', marginBottom: '0.4rem' }}>
                       <Film size={14} />
-                      <span>Video Clip Range (Seconds)</span>
+                      <span>{t('app.review_clip_range')}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <input
@@ -859,7 +957,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                           fontSize: '0.85rem',
                         }}
                       />
-                      <span style={{ color: '#a1a1aa' }}>to</span>
+                      <span style={{ color: '#a1a1aa' }}>{t('app.review_range_to')}</span>
                       <input
                         type="number"
                         step="0.1"
@@ -882,7 +980,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                   <div style={{ backgroundColor: '#27272a', padding: '0.75rem', borderRadius: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#c084fc', fontWeight: 600, fontSize: '0.8rem', marginBottom: '0.4rem' }}>
                       <Clock size={14} />
-                      <span>Why Interview Timestamp (Seconds)</span>
+                      <span>{t('app.review_why_timestamp')}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <input
@@ -901,7 +999,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                           fontSize: '0.85rem',
                         }}
                       />
-                      <span style={{ color: '#a1a1aa' }}>to</span>
+                      <span style={{ color: '#a1a1aa' }}>{t('app.review_range_to')}</span>
                       <input
                         type="number"
                         step="0.1"
@@ -926,12 +1024,12 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                 <div style={{ backgroundColor: '#27272a', padding: '0.75rem', borderRadius: '0.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#f87171', fontWeight: 600, fontSize: '0.8rem', marginBottom: '0.4rem' }}>
                     <Eye size={14} />
-                    <span>Common Mistake & Visual Cue</span>
+                    <span>{t('app.review_mistake_label')}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                     <input
                       type="text"
-                      placeholder="Mistake description"
+                      placeholder={t('app.review_mistake_placeholder')}
                       value={step.common_mistakes?.[0]?.description || ''}
                       onChange={(e) => handleUpdateCommonMistake(idx, 0, 'description', e.target.value)}
                       style={{
@@ -947,7 +1045,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                     />
                     <input
                       type="text"
-                      placeholder="Visual cue (e.g. copper wire visible in second slot)"
+                      placeholder={t('app.review_cue_placeholder')}
                       value={step.common_mistakes?.[0]?.visual_cue || ''}
                       onChange={(e) => handleUpdateCommonMistake(idx, 0, 'visual_cue', e.target.value)}
                       style={{
@@ -965,24 +1063,24 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
                 </div>
 
                 {/* Tools & Hazards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.75rem', fontSize: '0.8rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', fontSize: '0.8rem' }}>
                   <div style={{ backgroundColor: '#27272a', padding: '0.6rem', borderRadius: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#a1a1aa', fontWeight: 600, marginBottom: '0.25rem' }}>
                       <Wrench size={14} />
-                      <span>Tools</span>
+                      <span>{t('app.review_tools')}</span>
                     </div>
                     <div style={{ color: '#ffffff' }}>
-                      {step.tools.length > 0 ? step.tools.join(', ') : 'None specified'}
+                      {step.tools.length > 0 ? step.tools.join(', ') : t('app.review_tools_none')}
                     </div>
                   </div>
 
                   <div style={{ backgroundColor: '#27272a', padding: '0.6rem', borderRadius: '0.5rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#f87171', fontWeight: 600, marginBottom: '0.25rem' }}>
                       <AlertOctagon size={14} />
-                      <span>Hazards</span>
+                      <span>{t('app.review_hazards')}</span>
                     </div>
                     <div style={{ color: '#ffffff' }}>
-                      {step.hazards.length > 0 ? step.hazards.join(', ') : 'No hazards flagged'}
+                      {step.hazards.length > 0 ? step.hazards.join(', ') : t('app.review_hazards_none')}
                     </div>
                   </div>
                 </div>

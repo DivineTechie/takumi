@@ -1,300 +1,253 @@
-# TAKUMI (匠) — Hands-On Skill Transfer via Multimodal AI
+<p align="center">
+  <img src="apps/web/public/logo.svg" alt="TAKUMI logo" width="104" height="104">
+</p>
 
-> **Google Cloud AI Builder Cup 2026 — Manufacturing Track**  
-> **Live Web Application**: [https://takumi-cup-2026.web.app](https://takumi-cup-2026.web.app)  
-> **System Health & Observability**: [https://takumi-cup-2026.web.app/status](https://takumi-cup-2026.web.app/status)  
-> **Evaluation & Benchmark Reports**: [/evals/coach](evals/coach) (eval benchmark suite runs on Oct 14)  
-> **Judges Walkthrough Guide**: [docs/JUDGES.md](docs/JUDGES.md)
+<h1 align="center">TAKUMI (匠)</h1>
 
----
+<p align="center"><b>AI quality and operations for factories that aren't connected.</b><br>
+Any camera a factory already has becomes its quality and operations layer, built on Google Cloud and Gemini.</p>
 
-## 1. Problem & Vision
+<p align="center"><i>Google Cloud AI Builder Cup 2026 · Manufacturing: Intelligent Operations &amp; Industrial Efficiency</i></p>
 
-### The Crisis on the Factory Floor
-Across advanced manufacturing hubs in the Asia-Pacific region, an acute demographic transition is intersecting with rapid industrial reliance on migrant labor:
-
-1. **Aging Master Craftsmen (*Takumi*)**: Experienced technicians retire with know-how that paper instructions don't capture.
-2. **Growing Multilingual Migrant Workforce**:
-   - **Japan**: Foreign workers reached **2,571,037** at the end of October 2025, with Vietnamese nationals forming the largest demographic at **605,906** workers ([MHLW national press release PDF](https://www.mhlw.go.jp/content/11655000/001646128.pdf)).
-   - **South Korea**: Foreign workers under the Employment Permit System reached a record **287,424** as of July 2026, with **229,844** (80%) working in manufacturing ([The Korea Times](https://www.koreatimes.co.kr/southkorea/20260902/number-of-foreign-workers-under-employment-permit-system-hits-record-high)).
-   - **Taiwan**: Taiwan's manufacturing sector similarly depends on a substantial migrant workforce navigating technical operations across language barriers.
-3. **The Communication and Safety Penalty**: Language barriers between supervisors and newly arrived trainees lead to onboarding delays and severe safety risks. In Japan, **6,244** foreign workers were killed or injured (requiring 4+ days off work) in 2024, passing 6,000 for the first time, with the MHLW citing "insufficient education on safety management and poor communication", as reported by the [Business & Human Rights Resource Centre](https://www.business-humanrights.org/en/latest-news/japan-number-of-work-related-injuries-and-deaths-among-foreign-workers-exceeds-6000-for-the-first-time-in-2024/).
-
-### The TAKUMI Solution
-TAKUMI bridges this gap through a dual-agent architecture built entirely on Google AI and Google Cloud:
-1. **Master Capture & Forge (Member B — In Progress)**: In progress to capture a master craftsman's physical demonstration once via a smartphone camera. An automated Google ADK 2.0 graph pipeline is designed to segment demonstrations into discrete steps, extract engineering rationale ("why"), annotate spatial coordinates, cross-reference technical SOP manuals, and localize guidance into 6 regional languages.
-2. **Live Multimodal Coach (Member A)**: A trainee props their smartphone above their workbench. TAKUMI watches their hands in real time through the phone camera and converses with them over bidirectional streaming audio in their native language (e.g. Vietnamese, Hindi, Japanese, English). It offers continuous reassurance, flags visible hazards such as bare copper and stops the trainee with a full-screen STOP, points to correct terminal screws via spatial coordinate bounding boxes, and strictly verifies step completion against physical visual criteria.
+| | Link |
+| :--- | :--- |
+| 🌐 **Live app** | [takumi-cup-2026.web.app](https://takumi-cup-2026.web.app) |
+| 🧭 **Judges' guide** (accounts and 5-minute walkthroughs) | [docs/JUDGES.md](docs/JUDGES.md) |
+| 🎬 **Product tour** (no sign-in needed) | [takumi-cup-2026.web.app/tour](https://takumi-cup-2026.web.app/tour) |
+| 📊 **Evaluations** (method, results, cost; public) | [takumi-cup-2026.web.app/evals](https://takumi-cup-2026.web.app/evals) |
+| 🟢 **System status** (API and a live Gemini check) | [takumi-cup-2026.web.app/status](https://takumi-cup-2026.web.app/status) |
+| 🧩 **Architecture** | [docs/architecture.md](docs/architecture.md) |
+| ✅ **What is live** | [docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md) |
+| 🔐 **Security and privacy** | [docs/SECURITY.md](docs/SECURITY.md) |
+| 💻 **Run it locally** | [Running locally](#running-locally) |
 
 ---
 
-## 2. Architecture
+## The problem
 
-TAKUMI decouples rapid conversational speech from high-precision visual verification to guarantee low voice latency without hallucinated step approvals.
+Small and mid-sized factories run machines without data connections, manual assembly stations and visual checks done by tired eyes. Retrofitting sensors, an MES and machine-vision stations is expensive, so most of these plants run blind: stoppages go unrecorded, defects are found late, and when a bad unit reaches a customer nobody can say where it went wrong.
 
-![TAKUMI System Architecture](docs/architecture.svg)
+## What TAKUMI does
 
-### Two Complementary Pipelines
+TAKUMI turns **a camera the factory already has** (an old phone or a cheap webcam, mounted and plugged in) into a quality and operations layer. Gemini watches the machines, the manual work and the finished parts; Google ADK agents turn what it sees into work orders, holds and instruction fixes that **a person approves**.
 
-```
-[ Master Capture Video ] ──> [ Forge ADK Pipeline (Member B) ] ──> [ Structured Skill in Firestore ]
-                                                                             │
-[ Trainee Camera & Mic ] <──> [ Live Coach API / WebSocket (Member A) ] <────┘
-                                        │
-                         [ BigQuery Telemetry & Logging ]
-```
+| | What happens | Google AI / Cloud doing the work |
+|---|---|---|
+| **Machine Watch** | A phone reads stack lights, parts counters and HMI alarm screens with no wiring. One setup call finds the regions; the browser checks them twice a second for free; Gemini reads only when something changes. | `gemini-robotics-er-2-preview` (setup), `gemini-3.5-flash-lite` (reads) |
+| **Maintenance agent** | When a machine stops, an agent reads its state, 7 days of stops and alarms, the alarm guide and past work orders, and drafts a work order with likely causes, steps, safety and parts. The floor alert is spoken in six languages. | Google ADK on `gemini-3.8-flash` + `gemini-3.5-flash-lite`, `gemini-3.8-flash-tts` |
+| **End-of-line inspection** | A photo of each finished unit is screened against 3 known-good references; a second model confirms suspected defects; a person confirms or overrides every flag. Judges can try it on real public-dataset parts. | `gemini-3.5-flash-lite` (screen), `gemini-3.8-flash` (confirm) |
+| **Station Watch** | At a manual station the camera follows each step of the work instruction, speaks to the operator in their language, points at the right spot, passes a step only on visible facts and raises a full-screen STOP on a hazard. | `gemini-3.8-live`, `gemini-3.5-flash-lite` (step watcher), `gemini-3.8-flash` (verifier), `gemini-robotics-er-2-preview` (pointing) |
+| **Unit records & trace-back** | A serial links each unit's stations and inspections. When a unit fails, an agent finds the station and step where the defect started, the other units that went through the same step, and a fix to the instruction. | Google ADK on `gemini-3.8-flash`, Firestore |
+| **Standard Work Studio** | A master records a task once. Gemini watches the video and writes the steps with visible success criteria and reasons; Robotics-ER points at each part; a checker flags subjective criteria; the instruction is translated into five languages for the master to review. | Google ADK 2 Workflow, `gemini-3.8-flash` (video, translation), `gemini-robotics-er-2-preview`, `gemini-3.5-flash-lite` |
+| **Control tower & Ask TAKUMI** | Every event flows through Pub/Sub into BigQuery; the control tower shows quality, stoppages, holds and today's orders. Supervisors ask by voice in any language ("Will we make today's orders?"); Gemini Live answers from TAKUMI's own data and can call the planner and maintenance agents, but cannot approve anything. | Pub/Sub, BigQuery, `gemini-3.8-live` with function calling, Google ADK planner agent |
 
-1. **Forge Pipeline (Member B — In Progress)**: In development to ingest master demonstration video and technical SOP manuals. Implemented in code on branch `forge` using `gemini-omni-1.1-flash` for multimodal segmentation, `gemini-3.8-flash` for why-extraction and multilingual translation, `gemini-robotics-er-2-preview` for keyframe spatial annotation, and `gemini-3.1-flash-image` with `veo-3.1-fast-generate-preview` for visual instruction cards and mistake simulation clips.
-2. **Live Coach Pipeline (Member A — Live in Production)**: Streams trainee audio and camera frames through a low-latency gateway. Uses `gemini-3.8-live` for natural bidirectional voice conversation, `gemini-3.5-flash-lite` for continuous visual progress tracking and hazard detection (1 FPS), `gemini-3.8-flash` for objective step verification against visible success criteria, and `gemini-robotics-er-2-preview` for reticle coordinates (`[y, x]`).
-
-Detailed architectural rationale, sequence diagrams, and security topology are documented in [docs/architecture.md](docs/architecture.md).
-
----
-
-## 3. Google Services & Model Matrix
-
-All model identifiers are strictly isolated in configuration constants (`services/api/config.py`, `services/forge/config.py`, and `apps/web/src/config.ts`). Temperature parameters are omitted in accordance with Gemini 3.x deprecation guidelines.
-
-| Service / Model ID | Role in TAKUMI | Call Site | Status | Owner |
-| :--- | :--- | :--- | :--- | :--- |
-| **`gemini-3.8-live`** | Bidirectional low-latency audio coaching; conversational explanation and reassurance | `apps/web/src/lib/live/client.ts`, `services/api/gemini.py` | **Live** | Member A |
-| **`gemini-3.5-flash-lite`** | Visual step watcher (1 FPS candidate frames); hazard detection; deep health checks | `services/api/gemini.py` (`call_watch`, `check_deep_health`) | **Live** | Member A |
-| **`gemini-3.8-flash`** | Strict objective step verification against success criteria; supervisor insight rollups | `services/api/gemini.py` (`call_verify`), `services/api/main.py` | **Live** | Member A |
-| **`gemini-robotics-er-2-preview`** | Workbench spatial coordinate extraction (`[y, x]` reticle placement) | `services/api/gemini.py` (`call_point`) | **Live** | Member A |
-| **`gemini-omni-1.1-flash`** | Master video multimodal step segmentation and tool extraction | `services/forge/graph/nodes/segmenter.py` | **In Progress** | Member B |
-| **`gemini-3.8-flash` (Forge)** | Rationale ("why") extraction and localization across 6 JAPAC languages | `services/forge/graph/nodes/why_extractor.py`, `localizer.py` | **In Progress** | Member B |
-| **`gemini-robotics-er-2-preview` (Forge)** | Keyframe spatial coordinate grounding against assembly drawings | `services/forge/graph/nodes/spatial_annotator.py` | **In Progress** | Member B |
-| **`gemini-3.1-flash-image`** | Assembly instruction diagram synthesis from SOP manual excerpts | `services/forge/graph/nodes/illustrator.py` | **In Progress** | Member B |
-| **`veo-3.1-fast-generate-preview`** | Counterfactual mistake simulation video clips (budget-capped at 3 per skill) | `services/forge/graph/nodes/mistake_simulator.py` | **In Progress** | Member B |
-| **`gemini-3.8-flash-tts`** | High-fidelity synthetic speech for static instructional step playbacks | `services/forge/config.py` | **Planned** | Member B |
-| **`gemini-embedding-2-preview`** | Vector grounding of industrial equipment manuals and plant standards | `services/api/config.py`, `services/forge/config.py` | **Planned** | Both |
-| **Cloud Run (`takumi-api`)** | Stateless FastAPI Python 3.12 backend (auth, live tokens, watcher proxy, BigQuery) | `services/api/` (`asia-southeast1`) | **Live** | Member A |
-| **Cloud Run (`takumi-forge`)** | Google ADK 2.0 graph execution container | `services/forge/` (`asia-southeast1`) | **In Progress** | Member B |
-| **Firebase Hosting** | Global edge distribution for React 19 + TypeScript + Vite PWA | `takumi-cup-2026.web.app` | **Live** | Member A |
-| **Firebase Authentication** | Identity management with custom role claims (`trainee`, `supervisor`, `master`) | Custom claims via Firebase Admin SDK | **Live** | Member A |
-| **Cloud Firestore (Native)** | Operational database for sessions, skills, review requests, and passports | `(default)` in `asia-southeast1` | **Live** | Both |
-| **Cloud Storage** | Single bucket for camera stills, keyframes, mistake media, and assets | `takumi-cup-2026.firebasestorage.app` | **Live** | Both |
-| **BigQuery** | Analytics warehouse (`takumi.session_events`, `takumi.api_calls`) | Dataset `takumi` in `asia-southeast1` | **Live** | Member A |
-| **Secret Manager** | Secure vault for API keys and service configurations; zero browser exposure | Secret `GEMINI_API_KEY` | **Live** | Member A |
-| **Model Armor** | Pre-execution screening for prompt injection, jailbreaks, and toxicity | Template in `asia-southeast1` | **Live** | Member A |
-| **Cloud Monitoring & Logging** | Structured JSON logging, availability metrics, and automated alert policies | GCP Project `takumi-cup-2026` | **Live** | Member A |
-| **Cloud Build** | CI/CD pipeline with automated tests, security audits, container builds, and deployment | `infra/cloudbuild-coach.yaml` | **Live** | Both |
-
-A granular breakdown of every component's operational status is available in [docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md).
+**AI informs, people decide.** Every hold, defect decision, work order and instruction change is approved by a person.
 
 ---
 
-## 4. User Personas & Workflows
+## Screenshots
 
-### 1. Trainee (Live in Production)
-- **Props a standard smartphone** on their assembly workbench; opens [https://takumi-cup-2026.web.app](https://takumi-cup-2026.web.app).
-- **Selects native language** (English, Vietnamese, Hindi, Japanese, Indonesian, or Filipino).
-- **Speaks naturally hands-free** with the coach via `gemini-3.8-live` over WebSockets.
-- **Asks contextual questions** at any point (e.g. *"Why do I need a ferrule on stranded wire?"* or *"Can you show me where terminal 1 is?"*).
-- **Receives spatial reticles** rendered directly over their live camera preview pinpointing components.
-- **Completes training**: The system logs every step event, computes time-to-competence, and issues a tamper-evident digital credential (**Skill Passport**).
+All screenshots are of the deployed app.
 
-### 2. Supervisor (Live in Production)
-- **Monitors line-wide proficiency** across all factory shifts via the Supervisor Dashboard (`/dashboard`).
-- **Inspects competency heatmaps and skill matrices** aggregating trainee performance by step, language, and cohort.
-- **Replays past training sessions**: Inspects step-by-step event timelines with transcribed speech exchanges, reticle coordinates, and verification outcomes (no raw trainee audio is stored).
-- **Triage and Quality Control**: Dispatches review requests to veteran masters when trainees encounter recurring mistakes or step friction.
+| | |
+| :---: | :---: |
+| <img src="docs/screenshots/home.jpg" alt="TAKUMI home screen" width="440"><br>**Home:** every role's tools on one screen, in six languages | <img src="docs/screenshots/tour.jpg" alt="Public product tour" width="440"><br>**Tour:** the story and the evidence, no sign-in needed |
+| <img src="docs/screenshots/work-order.jpg" alt="Work order drafted by the maintenance agent" width="440"><br>**A machine stops:** the maintenance agent drafts the work order in 17 s, with the evidence it used | <img src="docs/screenshots/trace-back.jpg" alt="Quality trace-back graph" width="440"><br>**A unit fails:** the trace-back agent finds the step and the other unit to hold |
+| <img src="docs/screenshots/ask-takumi.jpg" alt="Ask TAKUMI voice copilot answering in Hindi" width="440"><br>**Ask TAKUMI:** a spoken question in Hindi, answered by voice from real counts | <img src="docs/screenshots/machine-watch.jpg" alt="Machine Watch on a phone detecting a stop" width="440"><br>**Machine Watch:** the phone sees Press 2 stop with an alarm in seconds |
+| <img src="docs/screenshots/machine-setup.jpg" alt="Gemini Robotics-ER finds each light, counter and screen" width="200"><br>**Setup:** Gemini Robotics-ER boxes every lamp, counter and screen | <img src="docs/screenshots/station-watch-hindi.jpg" alt="Station Watch start screen in Hindi" width="200"><br>**Station Watch** in the operator's language (six languages) |
 
-### 3. Master Craftsman (In Progress — Member B)
-- **Records hands-on physical demonstrations** via smartphone camera (`/capture`).
-- **Reviews automated Forge extractions** (`/review`): Inspects generated step boundaries, verifies inferred "why" explanations, and confirms technical manual cross-references.
-- **Approves standardized skill curriculum** for factory deployment.
+A 2:49 demo video shows the whole shift end to end.
 
 ---
 
-## 5. Live Multimodal Coach Deep-Dive
+## Honest numbers
 
-TAKUMI's live coaching experience solves the fundamental challenge of multimodal AI in industrial settings: **speed vs. accuracy**.
+Every number TAKUMI shows is labelled **LIVE** (our deployment), **HOME RIG** (our test bench filmed by a real phone), **PUBLIC DATA** (dataset and licence) or **TEST FIXTURES** (scripted records with a known answer). Generated or simulated data is never shown as real.
 
-```
-                           ┌────────────────────────────────────────┐
-                           │            TRAINEE BROWSER             │
-                           │  - Microphone (16 kHz PCM)             │
-                           │  - Camera Stream (1 FPS JPEG)          │
-                           │  - Speaker Audio (24 kHz PCM)          │
-                           └───────┬────────────────────────▲───────┘
-                                   │                        │
-               Audio Stream (WS)   │                        │ Audio / Reticle
-                                   ▼                        │
-                         ┌──────────────────┐               │
-                         │ gemini-3.8-live  │───────────────┘
-                         └─────────▲────────┘
-                                   │
-              Text Events: "[CAMERA EVENT] Step 1 passed"
-                                   │
-                         ┌──────────────────┐
-                         │   Step Watcher   │ <── 1 FPS Stills
-                         │ (3.5-flash-lite) │
-                         └─────────┬────────┘
-                                   │
-               Triggered on "Done" or High-Confidence Candidate
-                                   ▼
-                         ┌──────────────────┐
-                         │  Step Verifier   │ <── High-Res Image (1280px)
-                         │  (gemini-3.8)    │
-                         └──────────────────┘
-```
+| What | Result | Label |
+| :--- | :--- | :--- |
+| Visual inspection on 2,162 real test images, 12 product categories | **88.4%** accuracy, 80.2% of defects caught, 1.4% false alarms, **$0.0022** per part | PUBLIC DATA (Amazon VisA, CC BY 4.0) |
+| Machine Watch soak run on the test bench | **61 of 61** stops caught, median **3.6 s** to see a stop | HOME RIG |
+| Machine Watch model cost | about **$4.60** per machine per month for one shift (measured tokens × list price) | estimate |
+| Maintenance agent on scripted stops (6 alarm codes, first and repeat) | **12/12** checks passed, median 17 s | TEST FIXTURES |
+| Trace-back agent on scripted failures | **4/4** right step and exact units to hold, median 21 s | TEST FIXTURES |
 
-### Multimodal Separation of Concerns
-1. **The Live Audio Loop**: Streams 16 kHz PCM audio directly to `gemini-3.8-live` via WebSocket using single-use bearer tokens minted by Cloud Run. Latency to first audio response averages **700–1,100 ms**, providing natural conversation with seamless trainee interruption.
-2. **The Visual Watcher (`gemini-3.5-flash-lite`)**: Inspects 1 FPS camera frames through the backend API. It checks for:
-   - Trainee task progress (e.g. wire inserted).
-   - Common assembly mistakes (e.g. wrong terminal slot).
-   - Critical safety hazards (e.g. bare copper exposed outside clamp, live panel contact).
-   - Average execution latency: **~1,900 ms** (measured in production via BigQuery `api_calls`).
-3. **Objective Step Verification (`gemini-3.8-flash`)**: The Live audio model is explicitly forbidden from advancing steps based on its own conversational assessment. A step is only advanced when:
-   - The trainee verbally says *"done"*, or
-   - The watcher detects hands-free task completion.
-   - The verifier validates the workbench against strict physical success criteria (e.g., ferrule fully seated, zero bare copper strands visible).
-   - Production latency: **~4.8 s** (tuned with `VERIFY_THINKING=low` and 1280 px max dimension).
-4. **Spatial Pinpointing (`gemini-robotics-er-2-preview`)**: When the trainee asks *"Where is terminal 1?"*, the model returns normalized `[y, x]` coordinates rendered as an animated reticle on the phone screen.
-   - Production latency: **~2.1 s** (tuned with `POINT_THINKING=0`).
+Method, caveats and per-category results: [/evals](https://takumi-cup-2026.web.app/evals), [evals/inspection](evals/inspection), [evals/machine_watch](evals/machine_watch), [evals/agents](evals/agents).
 
 ---
 
-## 6. Evaluations & Benchmarking
+## Architecture
 
-The TAKUMI test and evaluation suite provides reproducible accuracy and latency benchmarks:
+![TAKUMI architecture](docs/architecture.svg)
 
-- **Coach Evaluation Suite ([/evals/coach](evals/coach))**: Benchmarks watcher state classification accuracy, verifier strictness against planted mistakes, reticle coordinate error distance, and camera event injection speed. *(The automated evaluation benchmark suite runs on Oct 14 during final physical test-rig validation).*
-- **Forge Evaluation Suite ([/evals/forge](evals/forge))**: Measures ADK graph step boundary segmentation precision, rationale extraction fidelity, and multi-lingual translation semantic consistency against reference electrical engineering manuals.
+- **Two Cloud Run services** in `asia-southeast1`: `takumi-api` (FastAPI: inspection, Station Watch, Machine Watch, units, orders, work orders, the control tower) and `takumi-forge` (Google ADK agents and the Standard Work Studio workflow).
+- **Firebase Hosting and Auth** serve the React app and sign-in; roles (trainee, supervisor, master) live in a custom claim and are enforced by the API and by Firestore and Storage rules.
+- **Firestore** is the source of truth; **Cloud Storage** holds evidence frames and photos behind short-lived signed URLs; **Pub/Sub → BigQuery** carries every event to the control tower and the evaluations.
+- **The browser never sees an API key.** Gemini Live uses single-use tokens; user text is screened by **Model Armor**; keys live in **Secret Manager**; **Cloud Monitoring** alerts on API, Gemini and Forge health; **Cloud Build** tests and deploys every push.
 
----
+Details and the main flows: [docs/architecture.md](docs/architecture.md).
 
-## 7. Production Hardening & Safety
+| Google service / model | Job in TAKUMI |
+|---|---|
+| `gemini-3.5-flash-lite` | Inspection screening; Station Watch step watcher; Machine Watch reads; maintenance reporter; Studio criteria check |
+| `gemini-3.8-flash` | Inspection confirmation; step verification; ADK agents; Studio video-to-steps and translation |
+| `gemini-3.8-live` | Station Watch voice coaching and the Ask TAKUMI copilot, in six languages |
+| `gemini-3.8-flash-tts` | Spoken floor alerts for work orders |
+| `gemini-robotics-er-2-preview` | Pointing at parts; finding lights, counters and screens at Machine Watch setup; Studio pointing hints |
+| Google ADK 2 | Studio workflow graph; maintenance, trace-back and planner agents (tools + response schemas) |
+| Cloud Run, Firebase Hosting + Auth, Firestore, Cloud Storage | Serving, sign-in and roles, records and media |
+| Pub/Sub, BigQuery | Event pipeline, control tower, live evaluations |
+| Model Armor, Secret Manager, Cloud Monitoring & Logging, Cloud Build | Safety screening, keys, alerts and the status page, CI/CD |
 
-TAKUMI is designed for enterprise manufacturing deployments with strict compliance and security controls:
-
-1. **Model Armor Prompt Security**: Trainee text queries are passed through Google Cloud Model Armor deployed in `asia-southeast1`, screening for prompt injection, jailbreaks, and toxic inputs before model ingestion.
-2. **Zero Client Secret Exposure**: Client browsers never receive long-lived GCP service account keys or Gemini API keys. All frontend sessions use short-lived, single-use authentication tokens minted by `POST /api/live-token` after Firebase ID token validation.
-3. **Tiered Rate Limiting & Quota Guards**:
-   - In-memory sliding-window token buckets on Cloud Run guard all public endpoints:
-     - `/api/live-token`: 10 requests / min / IP.
-     - `/api/watch`: 30 requests / min / IP.
-     - `/api/verify`: 12 requests / min / IP.
-     - `/api/point`: 12 requests / min / IP.
-   - Global circuit breaker kill switch (`SESSIONS_ENABLED=false`) capable of pausing active coaching sessions instantly.
-4. **Comprehensive Telemetry & Observability**:
-   - Every API invocation captures execution duration (`model_ms` vs `total_ms`), token counts, and outcome status into BigQuery table `takumi.api_calls`.
-   - Cloud Monitoring log-based metrics track `gemini_unavailable` errors and 5xx responses with automated alerting policies alerting project maintainers.
-   - Public status page at [https://takumi-cup-2026.web.app/status](https://takumi-cup-2026.web.app/status) with real-time deep health probes.
+Model IDs live only in `services/*/config.py` and can be overridden by environment variables. Temperature is never set.
 
 ---
 
-## 8. Limitations & Engineering Disclosures
+## Privacy and safety by design
 
-To provide complete transparency for judges and evaluators:
-
-- **Production Scope**: Member A components (Live Coach, Watcher, Verifier, Spatial Reticles, Dashboard, Replay, Skill Passport, Observability) are live in production. Member B components (Forge ADK graph workflow, master capture ingestion, mistake video generation) are implemented on branch `forge` and in progress.
-- **Physical Test Kit**: Full hardware verification has been benchmarked using high-resolution industrial terminal-block workbench photographs. Live end-to-end multi-language hardware validation with physical DIN rail test kits concludes on October 14.
-- **Mobile Hardware**: The web application is optimized for mobile portrait viewports (tested at 390x844 on Safari iOS and Chrome Android). For optimal hands-free use, the device should be mounted on a standard gooseneck clamp 30–45 cm above the workbench.
-- **Latency Variance**: Gemini Live audio latency is typically under 1 second. High-resolution visual verification (`gemini-3.8-flash`) requires 4–5 seconds to thoroughly reason through physical wiring attributes; a responsive "Checking..." pulse chip provides immediate user feedback during verification.
+- **Process monitoring, not people monitoring:** no faces stored, no individual worker scoring; operators appear only as a short anonymous id, and the trace-back agent never sees who the operator was.
+- Machine Watch sends only small region crops; Station Watch keeps evidence frames only for mistakes and safety stops; the Studio's video copy for Gemini is deleted after use.
+- Holds, defect decisions, work orders and instruction changes always need a person's approval.
+- Per-user and per-service daily limits on AI calls; public endpoints are rate limited per IP.
 
 ---
 
-## 9. Running Locally
+## Running locally
 
 ### Prerequisites
-- Node.js 24+ and npm
-- Python 3.12+
-- Google Cloud SDK (`gcloud`)
-- Firebase CLI (`firebase-tools`)
 
-### 1. Repository Setup & Virtual Environment
+| Tool | Version | Needed for |
+| :--- | :--- | :--- |
+| [Node.js](https://nodejs.org) | 20 or newer (tested on 24) | the web app and its tests |
+| [Python](https://www.python.org) | 3.12 | the API, the Forge service and their tests |
+| [Git](https://git-scm.com) | any recent | cloning |
+| Java 21 + Firebase CLI | optional | the Firestore and Storage rules tests (emulator) |
+| Google Cloud SDK | optional | running the backend on your own project |
+
+### Option A: the web app on your machine, against the live backend (5 minutes)
+
+**Windows (PowerShell)**
+
+```powershell
+git clone https://github.com/DivineTechie/takumi.git
+cd takumi
+npm --prefix apps/web install
+Copy-Item apps/web/.env.example apps/web/.env.development.local
+notepad apps/web/.env.development.local   # set VITE_DEV_API_TARGET and the six Firebase values (see the comments)
+npm --prefix apps/web run dev
+```
+
+**macOS / Linux**
+
 ```bash
 git clone https://github.com/DivineTechie/takumi.git
 cd takumi
+npm --prefix apps/web install
+cp apps/web/.env.example apps/web/.env.development.local
+nano apps/web/.env.development.local      # set VITE_DEV_API_TARGET and the six Firebase values (see the comments)
+npm --prefix apps/web run dev
+```
 
-# Create and activate Python virtual environment
-python -m venv .venv
-# Windows PowerShell:
-.\.venv\Scripts\Activate.ps1
-# Linux / macOS:
+Open http://localhost:5173 and sign in with a judge account ([docs/JUDGES.md](docs/JUDGES.md)). Vite proxies `/api` and `/forge` to the deployed services. The Firebase values are the public web configuration served at `https://takumi-cup-2026.web.app/__/firebase/init.json`.
+
+### Option B: run the tests
+
+**Windows (PowerShell)**
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt -r services/api/requirements.txt -r services/forge/requirements.txt
+python -m pytest                      # API, shared models, evaluation scripts
+python -m pytest services/forge       # Studio workflow and ADK agents (Gemini mocked)
+npm --prefix apps/web test            # web app (Vitest)
+npm --prefix apps/web run lint
+npm --prefix apps/web run build
+```
+
+**macOS / Linux**
+
+```bash
+python3.12 -m venv .venv
 source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements-dev.txt
-pip install -r services/api/requirements.txt
-```
-
-### 2. Schema Generation
-Generate TypeScript interfaces and Pydantic models from canonical JSON schemas:
-```bash
-npm run schema
-```
-
-### 3. Environment Variables
-Create a local `.env` file in `services/api/` (never committed):
-```env
-PROJECT_ID=takumi-cup-2026
-GEMINI_API_KEY=your_gemini_api_key_here
-LOCATION=asia-southeast1
-BIGQUERY_DATASET=takumi
-SESSIONS_ENABLED=true
-VERIFY_THINKING=low
-VERIFY_MAX_PX=1280
-POINT_THINKING=0
-```
-
-### 4. Running the Backend API
-```bash
-uvicorn services.api.main:app --reload --port 8080
-```
-Verify the API health check at [http://localhost:8080/healthz](http://localhost:8080/healthz).
-
-### 5. Running the Web Frontend
-In a separate terminal:
-```bash
-cd apps/web
-npm install
-npm run dev
-```
-Open [http://localhost:5173](http://localhost:5173) in your browser.
-
-### 6. Executing Tests
-```bash
-# Web Vitest suite
+pip install -r requirements-dev.txt -r services/api/requirements.txt -r services/forge/requirements.txt
+python -m pytest
+python -m pytest services/forge
 npm --prefix apps/web test
-
-# Python backend pytest suite
-pytest services/api/tests/
+npm --prefix apps/web run lint
+npm --prefix apps/web run build
 ```
 
+Security rules tests (needs Java 21), from the repository root: `npm --prefix infra/rules-tests install`, then `npx firebase-tools emulators:exec --only firestore,storage --project takumi-rules-test "npm test --prefix infra/rules-tests"`.
+
+### Option C: the whole stack on your own Google Cloud project
+
+1. Create a Firebase project with Firestore (Native), one Cloud Storage bucket, Google and email/password sign-in, and a BigQuery dataset `takumi`; create the events pipeline with [`infra/events_pipeline.sh`](infra/events_pipeline.sh).
+2. Store your Gemini API key in Secret Manager as `GEMINI_API_KEY` (or export it in your shell for local runs only), then sign in with `gcloud auth application-default login`.
+3. Start the services from the repository root (inside the virtual environment from Option B):
+
+   ```bash
+   # macOS / Linux (on Windows PowerShell set each one with $env:NAME="value")
+   export GOOGLE_CLOUD_PROJECT=your-project-id GEMINI_API_KEY=your-gemini-api-key LOCAL_DEV=1
+   export FIREBASE_STORAGE_BUCKET=your-bucket STORAGE_BUCKET=your-bucket
+   uvicorn services.api.main:app --port 8080 --reload
+   uvicorn services.forge.main:app --port 8081 --reload    # in a second terminal
+   ```
+
+4. In `apps/web/.env.development.local` set `VITE_DEV_API_TARGET=http://localhost:8080`, `VITE_DEV_FORGE_TARGET=http://localhost:8081` and your project's Firebase web config, then `npm --prefix apps/web run dev`. Give your account a role with [`infra/set_role.py`](infra/set_role.py) and load the sample work instructions with [`infra/load_seed.py`](infra/load_seed.py).
+
+`LOCAL_DEV=1` enables CORS for localhost and lets the local Forge service accept requests without a Firebase token: use it on your own machine only. Deploying your own copy: [docs/SETUP.md](docs/SETUP.md) and [`infra/cloudbuild.yaml`](infra/cloudbuild.yaml).
+
 ---
 
-## 10. Deployment
+## Project structure
 
-TAKUMI deploys continuously through Google Cloud Build:
-
-- **Branch `coach`**: Deploys `takumi-api` to Cloud Run and `apps/web` to Firebase Hosting via `infra/cloudbuild-coach.yaml`.
-- **Branch `main`**: Production deployment pipeline for merged changes.
-
-Manual container build:
-```bash
-docker build -f services/api/Dockerfile . -t asia-southeast1-docker.pkg.dev/takumi-cup-2026/takumi-repo/takumi-api:latest
+```
+takumi/
+├── apps/web/                 React 19 + Vite + TypeScript app (Firebase Hosting)
+│   └── src/
+│       ├── pages/            screens: home, inspection, gallery, Machine Watch, test bench, Station Watch,
+│       │                     unit records, dashboard, control tower, tour, evaluations, status
+│       ├── components/       control tower panels (machines, work orders, orders, Ask TAKUMI), dashboard, shared UI
+│       ├── features/         Standard Work Studio: record a task, follow the run, review and publish, library
+│       ├── lib/              API client, Gemini Live clients, Machine Watch edge vision, helpers
+│       ├── i18n/             six languages (English, 日本語, Tiếng Việt, हिन्दी, Bahasa Indonesia, Filipino)
+│       └── evals/            published evaluation results shown on /evals and /tour
+├── services/
+│   ├── api/                  Cloud Run takumi-api (FastAPI): inspection, Station Watch, Machine Watch, units,
+│   │                         orders, work orders and spoken alerts, control tower, status, events bus
+│   └── forge/                Cloud Run takumi-forge: Google ADK agents (maintenance, trace-back, demand)
+│                             and the Standard Work Studio workflow (graph/)
+├── shared/
+│   ├── schema/               JSON Schema contracts with generated TypeScript and Pydantic models
+│   ├── ops/                  shared logic: alarm guide, order projection
+│   └── seed/                 sample work instructions
+├── evals/                    inspection benchmark (VisA), Machine Watch soak scoring, agent scenarios
+├── infra/                    Cloud Build, events pipeline, data loaders, roles, translation, rules tests
+├── docs/                     judges' guide, architecture, feature status, security, setup, screenshots
+├── firestore.rules           Firestore security rules (tested in CI)
+├── storage.rules             Cloud Storage security rules (tested in CI)
+└── firebase.json             Hosting, rewrites to Cloud Run, headers
 ```
 
----
-
-## 11. Team
-
-- **Member A (Lead / Platform & Live Coach)**: Systems architecture, FastAPI Cloud Run API, Gemini Live WebSocket gateway, visual watcher & verifier, supervisor analytics dashboard, skill passport, observability, and submission package.
-- **Member B (Master Capture & Forge Pipeline)**: Master video capture UI, Google ADK 2.0 graph workflow, multimodal step segmenter, why-extractor, technical manual cross-validator, and generative illustration assets.
+Regenerate the shared models after a schema change with `npm run schema` from the repository root.
 
 ---
 
-## 12. License
+## Delivery
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+Every push to `main` runs the API, Forge, web and security-rules tests in parallel, builds both containers and deploys both Cloud Run services, the rules and Hosting through Cloud Build ([`infra/cloudbuild.yaml`](infra/cloudbuild.yaml)).
 
 ---
 
-## 13. Sources
+## Context: who works on these floors
 
-1. **Japan Foreign Workers (Oct 2025)**: Ministry of Health, Labour and Welfare (MHLW), *Summary of Foreign Worker Employment Situation*, [https://www.mhlw.go.jp/content/11655000/001646128.pdf](https://www.mhlw.go.jp/content/11655000/001646128.pdf).
-2. **Japan Foreign Worker Casualties (2024)**: Business & Human Rights Resource Centre, *Japan: Number of work-related injuries and deaths among foreign workers exceeds 6,000 for the first time in 2024*, reporting MHLW announcement, [https://www.business-humanrights.org/en/latest-news/japan-number-of-work-related-injuries-and-deaths-among-foreign-workers-exceeds-6000-for-the-first-time-in-2024/](https://www.business-humanrights.org/en/latest-news/japan-number-of-work-related-injuries-and-deaths-among-foreign-workers-exceeds-6000-for-the-first-time-in-2024/).
-3. **South Korea EPS Workforce (July 2026)**: The Korea Times (Sept 2, 2026), *Number of foreign workers under employment permit system hits record high*, [https://www.koreatimes.co.kr/southkorea/20260902/number-of-foreign-workers-under-employment-permit-system-hits-record-high](https://www.koreatimes.co.kr/southkorea/20260902/number-of-foreign-workers-under-employment-permit-system-hits-record-high).
+Manufacturing in Asia increasingly relies on workers who are new to the job and to the language. In Japan, foreign workers reached **2,571,037** at the end of October 2025, Vietnamese nationals the largest group at **605,906** ([MHLW](https://www.mhlw.go.jp/content/11655000/001646128.pdf)); **6,244** foreign workers were killed or injured at work in 2024, with poor communication among the causes cited ([Business & Human Rights Resource Centre](https://www.business-humanrights.org/en/latest-news/japan-number-of-work-related-injuries-and-deaths-among-foreign-workers-exceeds-6000-for-the-first-time-in-2024/)). In South Korea, workers under the Employment Permit System reached a record **287,424** in July 2026, **229,844** of them in manufacturing ([The Korea Times](https://www.koreatimes.co.kr/southkorea/20260902/number-of-foreign-workers-under-employment-permit-system-hits-record-high)). TAKUMI speaks to each of them in their own language.
+
+---
+
+## Licence and credits
+
+Licensed under the Apache License 2.0 ([LICENSE](LICENSE)). Public dataset images: [VisA](https://github.com/amazon-science/spot-diff) (Amazon), CC BY 4.0.
+
+<sub>**AI tools disclosure.** TAKUMI's features run on Google Gemini models and Google ADK, as listed above. During development the team used AI coding assistants (Claude Code and Google Antigravity) for code suggestions, reviews and tests, and Google Stitch for early UI mock-ups; every change was reviewed, tested and committed by the team. The interface translations for five languages are machine-made with Gemini and marked for native review. In the demo video, the narration is Gemini TTS and two short b-roll shots are generated with Veo and labelled "AI-generated" on screen; every product scene is a screen recording of the live app.</sub>

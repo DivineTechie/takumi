@@ -16,11 +16,22 @@
     },
     "language": {
       "type": "string",
-      "enum": ["en", "ja", "vi", "hi", "id", "fil"]
+      "enum": [
+        "en",
+        "ja",
+        "vi",
+        "hi",
+        "id",
+        "fil"
+      ]
     },
     "status": {
       "type": "string",
-      "enum": ["live", "completed", "abandoned"]
+      "enum": [
+        "live",
+        "completed",
+        "abandoned"
+      ]
     },
     "current_step": {
       "type": "integer",
@@ -31,7 +42,10 @@
       "format": "date-time"
     },
     "ended_at": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date-time"
     },
     "steps": {
@@ -45,7 +59,11 @@
           },
           "state": {
             "type": "string",
-            "enum": ["pending", "active", "done"]
+            "enum": [
+              "pending",
+              "active",
+              "done"
+            ]
           },
           "attempts": {
             "type": "integer",
@@ -60,7 +78,13 @@
             "minimum": 0
           }
         },
-        "required": ["n", "state", "attempts", "mistakes", "secs"],
+        "required": [
+          "n",
+          "state",
+          "attempts",
+          "mistakes",
+          "secs"
+        ],
         "additionalProperties": false
       }
     },
@@ -84,8 +108,25 @@
           "minimum": 0
         }
       },
-      "required": ["steps_done", "mistakes", "safety_stops", "duration_s"],
+      "required": [
+        "steps_done",
+        "mistakes",
+        "safety_stops",
+        "duration_s"
+      ],
       "additionalProperties": false
+    },
+    "preview": {
+      "type": "boolean",
+      "description": "[ADDED] True when session is a master lesson preview"
+    },
+    "unit_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Za-z0-9._-]{1,64}$",
+      "description": "Serial of the unit built in this Station Watch session, or null"
     }
   },
   "required": [

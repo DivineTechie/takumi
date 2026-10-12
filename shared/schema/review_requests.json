@@ -22,11 +22,34 @@
     },
     "status": {
       "type": "string",
-      "enum": ["open", "applied", "dismissed"]
+      "enum": [
+        "open",
+        "applied",
+        "dismissed"
+      ]
     },
     "created_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "traceback",
+        "supervisor"
+      ],
+      "description": "Who raised it: the quality trace-back agent (approved by a supervisor) or a supervisor directly"
+    },
+    "unit_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Failed unit that led to the request, if any"
+    },
+    "created_by_uid": {
+      "type": "string",
+      "description": "Supervisor who sent the request"
     }
   },
   "required": [

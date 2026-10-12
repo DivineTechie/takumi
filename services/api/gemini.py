@@ -43,10 +43,13 @@ from services.api.config import (
     TIMEOUT_POINT_S,
     TIMEOUT_VERIFY_S,
     TIMEOUT_WATCH_S,
+    TIMEOUT_ASK_S,
     VERIFY_THINKING,
 )
 from services.api.images import clamp_point_coordinates
 from services.api.prompts import (
+    ASK_MASTER_PROMPT_TEMPLATE,
+    AskResponse,
     POINTER_PROMPT_TEMPLATE,
     PointerResponse,
     VERIFIER_PROMPT_TEMPLATE,
@@ -512,4 +515,130 @@ async def check_deep_health() -> bool:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Coaching is temporarily unavailable.",
         ) from e
+
+
+async def call_ask(
+    skill_data: dict[str, Any],
+    capture_data: dict[str, Any],
+    question: str,
+    language: str = "en",
+) -> dict[str, Any]:
+    """Answers a craftsmanship question grounded strictly in master transcript and skill manual.
+
+    Uses gemini-3.8-flash without temperature.
+    12-second timeout with graceful fallback.
+    Maps citation to step clip if available.
+    """
+    transcript = capture_data.get("transcript", [])
+    if transcript:
+        lines = []
+        for item in transcript:
+            t = item.get("t", 0.0)
+            speaker = item.get("speaker", "master")
+            text = item.get("text", "")
+            lines.append(f"[{t:.1f}s] {speaker}: {text}")
+        transcript_text = "\n".join(lines)
+    else:
+        transcript_text = "No master transcript recorded for this skill."
+
+    steps = skill_data.get("steps", [])
+    steps_lines = []
+    for s in steps:
+        n = s.get("n", 1)
+        instr = s.get("instruction", "")
+        why = s.get("why", "")
+        tools = ", ".join(s.get("tools", []))
+        hazards = ", ".join(s.get("hazards", []))
+        steps_lines.append(f"Step {n}: {instr}\nWhy: {why}\nTools: {tools}\nHazards: {hazards}")
+    safety_rules = skill_data.get("safety_rules", [])
+    if safety_rules:
+        steps_lines.append("General Safety Rules:\n" + "\n".join(f"- {r}" for r in safety_rules))
+    steps_text = "\n\n".join(steps_lines) if steps_lines else "No step details listed."
+
+    prompt = ASK_MASTER_PROMPT_TEMPLATE.format(
+        skill_title=skill_data.get("title", "Manufacturing Skill"),
+        master_name=skill_data.get("master", {}).get("display_name", "the master"),
+        language=language,
+        transcript_text=transcript_text,
+        steps_text=steps_text,
+        question=question,
+    )
+
+    client = get_genai_client()
+
+    def _sync_generate():
+        with trace_gemini_call("ask.generate_content", MODEL_FLASH):
+            return client.models.generate_content(
+                model=MODEL_FLASH,
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=AskResponse,
+                ),
+            )
+
+    try:
+        response = await asyncio.wait_for(
+            asyncio.to_thread(_sync_generate),
+            timeout=TIMEOUT_ASK_S,
+        )
+        parsed = AskResponse.model_validate_json(response.text)
+    except asyncio.TimeoutError:
+        logger.warning("Ask master call timed out after %s s", TIMEOUT_ASK_S)
+        return {"answer": "Let's come back to that.", "citation": None}
+    except Exception as e:
+        if is_gemini_unavailable_error(e):
+            logger.error(
+                "Ask master call failed due to Gemini quota/billing exhaustion",
+                extra={"props": {"category": "gemini_unavailable", "endpoint": "ask", "error_class": type(e).__name__}},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Coaching is temporarily unavailable.",
+            ) from e
+        logger.warning("Ask master generation failed: %s; returning fallback", e)
+        return {"answer": "Let's come back to that.", "citation": None}
+
+    # Map citation to clip if applicable
+    clip = None
+    citation = parsed.citation
+
+    if citation and citation.step is not None:
+        for s in steps:
+            if s.get("n") == citation.step and s.get("clip"):
+                clip = {
+                    "step": citation.step,
+                    "start_s": float(s["clip"]["start_s"]),
+                    "end_s": float(s["clip"]["end_s"]),
+                }
+                break
+
+    if not clip and citation and citation.t_start is not None and citation.t_end is not None:
+        t_mid = (citation.t_start + citation.t_end) / 2.0
+        for s in steps:
+            step_clip = s.get("clip")
+            why_src = s.get("why_source")
+            if step_clip and (step_clip["start_s"] <= t_mid <= step_clip["end_s"]):
+                clip = {
+                    "step": s.get("n", 1),
+                    "start_s": float(step_clip["start_s"]),
+                    "end_s": float(step_clip["end_s"]),
+                }
+                break
+            elif why_src and (why_src["t_start"] <= t_mid <= why_src["t_end"]) and step_clip:
+                clip = {
+                    "step": s.get("n", 1),
+                    "start_s": float(step_clip["start_s"]),
+                    "end_s": float(step_clip["end_s"]),
+                }
+                break
+
+    res: dict[str, Any] = {
+        "answer": parsed.answer,
+        "citation": citation.model_dump() if citation else None,
+    }
+    if clip:
+        res["clip"] = clip
+    return res
+
 

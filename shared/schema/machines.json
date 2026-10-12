@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/machines.json",
+  "title": "Machine",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique machine identifier (mach_...)"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable machine name / label"
+    },
+    "light_order": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Physical order of stack lights from top to bottom, e.g. ['red', 'yellow', 'green']"
+    },
+    "state_map": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Mapping from light color to machine state, e.g. {'red': 'stopped', 'yellow': 'idle', 'green': 'running'}"
+    },
+    "rois": {
+      "type": "object",
+      "properties": {
+        "stack_light": {
+          "$ref": "#/$defs/NormalizedRoi"
+        },
+        "counter": {
+          "$ref": "#/$defs/NormalizedRoi"
+        },
+        "hmi": {
+          "$ref": "#/$defs/NormalizedRoi"
+        }
+      },
+      "required": [
+        "stack_light"
+      ],
+      "additionalProperties": false,
+      "description": "Normalized bounding box regions of interest [x, y, w, h] on 0-1 scale"
+    },
+    "ideal_cycle_s": {
+      "type": "number",
+      "minimum": 0.1,
+      "description": "Ideal cycle time in seconds for count validation"
+    },
+    "state": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Current machine state (running, idle, stopped, unknown)"
+    },
+    "last_alarm": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Latest detected active alarm text, or null if clear"
+    },
+    "last_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Latest verified parts counter reading"
+    },
+    "last_seen_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Timestamp of most recent observation"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "LIVE",
+        "VIRTUAL"
+      ],
+      "description": "Machine data source"
+    },
+    "created_by": {
+      "type": "string",
+      "description": "Firebase UID of user who configured the machine"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Creation timestamp"
+    },
+    "updated_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Last update timestamp"
+    },
+    "bench_slot": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 6,
+      "description": "Position (1 = leftmost) of this machine on the HOME RIG test bench, used to match soak-run truth; null for real machines"
+    },
+    "last_misread_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Last counter reading rejected as a misread (a lower value confirmed twice is a reset)"
+    },
+    "archived": {
+      "type": "boolean",
+      "description": "Removed from lists (e.g. a duplicate setup); history is kept"
+    },
+    "archived_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "archived_by": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "light_order",
+    "state_map",
+    "rois",
+    "ideal_cycle_s",
+    "source",
+    "created_by",
+    "created_at"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "NormalizedRoi": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "w": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "h": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "w",
+        "h"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

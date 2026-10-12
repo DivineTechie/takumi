@@ -24,10 +24,10 @@ def decode_and_validate_image(image_b64: str) -> Image.Image:
     try:
         img = Image.open(io.BytesIO(raw_bytes))
         img_format = (img.format or "").upper()
-        if img_format not in ("JPEG", "PNG", "MPO"):
+        if img_format not in ("JPEG", "PNG", "MPO", "WEBP"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Image format '{img_format}' is not supported. Must be JPEG or PNG.",
+                detail=f"Image format '{img_format}' is not supported. Must be JPEG, PNG, or WebP.",
             )
         img.load()  # Force load image to ensure integrity
         return img

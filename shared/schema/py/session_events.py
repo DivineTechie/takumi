@@ -19,6 +19,7 @@ class Type(Enum):
     verify = 'verify'
     coach_line = 'coach_line'
     trainee_line = 'trainee_line'
+    mistake_clip = 'mistake_clip'
 
 
 class Source(Enum):

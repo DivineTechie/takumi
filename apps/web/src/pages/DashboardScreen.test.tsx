@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { DashboardScreen } from './DashboardScreen';
 import * as apiModule from '../lib/api';
 import type {
-  InsightsMatrixResponse,
+  InsightSkill,
   SkillInsightsResponse,
   SessionReplayResponse,
 } from '../lib/api';
@@ -17,25 +17,38 @@ vi.mock('../lib/firebase', () => ({
 
 // Mock APIs
 vi.mock('../lib/api', () => ({
-  fetchInsightsMatrix: vi.fn(),
+  fetchInsightSkills: vi.fn(),
   fetchSkillInsights: vi.fn(),
   fetchSessionReplay: vi.fn(),
+  fetchInspectionInsights: vi.fn().mockResolvedValue({
+    live: { today_count: 0, first_pass_rate: null, top_defect_types: [], flagged_awaiting_count: 0, recent: [] },
+    gallery: { trials_count: 0, hits_count: 0, hit_rate: null, dataset: 'VisA' },
+  }),
+  fetchUnits: vi.fn().mockResolvedValue([]),
+  fetchMachinesSummary: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock Translation and Theme providers
-vi.mock('../i18n', () => ({
-  useTranslation: () => ({
+vi.mock('../i18n', () => {
+  const useTranslation = () => ({
     t: (key: string, params?: Record<string, unknown>) => {
       if (params?.n !== undefined && params?.total !== undefined) {
         return `Step ${params.n} of ${params.total}`;
+      }
+      if (key === 'app.dashboard_seconds') {
+        return `${params?.value}s`;
       }
       return key;
     },
     language: 'en',
     setLanguage: vi.fn(),
-  }),
-  SUPPORTED_LANGUAGES: [{ code: 'en', label: 'English', native: 'English' }],
-}));
+  });
+  return {
+    useTranslation,
+    useI18n: useTranslation,
+    SUPPORTED_LANGUAGES: [{ code: 'en', label: 'English', native: 'English' }],
+  };
+});
 
 vi.mock('../lib/theme', () => ({
   useTheme: () => ({
@@ -103,42 +116,10 @@ vi.mock('firebase/firestore', () => {
   };
 });
 
-const mockMatrixData: InsightsMatrixResponse = {
-  trainees: [
-    { uid: 'uid_alice_123', first_name: 'Alice' },
-    { uid: 'uid_bob_456', first_name: 'Bob' },
-  ],
-  skills: [
-    { id: 'skill_wiring_1', title: 'Wire a DIN-rail terminal' },
-    { id: 'skill_switch_2', title: 'Assemble industrial switch' },
-  ],
-  cells: [
-    {
-      uid: 'uid_alice_123',
-      skill_id: 'skill_wiring_1',
-      status: 'learning',
-      sessions: 3,
-      last_session_at: '2026-10-06T10:00:00Z',
-      mistakes_trend: [2, 1, 0],
-    },
-    {
-      uid: 'uid_alice_123',
-      skill_id: 'skill_switch_2',
-      status: 'not_started',
-      sessions: 0,
-      last_session_at: null,
-      mistakes_trend: [],
-    },
-    {
-      uid: 'uid_bob_456',
-      skill_id: 'skill_wiring_1',
-      status: 'certified',
-      sessions: 2,
-      last_session_at: '2026-10-06T11:00:00Z',
-      mistakes_trend: [0],
-    },
-  ],
-};
+const mockSkills: InsightSkill[] = [
+  { id: 'skill_wiring_1', title: 'Wire a DIN-rail terminal' },
+  { id: 'skill_switch_2', title: 'Assemble industrial switch' },
+];
 
 const mockSkillInsights: SkillInsightsResponse = {
   steps: [
@@ -178,7 +159,6 @@ const mockReplayData: SessionReplayResponse = {
   session: {
     id: 'ses_live_active',
     skill_id: 'skill_wiring_1',
-    first_name: 'Alice',
     status: 'live',
     started_at: '2026-10-06T10:00:00Z',
     language: 'en',
@@ -189,7 +169,7 @@ const mockReplayData: SessionReplayResponse = {
       step: 1,
       type: 'coach_line',
       source: 'coach',
-      reason: 'Welcome Alice. Let us start step 1.',
+      reason: 'Welcome. Let us start step 1.',
     },
     {
       t: '2026-10-06T10:00:30Z',
@@ -221,7 +201,7 @@ const mockReplayData: SessionReplayResponse = {
 describe('DashboardScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(apiModule.fetchInsightsMatrix).mockResolvedValue(mockMatrixData);
+    vi.mocked(apiModule.fetchInsightSkills).mockResolvedValue({ skills: mockSkills });
     vi.mocked(apiModule.fetchSkillInsights).mockResolvedValue(mockSkillInsights);
     vi.mocked(apiModule.fetchSessionReplay).mockResolvedValue(mockReplayData);
   });
@@ -239,9 +219,9 @@ describe('DashboardScreen', () => {
     // Live Now strip rendered
     expect(screen.getByText('dashboard_live_now')).toBeInTheDocument();
 
-    // Active session shown with trainee name (Alice)
+    // Active session shown by an anonymous operator id, never a name
     await waitFor(() => {
-      expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('app.dashboard_trainee_short_id').length).toBeGreaterThanOrEqual(1);
       expect(screen.getByText('Step 2 of 4')).toBeInTheDocument();
     });
 
@@ -249,24 +229,17 @@ describe('DashboardScreen', () => {
     expect(screen.queryByText('smoke-trainee')).not.toBeInTheDocument();
   });
 
-  it('renders skill matrix with trainee first names, certified status, and learning sparklines', async () => {
+  it('opens on end-of-line quality and no longer ranks individual workers', async () => {
     render(
       <MemoryRouter>
         <DashboardScreen />
       </MemoryRouter>
     );
 
-    await waitFor(() => {
-      // Trainees Alice and Bob
-      expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Bob')).toBeInTheDocument();
-    });
-
-    // Bob is certified on Wire a DIN-rail terminal
-    expect(screen.getByText('dashboard_certified')).toBeInTheDocument();
-
-    // Alice is learning with 3 sessions
-    expect(screen.getByText('dashboard_learning (3)')).toBeInTheDocument();
+    const tabs = await screen.findAllByRole('tab');
+    expect(tabs[0]).toHaveTextContent('dashboard_tab_quality');
+    expect(screen.getAllByRole('tab').map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
+    expect(document.body.textContent).not.toContain('Alice');
 
     // Privacy verification: no email domains in document
     expect(document.body.textContent).not.toContain('@example.com');
@@ -280,7 +253,7 @@ describe('DashboardScreen', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('app.dashboard_trainee_short_id').length).toBeGreaterThanOrEqual(1);
     });
 
     // Click heatmap tab
@@ -300,7 +273,7 @@ describe('DashboardScreen', () => {
     // Step 3 was never reached: displays dash "—" with "No data yet" title
     const dashes = screen.getAllByText('—');
     expect(dashes.length).toBeGreaterThanOrEqual(1);
-    expect(dashes[0]).toHaveAttribute('title', 'No data yet');
+    expect(dashes[0]).toHaveAttribute('title', 'dashboard_no_data');
 
     // Totals
     expect(screen.getByText('10')).toBeInTheDocument(); // total sessions
@@ -316,23 +289,23 @@ describe('DashboardScreen', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getAllByText('app.dashboard_trainee_short_id').length).toBeGreaterThanOrEqual(1);
     });
 
-    // Click on Alice's live session card
+    // Click on the live session card
     const card = screen.getByText('Step 2 of 4');
     fireEvent.click(card);
 
     // Switches to replay tab
     await waitFor(() => {
       expect(apiModule.fetchSessionReplay).toHaveBeenCalledWith('ses_live_active');
-      expect(screen.getByText('Welcome Alice. Let us start step 1.')).toBeInTheDocument();
+      expect(screen.getByText('Welcome. Let us start step 1.')).toBeInTheDocument();
       expect(screen.getByText('I am holding the wire stripper.')).toBeInTheDocument();
       expect(screen.getByText('Hand too close to live terminal.')).toBeInTheDocument();
     });
 
     // Image frame rendered
-    const img = screen.getByAltText('Event snapshot frame');
+    const img = screen.getByAltText('app.replay_frame_alt');
     expect(img).toBeInTheDocument();
     expect(img).toHaveAttribute(
       'src',

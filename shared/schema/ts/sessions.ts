@@ -29,4 +29,12 @@ export interface Session {
     safety_stops: number;
     duration_s: number;
   };
+  /**
+   * [ADDED] True when session is a master lesson preview
+   */
+  preview?: boolean;
+  /**
+   * Serial of the unit built in this Station Watch session, or null
+   */
+  unit_id?: string | null;
 }

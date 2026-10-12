@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Square, Sparkles, Wifi, WifiOff, UploadCloud, AlertTriangle } from 'lucide-react';
+import { useI18n } from '../../../i18n';
 
 interface RecordingOverlayProps {
   skillTitle: string;
@@ -24,6 +25,7 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
   isOnline,
   onFinish,
 }) => {
+  const { t } = useI18n();
   const [secondsElapsed, setSecondsElapsed] = useState(0);
 
   // Bind media stream to video element on mount
@@ -93,7 +95,7 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
           gap: '0.5rem',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', justifyContent: 'space-between' }}>
           {/* Pulsing Recording Indicator & Timer */}
           <div
             style={{
@@ -140,7 +142,7 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
               }}
             >
               <Sparkles size={14} />
-              <span>Gemini Live · {questionCount} Qs</span>
+              <span>{t('app.capture_live_questions', { count: questionCount })}</span>
             </div>
 
             <div
@@ -180,7 +182,7 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
             }}
           >
             <AlertTriangle size={16} />
-            <span>Approaching 15-minute capture limit ({formatTime(15 * 60 - secondsElapsed)} remaining).</span>
+            <span>{t('app.capture_near_cap', { remaining: formatTime(15 * 60 - secondsElapsed) })}</span>
           </div>
         )}
       </div>
@@ -218,7 +220,7 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
             }}
           >
             <Sparkles size={14} />
-            <span>Apprentice Interviewer</span>
+            <span>{t('app.capture_interviewer')}</span>
           </div>
           <div style={{ color: '#ffffff', fontSize: '1.15rem', fontWeight: 700, lineHeight: 1.35 }}>
             &ldquo;{currentQuestion}&rdquo;
@@ -250,10 +252,10 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
               gap: '0.75rem',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#ffffff' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', justifyContent: 'space-between', color: '#ffffff' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}>
                 <UploadCloud size={20} color="#f59e0b" />
-                <span>Uploading Capture to Cloud Storage...</span>
+                <span>{t('app.capture_uploading')}</span>
               </div>
               <span style={{ fontWeight: 700, color: '#fbbf24' }}>{uploadProgress}%</span>
             </div>
@@ -270,7 +272,7 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
             </div>
             {!isOnline && (
               <span style={{ color: '#f87171', fontSize: '0.85rem' }}>
-                Offline: Upload paused. Will automatically resume when reconnected.
+                {t('app.capture_offline_paused')}
               </span>
             )}
           </div>
@@ -293,13 +295,15 @@ export const RecordingOverlay: React.FC<RecordingOverlayProps> = ({
               alignItems: 'center',
               justifyContent: 'center',
               gap: '0.75rem',
+              padding: '0.75rem 1rem',
+              textAlign: 'center',
               cursor: 'pointer',
               boxShadow: '0 10px 25px -5px rgba(239, 68, 68, 0.5)',
               transition: 'transform 0.1s, background-color 0.2s',
             }}
           >
             <Square size={22} fill="#ffffff" />
-            <span>FINISH & FORGE LESSON</span>
+            <span>{t('app.capture_finish_btn')}</span>
           </button>
         )}
       </div>

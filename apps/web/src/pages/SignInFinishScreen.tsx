@@ -3,13 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { isSignInWithEmailLink } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../lib/auth';
+import { useI18n } from '../i18n';
 
 export const SignInFinishScreen: React.FC = () => {
   const { finishSignInWithEmail } = useAuth();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [needsEmail, setNeedsEmail] = useState(false);
-  const [statusText, setStatusText] = useState('Verifying your sign-in link...');
+  // statusText and error hold translation keys (error may also hold a raw message from Firebase,
+  // which t() returns unchanged).
+  const [statusText, setStatusText] = useState('app.signin_finish_verifying');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -18,12 +22,12 @@ export const SignInFinishScreen: React.FC = () => {
       try {
         setSubmitting(true);
         setError(null);
-        setStatusText('Signing you in...');
+        setStatusText('app.signin_finish_signing_in');
         await finishSignInWithEmail(emailToUse);
         navigate('/', { replace: true });
       } catch (err: unknown) {
         console.error('Error completing email sign-in:', err);
-        const msg = err instanceof Error ? err.message : 'Failed to complete sign-in';
+        const msg = err instanceof Error ? err.message : 'app.signin_finish_failed';
         setError(msg);
         setSubmitting(false);
       }
@@ -33,7 +37,7 @@ export const SignInFinishScreen: React.FC = () => {
 
   useEffect(() => {
     if (!isSignInWithEmailLink(auth, window.location.href)) {
-      setError('This sign-in link is invalid or has expired. Please request a new link.');
+      setError('app.signin_finish_invalid_link');
       return;
     }
 
@@ -42,14 +46,14 @@ export const SignInFinishScreen: React.FC = () => {
       completeAuth(savedEmail);
     } else {
       setNeedsEmail(true);
-      setStatusText('Please confirm your email address to complete sign-in.');
+      setStatusText('app.signin_finish_confirm_prompt');
     }
   }, [completeAuth]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
-      setError('Please enter your email');
+      setError('app.signin_finish_enter_email');
       return;
     }
     completeAuth(email);
@@ -62,12 +66,12 @@ export const SignInFinishScreen: React.FC = () => {
           <span className="material-symbols-outlined text-[36px]">mail</span>
         </div>
 
-        <h1 className="font-headline-md font-bold mb-3">Sign in with Email Link</h1>
-        <p className="font-body-md text-on-surface-variant mb-6">{statusText}</p>
+        <h1 className="font-headline-md font-bold mb-3">{t('app.signin_finish_title')}</h1>
+        <p className="font-body-md text-on-surface-variant mb-6">{t(statusText)}</p>
 
         {error && (
           <div className="w-full p-4 mb-6 rounded-xl bg-error-container/30 border border-error/50 text-error text-left text-sm">
-            {error}
+            {t(error)}
           </div>
         )}
 
@@ -75,7 +79,7 @@ export const SignInFinishScreen: React.FC = () => {
           <form onSubmit={handleSubmit} className="w-full space-y-4">
             <div>
               <label htmlFor="confirm-email" className="block text-left text-sm font-semibold mb-2 text-on-surface">
-                Confirm your email
+                {t('app.signin_finish_confirm_label')}
               </label>
               <input
                 id="confirm-email"
@@ -90,9 +94,9 @@ export const SignInFinishScreen: React.FC = () => {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full min-h-[56px] h-[56px] bg-primary-container hover:brightness-105 active:scale-[0.99] text-on-primary-container font-bold rounded-xl flex items-center justify-center transition-all disabled:opacity-50"
+              className="w-full min-h-[56px] py-2 px-4 text-center bg-primary-container hover:brightness-105 active:scale-[0.99] text-on-primary-container font-bold rounded-xl flex items-center justify-center transition-all disabled:opacity-50"
             >
-              {submitting ? 'Signing in...' : 'Complete Sign In'}
+              {submitting ? t('app.signin_finish_submitting') : t('app.signin_finish_submit')}
             </button>
           </form>
         )}

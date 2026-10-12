@@ -33,3 +33,20 @@ def test_transcode_runs_ffmpeg(monkeypatch):
         assert "-c:v" in cmd_args
         assert "libx264" in cmd_args
         assert "+faststart" in cmd_args
+
+
+def test_transcode_returns_none_when_no_mp4_was_made():
+    with patch("services.forge.transcode.blob_exists", return_value=False), patch("shutil.which", return_value=None):
+        assert transcode_to_faststart_mp4("cap_x") is None
+    with patch("services.forge.transcode.blob_exists", return_value=False), \
+         patch("shutil.which", return_value="/usr/bin/ffmpeg"), \
+         patch("services.forge.transcode.download_blob_to_file", return_value=False):
+        assert transcode_to_faststart_mp4("cap_x") is None
+    with patch("services.forge.transcode.blob_exists", return_value=False), \
+         patch("services.forge.transcode.download_blob_to_file", return_value=True), \
+         patch("services.forge.transcode.upload_file", return_value=False), \
+         patch("shutil.which", return_value="/usr/bin/ffmpeg"), \
+         patch("subprocess.run", return_value=MagicMock(returncode=0)), \
+         patch("os.path.exists", return_value=True), \
+         patch("os.path.getsize", return_value=1024):
+        assert transcode_to_faststart_mp4("cap_x") is None

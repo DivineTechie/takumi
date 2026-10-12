@@ -1,0 +1,15 @@
+[
+  {"name": "event_id", "type": "STRING", "mode": "REQUIRED", "description": "Unique event id (evt_...)"},
+  {"name": "ts", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "When the event happened (server clock)"},
+  {"name": "kind", "type": "STRING", "mode": "REQUIRED", "description": "station | inspection | machine | unit"},
+  {"name": "event_type", "type": "STRING", "mode": "REQUIRED", "description": "e.g. step_done, mistake, safety_stop, station_completed, inspected, decision, state_change, alarm, alarm_cleared, count, hold, release"},
+  {"name": "source", "type": "STRING", "mode": "REQUIRED", "description": "LIVE, HOME RIG or PUBLIC DATA: <dataset> (<licence>)"},
+  {"name": "entity_id", "type": "STRING", "mode": "NULLABLE", "description": "Session, inspection, machine event or unit id"},
+  {"name": "unit_id", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "machine_id", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "product_id", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "station", "type": "STRING", "mode": "NULLABLE", "description": "Station (skill) id or name"},
+  {"name": "step", "type": "INTEGER", "mode": "NULLABLE"},
+  {"name": "status", "type": "STRING", "mode": "NULLABLE", "description": "Verdict, decision, machine state or unit status"},
+  {"name": "detail", "type": "STRING", "mode": "NULLABLE", "description": "JSON object with event-specific fields"}
+]

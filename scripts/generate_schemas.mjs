@@ -20,7 +20,12 @@ const schemas = [
   'review_requests',
   'sessions',
   'session_events',
-  'passports',
+  'products',
+  'units',
+  'inspections',
+  'machines',
+  'machine_events',
+  'soak_runs',
 ];
 
 // Ensure target directories exist

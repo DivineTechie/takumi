@@ -13,6 +13,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import type { Skill } from '../../../../../shared/schema/ts/skills.ts';
+import { useI18n } from '../../i18n';
 
 export interface SkillLibraryProps {
   onNavigateToCapture?: () => void;
@@ -24,35 +25,37 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
   onNavigateToReview,
 }) => {
   const navigate = useNavigate();
+  const { t, language } = useI18n();
+  const statusLabel = (status: string) => {
+    const key = `app.library_status_${status}`;
+    const text = t(key);
+    return text === key ? status.replace('_', ' ') : text;
+  };
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'in_review'>('all');
 
   useEffect(() => {
-    try {
-      const skillsRef = collection(db, 'skills');
-      const q = query(skillsRef, orderBy('created_at', 'desc'));
-      const unsub = onSnapshot(q, (snapshot) => {
+    const q = query(collection(db, 'skills'), orderBy('created_at', 'desc'));
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
         const loaded: Skill[] = [];
         snapshot.forEach((d) => loaded.push(d.data() as Skill));
-        if (loaded.length > 0) {
-          setSkills(loaded);
-        } else {
-          // Fallback seed
-          import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-            setSkills([seed.default as unknown as Skill]);
-          });
-        }
-      });
-      return () => unsub();
-    } catch {
-      import('../../../../../shared/seed/skill_terminal_wiring_v1.json').then((seed) => {
-        setSkills([seed.default as unknown as Skill]);
-      });
-    }
+        setSkills(loaded);
+        setLoadState('ready');
+      },
+      (err) => {
+        console.warn('Could not load lessons:', err);
+        setLoadState('error');
+      }
+    );
+    return () => unsub();
   }, []);
 
   const filteredSkills = skills.filter((s) => {
+    if (s.status === 'archived') return false;
     const matchesSearch =
       s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.master.display_name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -78,6 +81,8 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '1rem',
             borderBottom: '1px solid #27272a',
             paddingBottom: '1.5rem',
             marginBottom: '2rem',
@@ -96,10 +101,10 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
               }}
             >
               <Sparkles size={16} />
-              <span>TAKUMI 匠 · Skill Library</span>
+              <span>TAKUMI 匠 · {t('app.library_eyebrow')}</span>
             </div>
             <h1 style={{ fontSize: '2rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>
-              Master Craftsman Skills
+              {t('app.library_title')}
             </h1>
           </div>
 
@@ -124,7 +129,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
             }}
           >
             <Plus size={18} />
-            <span>RECORD NEW CAPTURE</span>
+            <span>{t('app.library_record_btn')}</span>
           </button>
         </header>
 
@@ -134,6 +139,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexWrap: 'wrap',
             gap: '1rem',
             marginBottom: '1.5rem',
           }}
@@ -148,6 +154,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
               borderRadius: '0.5rem',
               padding: '0.6rem 1rem',
               flex: 1,
+              minWidth: 0,
               maxWidth: '400px',
             }}
           >
@@ -156,7 +163,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by skill title or craftsman..."
+              placeholder={t('app.library_search_placeholder')}
               style={{
                 backgroundColor: 'transparent',
                 border: 'none',
@@ -168,7 +175,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
             />
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
             {(['all', 'published', 'in_review'] as const).map((filter) => (
               <button
                 key={filter}
@@ -185,11 +192,39 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
                   textTransform: 'capitalize',
                 }}
               >
-                {filter === 'all' ? 'All Skills' : filter.replace('_', ' ')}
+                {filter === 'all' ? t('app.library_filter_all') : statusLabel(filter)}
               </button>
             ))}
           </div>
         </div>
+
+        {loadState !== 'ready' || skills.length === 0 ? (
+          <div
+            role={loadState === 'error' ? 'alert' : 'status'}
+            style={{
+              backgroundColor: '#18181b',
+              border: `1px ${loadState === 'error' ? 'solid #ef4444' : 'dashed #3f3f46'}`,
+              borderRadius: '1rem',
+              padding: '2.5rem 1.5rem',
+              textAlign: 'center',
+              color: '#d4d4d8',
+            }}
+          >
+            {loadState === 'loading' && <div>{t('loading')}</div>}
+            {loadState === 'error' && (
+              <>
+                <div style={{ fontWeight: 700, color: '#fca5a5', marginBottom: '0.35rem' }}>{t('app.route_error_title')}</div>
+                <div style={{ fontSize: '0.9rem', color: '#a1a1aa' }}>{t('app.route_error_desc')}</div>
+              </>
+            )}
+            {loadState === 'ready' && (
+              <>
+                <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '0.35rem' }}>{t('app.library_empty_title')}</div>
+                <div style={{ fontSize: '0.9rem', color: '#a1a1aa' }}>{t('app.library_empty_desc')}</div>
+              </>
+            )}
+          </div>
+        ) : null}
 
         {/* Grid of Skill Cards */}
         <div
@@ -238,11 +273,11 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
                     }}
                   >
                     {isPublished ? <CheckCircle2 size={12} /> : <Clock size={12} />}
-                    <span>{item.status.replace('_', ' ')}</span>
+                    <span>{statusLabel(item.status)}</span>
                   </span>
 
                   <span style={{ color: '#71717a', fontSize: '0.75rem' }}>
-                    {item.created_at ? new Date(item.created_at).toLocaleDateString() : 'Recent'}
+                    {item.created_at ? new Date(item.created_at).toLocaleDateString(language) : t('app.library_recent')}
                   </span>
                 </div>
 
@@ -251,17 +286,17 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
                 </div>
 
                 <div style={{ color: '#a1a1aa', fontSize: '0.85rem' }}>
-                  Master: <strong style={{ color: '#d4d4d8' }}>{item.master.display_name}</strong>
+                  {t('app.library_master_label')} <strong style={{ color: '#d4d4d8' }}>{item.master.display_name}</strong>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: '#a1a1aa', fontSize: '0.8rem' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1rem', color: '#a1a1aa', fontSize: '0.8rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     <Layers size={14} color="#fbbf24" />
-                    <span>{item.steps.length} Steps</span>
+                    <span>{item.steps.length === 1 ? t('app.library_steps_one') : t('app.library_steps_count', { count: item.steps.length })}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     <Globe size={14} color="#34d399" />
-                    <span>{item.languages.length} Languages</span>
+                    <span>{t('app.library_languages_count', { count: item.languages.length })}</span>
                   </div>
                 </div>
 
@@ -278,7 +313,7 @@ export const SkillLibrary: React.FC<SkillLibraryProps> = ({
                     fontWeight: 700,
                   }}
                 >
-                  <span>{isPublished ? 'Open Review / Coach' : 'Review & Publish'}</span>
+                  <span>{isPublished ? t('app.library_open_published') : t('app.library_open_review')}</span>
                   <ArrowRight size={16} />
                 </div>
               </div>

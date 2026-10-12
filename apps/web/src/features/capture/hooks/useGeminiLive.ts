@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { fetchLiveToken } from '../../../lib/api';
+import type { CaptureMessage } from './useCameraStream';
 
 export interface TranscriptItem {
   t: number;
@@ -18,7 +19,7 @@ export interface UseGeminiLiveResult {
   currentQuestion: string | null;
   questionCount: number;
   transcript: TranscriptItem[];
-  error: string | null;
+  error: CaptureMessage | null;
   startLiveSession: (mediaStream: MediaStream, captureFrameFn: () => string | null) => Promise<boolean>;
   stopLiveSession: () => void;
 }
@@ -57,7 +58,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveResul
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
   const [questionCount, setQuestionCount] = useState(0);
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CaptureMessage | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -250,7 +251,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveResul
 
         ws.onerror = (e) => {
           console.error('Gemini Live WebSocket error:', e);
-          setError('Live socket error encountered');
+          setError({ key: 'app.capture_live_socket_error' });
         };
 
         ws.onclose = async () => {
@@ -259,7 +260,6 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveResul
 
           // Auto-reconnect if recording is still active
           if (shouldStayConnectedRef.current) {
-            console.log('Gemini Live connection dropped. Reconnecting with new token...');
             try {
               const tokenRes = await fetchLiveToken('interview');
               await connectWebSocket(tokenRes.token);
@@ -354,7 +354,7 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveResul
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error('Failed to initialize Gemini Live session:', msg);
-        setError(msg);
+        setError({ key: 'app.capture_raw_error', params: { message: msg } });
         setIsConnecting(false);
         setIsConnected(false);
         return false;

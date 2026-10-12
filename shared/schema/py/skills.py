@@ -39,6 +39,7 @@ class Status(Enum):
     draft = 'draft'
     in_review = 'in_review'
     published = 'published'
+    archived = 'archived'
 
 
 class Master(BaseModel):
@@ -84,15 +85,18 @@ class Verifier(BaseModel):
     conflict: bool
     detail: str
     suggestion: str
-    citation: str
+    citation: str | None = None
 
 
 class Translations(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    title: str | None = None
     instruction: str
+    success_criteria: str | None = None
     why: str
+    hazards: list[str] | None = None
     audio_uri: AnyUrl | None = None
 
 
@@ -101,6 +105,7 @@ class Step(BaseModel):
         extra='forbid',
     )
     n: conint(ge=1)
+    title: str | None = Field(None, description='Short name of the step')
     instruction: str
     success_criteria: str
     why: str
@@ -131,7 +136,10 @@ class Skill(BaseModel):
     )
     source_language: SourceLanguage
     languages: list[Language]
-    status: Status
+    status: Status = Field(
+        ...,
+        description='archived: withdrawn from the library and from Station Watch, kept for the record',
+    )
     master: Master
     video_uri: AnyUrl | None = None
     safety_rules: list[str]

@@ -1,232 +1,254 @@
-"""Node 2: segmenter (B2) - segment master capture video into 3-12 ordered steps."""
+"""Node 2: segmenter - Gemini watches the master's video (and hears the narration) and writes the steps.
 
-import io
-import time
+The video is uploaded with the Gemini Files API, used for one generate_content call and deleted.
+Each step gets its title, instruction, visible-fact success criteria, the reason (from the master's
+words when spoken), a safety note, tools, a likely mistake, the part to point at and its timestamps.
+"""
+
+import asyncio
 import logging
-from PIL import Image, ImageDraw
-from services.forge.config import MODEL_FLASH, MOCK_MODELS, GEMINI_API_KEY
-from services.forge.models.state import ForgeState, StepData
+import os
+import time
+
+from google.genai import types
+from pydantic import BaseModel, Field
+
+from services.forge import gemini
+from services.forge.config import (
+    MODEL_FLASH,
+    STUDIO_FILE_ACTIVE_TIMEOUT_S,
+    STUDIO_MAX_STEPS,
+    STUDIO_MAX_VIDEO_MB,
+    STUDIO_MAX_VIDEO_S,
+    STUDIO_SEGMENT_TIMEOUT_S,
+)
 from services.forge.events import emit
-from services.forge.storage_client import upload_bytes
+from services.forge.media import probe_duration_s
+from services.forge.models.state import ForgeState, StepData
+from services.forge.storage_client import blob_path_from_uri, blob_size, download_blob_to_file
 
 logger = logging.getLogger("forge.node.segmenter")
 
-SUBJ_WORDS = ["properly", "correctly", "carefully", "well", "safely", "thoroughly"]
+LANGUAGE_NAMES = {
+    "en": "English", "ja": "Japanese", "vi": "Vietnamese", "hi": "Hindi", "id": "Indonesian", "fil": "Filipino",
+}
+TRANSCRIPT_MAX_CHARS = 20000
 
 
-def validate_criteria(text: str) -> bool:
-    low = text.lower()
-    return not any(w in low for w in SUBJ_WORDS)
+class SegmentedStep(BaseModel):
+    # Response schema for Gemini: no extra="forbid" (the API rejects additionalProperties).
+    title: str = Field(description="Two to five words naming the step.")
+    instruction: str = Field(description="One imperative sentence a trainee can follow, at most 20 words.")
+    success_criteria: str = Field(
+        description="What a camera sees when the step is finished: visible facts only (positions, colours, counts, "
+        "readings, parts seated or connected). Never subjective words such as properly, correctly, carefully, well, "
+        "safely or thoroughly."
+    )
+    why: str = Field(description="Why the step matters, one or two sentences.")
+    why_from_master: bool = Field(description="True only if the master says this reason in the video.")
+    why_start_s: float | None = Field(default=None, description="When the master starts saying the reason; null if not spoken.")
+    why_end_s: float | None = Field(default=None, description="When the master finishes saying the reason; null if not spoken.")
+    safety_note: str = Field(default="", description="One short sentence on a hazard in this step that is visible or said; empty if none.")
+    tools: list[str] = Field(default_factory=list, description="Tools or materials used in this step, as seen or named.")
+    common_mistake: str = Field(default="", description="The most likely beginner mistake in this step; empty if none is clear.")
+    mistake_visual_cue: str = Field(default="", description="What the camera would see if that mistake happened; empty if none.")
+    point_target: str = Field(description="Short noun phrase for the part or area the hands act on, as it looks on camera.")
+    start_s: float = Field(description="Step start, seconds from the start of the video.")
+    end_s: float = Field(description="Step end, seconds from the start of the video.")
+    key_frame_s: float = Field(description="A moment in the step where the worked part is clearly visible, ideally just after it is done.")
 
 
-def create_placeholder_keyframe(step_n: int, title: str) -> bytes:
-    """Creates a clean 1280x720 JPEG keyframe."""
-    img = Image.new("RGB", (1280, 720), color=(24, 24, 27))
-    draw = ImageDraw.Draw(img)
-    # Draw simple workbench background elements
-    draw.rectangle([100, 100, 1180, 620], outline=(63, 63, 70), width=4)
-    # Terminal block placeholder representation
-    draw.rectangle([340, 260, 940, 460], fill=(39, 39, 42), outline=(245, 158, 11), width=3)
-    for i, x in enumerate(range(380, 900, 130), start=1):
-        draw.rectangle([x, 290, x + 90, 430], outline=(113, 113, 122), width=2)
-        draw.text((x + 35, 305), str(i), fill=(250, 250, 250))
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85)
-    return buf.getvalue()
+class Segmentation(BaseModel):
+    steps: list[SegmentedStep]
+    safety_rules: list[str] = Field(
+        default_factory=list,
+        description="Zero to four rules for the whole task, each a visible fact a camera can check (for example "
+        "'Safety glasses are on'); only rules the master says or visibly follows.",
+    )
+
+
+def transcript_text(transcript: list[dict]) -> str:
+    """Joins the live-transcription fragments into timed lines: '[12.3s] master: ...'."""
+    lines: list[list] = []
+    last_t = -1e9
+    for item in transcript:
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        speaker = "master" if item.get("speaker") == "master" else "apprentice"
+        t = float(item.get("t") or 0.0)
+        if lines and lines[-1][1] == speaker and t - last_t < 8.0:
+            lines[-1][2] += " " + text
+        else:
+            lines.append([t, speaker, text])
+        last_t = t
+    out = "\n".join(f"[{t:.1f}s] {speaker}: {text}" for t, speaker, text in lines)
+    if len(out) > TRANSCRIPT_MAX_CHARS:
+        out = out[:TRANSCRIPT_MAX_CHARS] + "\n[transcript cut here]"
+    return out
+
+
+def build_prompt(state: ForgeState) -> str:
+    language = LANGUAGE_NAMES.get(state.source_language, state.source_language)
+    narration = transcript_text(state.transcript)
+    narration_block = (
+        f"Live transcript of the master and an apprentice interviewer (approximate, seconds from the start):\n{narration}"
+        if narration
+        else "No transcript was recorded; use the speech in the video's audio if there is any."
+    )
+    return f"""You turn a master's recorded demonstration into a standard work instruction for trainees.
+Task title typed by the master: "{state.title}"
+The master speaks {language}.
+{narration_block}
+
+Watch the whole video and listen to the audio. Split the work into ordered steps (1 to {STUDIO_MAX_STEPS}) where one
+physical action ends and the next begins. Write every text field in English.
+Rules:
+- Describe only what happens in the video or what the master says. Never add steps, tools, numbers, standards or
+  reasons that are not shown or said. Leave optional fields empty when you do not know.
+- success_criteria are visible facts that a person could check on camera.
+- Timestamps are seconds from the start of the video; steps are in order and do not overlap.
+- why: use the master's own explanation (in English) when they give one and set why_from_master true with the time
+  they say it. Otherwise give the most likely reason from what is shown and set why_from_master false.
+- safety_rules apply to the whole task and are visible facts."""
+
+
+def to_steps(seg: Segmentation, duration_s: float | None) -> tuple[list[StepData], list[str]]:
+    """Turns the model's answer into ordered StepData. Returns the steps and notes about anything dropped."""
+    notes: list[str] = []
+    usable = [s for s in seg.steps if s.instruction.strip() and s.success_criteria.strip()]
+    if len(usable) < len(seg.steps):
+        notes.append(f"{len(seg.steps) - len(usable)} step(s) without an instruction or criteria were dropped")
+    usable.sort(key=lambda s: s.start_s)
+    if len(usable) > STUDIO_MAX_STEPS:
+        notes.append(f"Gemini returned {len(usable)} steps; kept the first {STUDIO_MAX_STEPS}")
+        usable = usable[:STUDIO_MAX_STEPS]
+
+    limit = duration_s if duration_s and duration_s > 0 else None
+    steps: list[StepData] = []
+    for n, s in enumerate(usable, start=1):
+        start = max(0.0, s.start_s)
+        end = min(limit, s.end_s) if limit else s.end_s
+        clip = None
+        keyframe = None
+        if end > start:
+            clip = {"start_s": round(start, 2), "end_s": round(end, 2)}
+            keyframe = round(min(max(s.key_frame_s, start), end), 2)
+        else:
+            notes.append(f"step {n} had no valid time range ({s.start_s}-{s.end_s} s)")
+
+        why_source = None
+        if s.why_from_master and s.why_start_s is not None and s.why_end_s is not None:
+            if 0 <= s.why_start_s <= s.why_end_s and (not limit or s.why_start_s <= limit + 1.0):
+                why_source = {"t_start": round(s.why_start_s, 2), "t_end": round(s.why_end_s, 2)}
+
+        mistakes = []
+        if s.common_mistake.strip() and s.mistake_visual_cue.strip():
+            mistakes.append({"description": s.common_mistake.strip(), "visual_cue": s.mistake_visual_cue.strip()})
+
+        steps.append(StepData(
+            n=n,
+            title=s.title.strip(),
+            instruction=s.instruction.strip(),
+            success_criteria=s.success_criteria.strip(),
+            why=s.why.strip(),
+            why_source=why_source,
+            why_inferred=not s.why_from_master,
+            tools=[t.strip() for t in s.tools if t.strip()],
+            hazards=[s.safety_note.strip()] if s.safety_note.strip() else [],
+            common_mistakes=mistakes,
+            point_hint=s.point_target.strip() or None,
+            clip=clip,
+            keyframe_s=keyframe,
+        ))
+    return steps, notes
+
+
+def fetch_video(state: ForgeState) -> str:
+    """Downloads the capture video into the run's work dir after checking its size. Returns the local path."""
+    blob = blob_path_from_uri(state.video_uri)
+    size = blob_size(blob)
+    if size is None:
+        raise FileNotFoundError("The capture video was not found in Cloud Storage")
+    if size > STUDIO_MAX_VIDEO_MB * 1024 * 1024:
+        raise ValueError(f"The capture video is {size // (1024 * 1024)} MB; the Studio accepts up to {STUDIO_MAX_VIDEO_MB} MB")
+    work_dir = state.work_dir or "."
+    path = os.path.join(work_dir, "master" + os.path.splitext(blob)[1].lower())
+    if not download_blob_to_file(blob, path):
+        raise FileNotFoundError("The capture video could not be downloaded from Cloud Storage")
+    return path
+
+
+async def wait_until_active(client, file):
+    """Polls the uploaded file until Gemini has processed it (bounded)."""
+    deadline = time.monotonic() + STUDIO_FILE_ACTIVE_TIMEOUT_S
+    while True:
+        state = str(getattr(file.state, "value", file.state) or "")
+        if state.endswith("ACTIVE"):
+            return file
+        if state.endswith("FAILED"):
+            raise gemini.StudioModelError("Gemini could not process the video file")
+        if time.monotonic() > deadline:
+            raise gemini.StudioTimeout(f"Gemini did not finish processing the video within {int(STUDIO_FILE_ACTIVE_TIMEOUT_S)} s")
+        await asyncio.sleep(3.0)
+        try:
+            file = await asyncio.wait_for(client.aio.files.get(name=file.name), timeout=30)
+        except asyncio.TimeoutError:
+            raise gemini.StudioTimeout("Gemini did not report the video file's status in time") from None
+
+
+async def segment_video(state: ForgeState, path: str) -> Segmentation:
+    client = gemini.get_client()
+    mime = "video/webm" if path.endswith(".webm") else "video/mp4"
+    try:
+        file = await asyncio.wait_for(
+            client.aio.files.upload(file=path, config=types.UploadFileConfig(mime_type=mime, display_name=state.capture_id)),
+            timeout=STUDIO_FILE_ACTIVE_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        raise gemini.StudioTimeout("Uploading the video to Gemini took too long") from None
+    try:
+        file = await wait_until_active(client, file)
+        video = types.Part.from_uri(file_uri=file.uri, mime_type=file.mime_type or mime)
+        return await gemini.generate_json(
+            MODEL_FLASH, [video, build_prompt(state)], Segmentation, timeout_s=STUDIO_SEGMENT_TIMEOUT_S,
+        )
+    finally:
+        try:
+            await asyncio.wait_for(client.aio.files.delete(name=file.name), timeout=30)
+        except Exception as e:  # the Files API also expires uploads after 48 h
+            logger.warning("Could not delete uploaded video %s: %s", file.name, e)
 
 
 async def run_segmenter(state: ForgeState) -> ForgeState:
-    t0 = time.time()
-    emit(state.job_id, "segmenter", "Segmenting video into actionable steps...", "info")
+    t0 = time.perf_counter()
+    emit(state.job_id, "segmenter", f"Sending the master's video to {MODEL_FLASH}", "info")
 
-    steps: list[StepData] = []
+    path = await asyncio.to_thread(fetch_video, state)
+    duration = await asyncio.to_thread(probe_duration_s, path) or state.duration_s or None
+    if duration and duration > STUDIO_MAX_VIDEO_S:
+        raise ValueError(f"The video is {duration / 60:.1f} minutes; the Studio accepts up to {STUDIO_MAX_VIDEO_S / 60:.0f} minutes")
+    if duration:
+        state.duration_s = round(duration, 2)
+    state.local_video_path = path
 
-    if MOCK_MODELS or not GEMINI_API_KEY:
-        # High quality offline deterministic segmentation
-        logger.info("Executing Segmenter node in fixture mode")
-        if state.transcript:
-            master_actions = [
-                item for item in state.transcript
-                if item.get("role") == "master" and not any(
-                    intro_word in item.get("text", "").lower()
-                    for intro_word in ["それではdin", "today we calibrate", "we are replacing a qfp-32", "overview"]
-                )
-            ]
-            if len(master_actions) >= 3:
-                steps = []
-                for idx, action in enumerate(master_actions, start=1):
-                    t_s = float(action.get("t_start", 0.0))
-                    t_e = float(action.get("t_end", 10.0))
-                    text = action.get("text", "")
-
-                    if "青" in text or "blue wire" in text.lower():
-                        inst = "Insert the blue wire into terminal 1 and tighten its screw"
-                        crit = "A blue wire ferrule enters terminal 1 with zero bare copper"
-                        tools = ["3 mm flat screwdriver"]
-                    elif "茶" in text or "brown wire" in text.lower():
-                        inst = "Insert the brown wire into terminal 2 and tighten its screw"
-                        crit = "A brown wire enters terminal 2 while blue wire remains in terminal 1"
-                        tools = ["3 mm flat screwdriver"]
-                    elif "引っ張" in text or "tug" in text.lower() or "銅線" in text:
-                        inst = "Gently tug wires and verify zero bare copper is visible"
-                        crit = "Wires remain seated under light tug with zero exposed copper"
-                        tools = []
-                    elif "jam nut" in text.lower() and "loosen" in text.lower():
-                        inst = "Loosen the 17 mm locking jam nut counter-clockwise two turns"
-                        crit = "Jam nut backed off two threads while hex adjuster remains stationary"
-                        tools = ["17 mm open wrench", "6 mm hex key"]
-                    elif "gauge" in text.lower() or "m3" in text.lower():
-                        inst = "Attach test pressure gauge to diagnostic port M3"
-                        crit = "Test gauge hose coupler locked onto port M3 with zero oil seepage"
-                        tools = ["0-400 bar digital test gauge"]
-                    elif "210 bar" in text.lower():
-                        inst = "Turn 6 mm hex adjustment screw clockwise to 210 bar"
-                        crit = "Digital gauge displays 210 bar +/- 2 bar steady reading"
-                        tools = ["6 mm hex key"]
-                    elif "45 newton" in text.lower() or "re-tighten" in text.lower():
-                        inst = "Torque the 17 mm jam nut to 45 Nm"
-                        crit = "Torque wrench clicks at 45 Nm with adjustment screw stationary"
-                        tools = ["Torque wrench 17 mm socket", "6 mm hex key"]
-                    elif "flux" in text.lower() and "thin" in text.lower():
-                        inst = "Dispense thin line of tacky flux across all 32 perimeter pads"
-                        crit = "Continuous thin flux film covers copper pads without pooling"
-                        tools = ["Syringe flux dispenser", "Stereo microscope"]
-                    elif "tweezers" in text.lower() or "aligning" in text.lower():
-                        inst = "Place IC with anti-static tweezers aligning pin 1 dot"
-                        crit = "All 32 IC leads sit squarely centered on copper pads"
-                        tools = ["Curved ESD tweezers", "Microscope"]
-                    elif "tack" in text.lower() or "pin 1 and" in text.lower():
-                        inst = "Tack diagonal corner pins 1 and 17 with chisel tip"
-                        crit = "Pins 1 and 17 have shiny concave fillets with alignment held"
-                        tools = ["350C soldering iron", "0.5 mm solder wire"]
-                    elif "drag" in text.lower():
-                        inst = "Perform drag soldering along each row with solder wire"
-                        crit = "Every lead features a smooth meniscus fillet with zero bridges"
-                        tools = ["Soldering iron with chisel tip", "0.5 mm solder wire"]
-                    elif "isopropyl" in text.lower() or "scrub" in text.lower():
-                        inst = "Clean flux residues using 99 percent isopropyl alcohol and brush"
-                        crit = "Board surface between leads is clean with zero yellow flux residue"
-                        tools = ["99% Isopropyl alcohol", "ESD cleaning brush"]
-                    else:
-                        inst = f"Execute step {idx} according to standard operating procedure"
-                        crit = f"Target assembly for step {idx} is secured with zero damage"
-                        tools = []
-
-                    steps.append(
-                        StepData(
-                            n=idx,
-                            instruction=inst,
-                            success_criteria=crit,
-                            tools=tools,
-                            hazards=[],
-                            clip={"start_s": t_s, "end_s": t_e},
-                            keyframe_s=max(t_s, t_e - 1.0),
-                        )
-                    )
-
-        if not steps:
-            steps = [
-                StepData(
-                    n=1,
-                    instruction="Insert the blue wire into terminal 1 and tighten its screw",
-                    success_criteria="A blue wire's ferrule enters terminal 1, the leftmost terminal; no copper visible",
-                    tools=["3 mm flat screwdriver"],
-                    hazards=["Confirm panel power is off"],
-                    clip={"start_s": 12.0, "end_s": 24.5},
-                    keyframe_s=23.0,
-                ),
-                StepData(
-                    n=2,
-                    instruction="Insert the brown wire into terminal 2 and tighten its screw",
-                    success_criteria="A brown wire enters terminal 2; blue wire remains secure in terminal 1",
-                    tools=["3 mm flat screwdriver"],
-                    hazards=[],
-                    clip={"start_s": 25.0, "end_s": 38.0},
-                    keyframe_s=36.5,
-                ),
-                StepData(
-                    n=3,
-                    instruction="Insert the black wire into terminal 3 and tighten its screw",
-                    success_criteria="A black wire enters terminal 3; no copper strands visible outside terminal",
-                    tools=["3 mm flat screwdriver"],
-                    hazards=[],
-                    clip={"start_s": 39.0, "end_s": 52.0},
-                    keyframe_s=50.0,
-                ),
-                StepData(
-                    n=4,
-                    instruction="Tug each of the three wires gently to verify firm seating",
-                    success_criteria="All three wires remain seated firmly in terminals 1, 2, and 3 without shifting",
-                    tools=[],
-                    hazards=[],
-                    clip={"start_s": 53.0, "end_s": 64.0},
-                    keyframe_s=62.0,
-                ),
-            ]
-    else:
-        try:
-            from google import genai
-            from google.genai import types
-
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            prompt = f"""You are the TAKUMI Master Video Segmenter.
-Analyze this technical video and transcript for the task: '{state.title}'.
-Transcript: {state.transcript}
-
-Rules:
-1. Return 3-12 chronological steps.
-2. instruction: imperative English, maximum 14 words.
-3. success_criteria: ONLY visible facts checkable by a camera. NEVER use subjective words (properly, correctly, carefully, well).
-4. tools: tools used in the step.
-5. hazards: any safety hazards.
-6. clip: start_s and end_s in seconds (non-overlapping).
-7. keyframe_s: clearest end-state moment of the step.
-"""
-            response = client.models.generate_content(
-                model=MODEL_FLASH,
-                contents=[prompt],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                ),
-            )
-            import json
-            raw_data = json.loads(response.text or "[]")
-            for item in raw_data:
-                steps.append(StepData(**item))
-        except Exception as e:
-            logger.warning("Gemini video segmentation failed, falling back to heuristic: %s", e)
-            emit(state.job_id, "segmenter", f"Live model fallback: {e}", "warn")
-            steps = [
-                StepData(
-                    n=1,
-                    instruction="Insert the blue wire into terminal 1 and tighten",
-                    success_criteria="A blue wire enters terminal 1, the leftmost terminal; no copper visible",
-                    tools=["3 mm flat screwdriver"],
-                    hazards=["Confirm power is off"],
-                    clip={"start_s": 10.0, "end_s": 25.0},
-                    keyframe_s=23.0,
-                )
-            ]
-
-    # Validate success criteria
-    for s in steps:
-        if not validate_criteria(s.success_criteria):
-            s.success_criteria = s.success_criteria.replace("correctly", "securely").replace("properly", "")
-
-    # Extract / upload keyframes
-    for s in steps:
-        keyframe_bytes = create_placeholder_keyframe(s.n, state.title)
-        keyframe_path = f"skills/{state.skill_id}/keyframes/{s.n}.jpg"
-        s.keyframe_uri = upload_bytes(keyframe_bytes, keyframe_path, content_type="image/jpeg")
+    seg = await segment_video(state, path)
+    steps, notes = to_steps(seg, duration)
+    if not steps:
+        raise gemini.StudioModelError("Gemini found no steps in this video")
+    for note in notes:
+        emit(state.job_id, "segmenter", note, "warn")
 
     state.steps = steps
-    duration_ms = int((time.time() - t0) * 1000)
+    state.safety_rules = [r.strip() for r in seg.safety_rules if r.strip()]
+    spoken = sum(1 for s in steps if s.why_source)
+    video = f"{state.duration_s:.0f} s video" if state.duration_s else "video"
     emit(
         state.job_id,
         "segmenter",
-        f"Segmented {len(steps)} steps with visible-fact success criteria and keyframes",
+        f"{MODEL_FLASH} found {len(steps)} steps in the {video}; "
+        f"{spoken} reasons come from the master's own words, {len(state.safety_rules)} safety rules",
         "info",
-        artifact_uri=steps[0].keyframe_uri if steps else None,
-        ms=duration_ms,
+        ms=int((time.perf_counter() - t0) * 1000),
     )
     return state

@@ -29,7 +29,8 @@
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "in_review", "published"]
+      "enum": ["draft", "in_review", "published", "archived"],
+      "description": "archived: withdrawn from the library and from Station Watch, kept for the record"
     },
     "master": {
       "type": "object",
@@ -59,6 +60,10 @@
           "n": {
             "type": "integer",
             "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "description": "Short name of the step"
           },
           "instruction": {
             "type": "string"
@@ -147,7 +152,7 @@
               "suggestion": { "type": "string" },
               "citation": { "type": "string" }
             },
-            "required": ["conflict", "detail", "suggestion", "citation"],
+            "required": ["conflict", "detail", "suggestion"],
             "additionalProperties": false
           },
           "translations": {
@@ -155,8 +160,14 @@
             "additionalProperties": {
               "type": "object",
               "properties": {
+                "title": { "type": "string" },
                 "instruction": { "type": "string" },
+                "success_criteria": { "type": "string" },
                 "why": { "type": "string" },
+                "hazards": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
                 "audio_uri": { "type": "string", "format": "uri" }
               },
               "required": ["instruction", "why"],

@@ -5,13 +5,18 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, conint
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, conint
 
 
 class Status(Enum):
     open = 'open'
     applied = 'applied'
     dismissed = 'dismissed'
+
+
+class Source(Enum):
+    traceback = 'traceback'
+    supervisor = 'supervisor'
 
 
 class ReviewRequest(BaseModel):
@@ -25,3 +30,13 @@ class ReviewRequest(BaseModel):
     suggested_success_criteria: str | None = None
     status: Status
     created_at: AwareDatetime
+    source: Source | None = Field(
+        None,
+        description='Who raised it: the quality trace-back agent (approved by a supervisor) or a supervisor directly',
+    )
+    unit_id: str | None = Field(
+        None, description='Failed unit that led to the request, if any'
+    )
+    created_by_uid: str | None = Field(
+        None, description='Supervisor who sent the request'
+    )

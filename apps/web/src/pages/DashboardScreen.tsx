@@ -1,38 +1,47 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
 import { useTheme } from '../lib/theme';
 import logoSvg from '../assets/logo.svg';
 import {
-  fetchInsightsMatrix,
+  fetchInsightSkills,
   fetchSkillInsights,
   fetchSessionReplay,
-  type InsightsMatrixResponse,
+  fetchInspectionInsights,
+  submitInspectionDecision,
   type SkillInsightsResponse,
   type SessionReplayResponse,
-  type MatrixSkill,
+  type InsightSkill,
+  type InspectionInsightsResponse,
 } from '../lib/api';
 import { LiveNowStrip } from '../components/dashboard/LiveNowStrip';
-import { SkillMatrixTable } from '../components/dashboard/SkillMatrixTable';
 import { LessonHeatmap } from '../components/dashboard/LessonHeatmap';
+import { MachinesPanel } from '../components/dashboard/MachinesPanel';
+import { RecentUnits } from '../components/dashboard/RecentUnits';
 import {
   SessionReplayViewer,
   type RecentSessionItem,
 } from '../components/dashboard/SessionReplayViewer';
 
-type DashboardTab = 'matrix' | 'heatmap' | 'replay';
+type DashboardTab = 'heatmap' | 'replay' | 'inspections' | 'machines';
 
 export const DashboardScreen: React.FC = () => {
   const { t, language, setLanguage } = useTranslation();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  // Enum values from the API shown as labels; unknown values are shown as they are.
+  const enumLabel = (prefix: string, value: string) => {
+    const key = `${prefix}${value}`;
+    const text = t(key);
+    return text === key ? value : text;
+  };
 
-  const [activeTab, setActiveTab] = useState<DashboardTab>('matrix');
-  const [matrixData, setMatrixData] = useState<InsightsMatrixResponse | null>(null);
-  const [matrixLoading, setMatrixLoading] = useState(true);
-  const [matrixError, setMatrixError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('inspections');
+  const [skills, setSkills] = useState<InsightSkill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
 
   const [selectedSkillId, setSelectedSkillId] = useState<string>('');
   const [skillInsights, setSkillInsights] = useState<SkillInsightsResponse | null>(null);
@@ -42,6 +51,9 @@ export const DashboardScreen: React.FC = () => {
   const [replayData, setReplayData] = useState<SessionReplayResponse | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
   const [firestoreSessions, setFirestoreSessions] = useState<RecentSessionItem[]>([]);
+
+  const [inspectionInsights, setInspectionInsights] = useState<InspectionInsightsResponse | null>(null);
+  const [inspectionLoading, setInspectionLoading] = useState(false);
 
   // Real-time recent sessions from Firestore
   useEffect(() => {
@@ -76,27 +88,54 @@ export const DashboardScreen: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Load team matrix
-  const loadMatrix = useCallback(async () => {
-    setMatrixLoading(true);
-    setMatrixError(null);
+  // Published skills (aggregate step quality; no per-worker data)
+  const loadSkills = useCallback(async () => {
+    setSkillsLoading(true);
+    setSkillsError(null);
     try {
-      const data = await fetchInsightsMatrix();
-      setMatrixData(data);
+      const data = await fetchInsightSkills();
+      setSkills(data.skills);
       if (data.skills.length > 0) {
         setSelectedSkillId((prev) => prev || data.skills[0].id);
       }
     } catch (err) {
-      console.error('Failed to load matrix:', err);
-      setMatrixError(t('dashboard_load_failed'));
+      console.error('Failed to load skills:', err);
+      setSkillsError(t('dashboard_load_failed'));
     } finally {
-      setMatrixLoading(false);
+      setSkillsLoading(false);
     }
   }, [t]);
 
   useEffect(() => {
-    loadMatrix();
-  }, [loadMatrix]);
+    loadSkills();
+  }, [loadSkills]);
+
+  const loadInspectionInsights = useCallback(async () => {
+    setInspectionLoading(true);
+    try {
+      const data = await fetchInspectionInsights();
+      setInspectionInsights(data);
+    } catch (err) {
+      console.warn('Failed to load inspection insights:', err);
+    } finally {
+      setInspectionLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'inspections') {
+      loadInspectionInsights();
+    }
+  }, [activeTab, loadInspectionInsights]);
+
+  const handleDecision = async (inspectionId: string, decision: 'confirmed_defect' | 'overridden_ok') => {
+    try {
+      await submitInspectionDecision(inspectionId, decision);
+      await loadInspectionInsights();
+    } catch (err) {
+      console.error('Failed to submit inspection decision:', err);
+    }
+  };
 
   // Load skill insights when selected skill changes
   useEffect(() => {
@@ -135,47 +174,13 @@ export const DashboardScreen: React.FC = () => {
       .finally(() => setReplayLoading(false));
   }, []);
 
-  // When a matrix cell is clicked, switch to heatmap for that skill
-  const handleSelectMatrixCell = useCallback((_traineeUid: string, skillId: string) => {
-    setSelectedSkillId(skillId);
-    setActiveTab('heatmap');
-  }, []);
-
   const skillsMap = useMemo(() => {
-    const map: Record<string, MatrixSkill> = {};
-    matrixData?.skills.forEach((s) => {
+    const map: Record<string, InsightSkill> = {};
+    skills.forEach((s) => {
       map[s.id] = s;
     });
     return map;
-  }, [matrixData?.skills]);
-
-  const traineesMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    matrixData?.trainees.forEach((tr) => {
-      map[tr.uid] = tr.first_name;
-    });
-    return map;
-  }, [matrixData?.trainees]);
-
-  const recentSessionsList = useMemo(() => {
-    if (firestoreSessions.length > 0) return firestoreSessions;
-    const fallback: RecentSessionItem[] = [];
-    matrixData?.cells.forEach((cell) => {
-      if (cell.sessions > 0 && cell.last_session_at) {
-        fallback.push({
-          id: 'ses_1f136365e52d71cd',
-          skill_id: cell.skill_id,
-          trainee_uid: cell.uid,
-          first_name: traineesMap[cell.uid],
-          status: 'completed',
-          started_at: cell.last_session_at,
-          language: 'hi',
-          mistakes: cell.mistakes_trend?.[cell.mistakes_trend.length - 1] || 0,
-        });
-      }
-    });
-    return fallback;
-  }, [firestoreSessions, matrixData, traineesMap]);
+  }, [skills]);
 
   return (
     <div className="bg-background text-on-surface font-body-md min-h-screen antialiased flex flex-col justify-between selection:bg-primary-container selection:text-on-primary-container">
@@ -193,14 +198,14 @@ export const DashboardScreen: React.FC = () => {
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
             <img
               src={logoSvg}
-              alt="TAKUMI Logo"
+              alt={t('app.home_logo_alt')}
               className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg shrink-0 object-contain shadow-sm"
               width={28}
               height={28}
             />
             <h1 className="text-[17px] sm:text-[20px] font-bold text-on-surface tracking-tight truncate whitespace-nowrap">
               <span className="hidden md:inline">{t('dashboard_title')}</span>
-              <span className="md:hidden">Dashboard</span>
+              <span className="md:hidden">{t('app.dashboard_title_short')}</span>
             </h1>
           </div>
         </div>
@@ -209,13 +214,13 @@ export const DashboardScreen: React.FC = () => {
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Refresh button */}
           <button
-            onClick={() => loadMatrix()}
-            disabled={matrixLoading}
-            aria-label="Refresh dashboard data"
-            className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+            onClick={() => loadSkills()}
+            disabled={skillsLoading}
+            aria-label={t('app.dashboard_refresh')}
+            className="hidden w-9 h-9 sm:w-10 sm:h-10 sm:flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors cursor-pointer disabled:opacity-50 shrink-0"
             type="button"
           >
-            <span className={`material-symbols-outlined text-[19px] sm:text-[20px] ${matrixLoading ? 'animate-spin' : ''}`}>
+            <span className={`material-symbols-outlined text-[19px] sm:text-[20px] ${skillsLoading ? 'animate-spin' : ''}`}>
               refresh
             </span>
           </button>
@@ -236,7 +241,7 @@ export const DashboardScreen: React.FC = () => {
             </span>
             <select
               id="dashboard-lang-select"
-              aria-label="Select language"
+              aria-label={t('app.home_select_language')}
               value={language}
               onChange={(e) => setLanguage(e.target.value as LanguageCode)}
               className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
@@ -248,6 +253,15 @@ export const DashboardScreen: React.FC = () => {
               ))}
             </select>
           </div>
+
+          <Link
+            to="/control"
+            aria-label={t('app.home_team_control_btn')}
+            title={t('app.home_team_control_btn')}
+            className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant transition-colors shrink-0"
+          >
+            <span className="material-symbols-outlined text-[19px] sm:text-[20px]">monitoring</span>
+          </Link>
 
           {/* Theme toggle: always visible */}
           <button
@@ -266,14 +280,14 @@ export const DashboardScreen: React.FC = () => {
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-6">
         {/* Error State Banner */}
-        {matrixError && (
+        {skillsError && (
           <div className="bg-error/15 border border-error/30 rounded-2xl p-4 flex items-center justify-between gap-3 text-error">
             <div className="flex items-center gap-2.5">
               <span className="material-symbols-outlined text-[22px]">error</span>
-              <span className="text-[14px] font-semibold">{matrixError}</span>
+              <span className="text-[14px] font-semibold">{skillsError}</span>
             </div>
             <button
-              onClick={() => loadMatrix()}
+              onClick={() => loadSkills()}
               className="px-4 py-2 rounded-xl bg-error text-white font-bold text-[13px] hover:opacity-90 transition-opacity cursor-pointer shrink-0"
             >
               {t('dashboard_retry')}
@@ -284,88 +298,51 @@ export const DashboardScreen: React.FC = () => {
         {/* Live Now Strip (Always visible at top of dashboard) */}
         <LiveNowStrip
           skillsMap={skillsMap}
-          traineesMap={traineesMap}
           onSelectSession={handleSelectSession}
         />
 
-        {/* Tabs Bar: Grid on mobile (no horizontal scroll), flex on desktop */}
+        {/* Tabs: 2x2 grid on phones (no horizontal scroll), one row from sm up */}
         <div
           role="tablist"
-          aria-label="Dashboard sections"
-          className="grid grid-cols-3 sm:flex items-center gap-1.5 sm:gap-2 bg-surface-container-low p-1.5 rounded-2xl border border-outline-variant w-full sm:w-fit"
+          aria-label={t('app.dashboard_sections')}
+          className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 sm:gap-2 bg-surface-container-low p-1.5 rounded-2xl border border-outline-variant w-full sm:w-fit"
         >
-          <button
-            role="tab"
-            aria-selected={activeTab === 'matrix'}
-            onClick={() => setActiveTab('matrix')}
-            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'matrix'
-                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">group</span>
-            <span className="hidden sm:inline">{t('dashboard_team_matrix')}</span>
-            <span className="sm:hidden">{t('dashboard_tab_matrix_short')}</span>
-          </button>
-
-          <button
-            role="tab"
-            aria-selected={activeTab === 'heatmap'}
-            onClick={() => setActiveTab('heatmap')}
-            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'heatmap'
-                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">analytics</span>
-            <span className="hidden sm:inline">{t('dashboard_lesson_insights')}</span>
-            <span className="sm:hidden">{t('dashboard_tab_insights_short')}</span>
-          </button>
-
-          <button
-            role="tab"
-            aria-selected={activeTab === 'replay'}
-            onClick={() => setActiveTab('replay')}
-            className={`min-h-[44px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'replay'
-                ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
-                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[18px]">history</span>
-            <span className="hidden sm:inline">{t('dashboard_session_replay')}</span>
-            <span className="sm:hidden">{t('dashboard_tab_replay_short')}</span>
-            {selectedSessionId && (
-              <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
-            )}
-          </button>
+          {(
+            [
+              { id: 'inspections', icon: 'verified', label: t('dashboard_tab_quality'), short: t('dashboard_tab_quality_short') },
+              { id: 'machines', icon: 'precision_manufacturing', label: t('dashboard_tab_machines'), short: t('dashboard_tab_machines') },
+              { id: 'heatmap', icon: 'analytics', label: t('dashboard_lesson_insights'), short: t('dashboard_tab_insights_short') },
+              { id: 'replay', icon: 'history', label: t('dashboard_session_replay'), short: t('dashboard_tab_replay_short') },
+            ] as { id: DashboardTab; icon: string; label: string; short: string }[]
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`min-h-[48px] px-2 sm:px-5 py-2 rounded-xl text-[13px] sm:text-[15px] flex items-center justify-center gap-1.5 sm:gap-2 transition-all cursor-pointer min-w-0 text-center break-words ${
+                activeTab === tab.id
+                  ? 'bg-primary-container text-on-primary-container font-bold shadow-sm'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container font-medium bg-transparent'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[18px]">{tab.icon}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.short}</span>
+              {tab.id === 'replay' && selectedSessionId && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+              {tab.id === 'inspections' && inspectionInsights && inspectionInsights.live.flagged_awaiting_count > 0 && (
+                <span className="px-1.5 rounded-full text-[10px] font-bold bg-red-600 text-white shrink-0">
+                  {inspectionInsights.live.flagged_awaiting_count}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
-
-        {/* Tab 1: Team Skill Matrix */}
-        {activeTab === 'matrix' && (
-          matrixLoading ? (
-            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-12 flex flex-col items-center justify-center gap-3">
-              <div className="w-8 h-8 border-3 border-primary-container border-t-transparent rounded-full animate-spin" />
-              <span className="text-[14px] text-on-surface-variant font-medium">
-                {t('loading')}
-              </span>
-            </div>
-          ) : matrixData ? (
-            <SkillMatrixTable
-              trainees={matrixData.trainees}
-              skills={matrixData.skills}
-              cells={matrixData.cells}
-              onSelectCell={handleSelectMatrixCell}
-            />
-          ) : null
-        )}
 
         {/* Tab 2: Lesson Insights (Step Heatmap) */}
         {activeTab === 'heatmap' && (
           <LessonHeatmap
-            skills={matrixData?.skills || []}
+            skills={skills}
             selectedSkillId={selectedSkillId}
             onSelectSkill={(id) => setSelectedSkillId(id)}
             insights={skillInsights}
@@ -378,21 +355,266 @@ export const DashboardScreen: React.FC = () => {
           <SessionReplayViewer
             replay={replayData}
             loading={replayLoading}
-            recentSessions={recentSessionsList}
+            recentSessions={firestoreSessions}
             skillsMap={skillsMap}
-            traineesMap={traineesMap}
-            onSelectSession={handleSelectSession}
+              onSelectSession={handleSelectSession}
             onClose={() => {
               setSelectedSessionId(null);
               setReplayData(null);
             }}
           />
         )}
+
+        {/* Tab 5: Machine Watch */}
+        {activeTab === 'machines' && <MachinesPanel />}
+
+        {/* Tab 4: End-of-Line Quality Inspection */}
+        {activeTab === 'inspections' && (
+          <div className="space-y-6">
+            {/* Top Metrics Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-xs uppercase font-bold text-on-surface-variant">{t('app.dashboard_quality_today_units', { evidence: 'LIVE' })}</span>
+                <span className="text-[28px] font-bold font-mono text-on-surface mt-2">
+                  {inspectionInsights ? inspectionInsights.live.today_count : '—'}
+                </span>
+                <span className="text-[11px] text-on-surface-variant mt-1">{t('app.dashboard_quality_live_station')}</span>
+              </div>
+
+              <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-xs uppercase font-bold text-on-surface-variant">{t('app.dashboard_quality_first_pass', { evidence: 'LIVE' })}</span>
+                <span className="text-[28px] font-bold font-mono text-on-surface mt-2">
+                  {inspectionInsights && inspectionInsights.live.first_pass_rate !== null
+                    ? `${inspectionInsights.live.first_pass_rate}%`
+                    : '—'}
+                </span>
+                <span className="text-[11px] text-on-surface-variant mt-1">{t('app.dashboard_quality_first_pass_desc')}</span>
+              </div>
+
+              <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-xs uppercase font-bold text-on-surface-variant">{t('app.dashboard_quality_awaiting')}</span>
+                <span className="text-[28px] font-bold font-mono text-amber-600 dark:text-amber-400 mt-2">
+                  {inspectionInsights ? inspectionInsights.live.flagged_awaiting_count : '—'}
+                </span>
+                <span className="text-[11px] text-on-surface-variant mt-1">{t('app.dashboard_quality_awaiting_desc')}</span>
+              </div>
+
+              <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex flex-col justify-between">
+                <span className="text-xs uppercase font-bold text-on-surface-variant">{t('app.dashboard_quality_trials')}</span>
+                <span className="text-[28px] font-bold font-mono text-primary-container mt-2">
+                  {inspectionInsights && inspectionInsights.gallery.trials_count > 0
+                    ? `${inspectionInsights.gallery.trials_count}`
+                    : '—'}
+                </span>
+                <span className="text-[11px] text-on-surface-variant mt-1">
+                  {inspectionInsights && inspectionInsights.gallery.hit_rate !== null
+                    ? t('app.dashboard_quality_hit_rate', { rate: inspectionInsights.gallery.hit_rate })
+                    : 'PUBLIC DATA: VisA'}
+                </span>
+              </div>
+            </div>
+
+            <RecentUnits />
+
+            {/* Section 1: Live Factory Operations */}
+            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-[18px] font-bold text-on-surface flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary-container text-[22px]">factory</span>
+                    {t('app.dashboard_live_title')}
+                  </h3>
+                  <p className="text-xs text-on-surface-variant mt-0.5">
+                    {t('app.dashboard_live_desc')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                    LIVE
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/inspect')}
+                    className="min-h-[40px] px-3 rounded-lg bg-primary-container text-on-primary-container font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">add_a_photo</span>
+                    <span>{t('app.dashboard_live_open_station')}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Top Defect Types Strip */}
+              {inspectionInsights && inspectionInsights.live.top_defect_types.length > 0 && (
+                <div className="p-3 bg-surface rounded-xl border border-outline-variant flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-bold text-on-surface">{t('app.dashboard_live_top_defects')}</span>
+                  {inspectionInsights.live.top_defect_types.map((d, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 font-medium">
+                      {d.defect} ({d.count})
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Recent Live Inspections List */}
+              {inspectionLoading ? (
+                <div className="p-8 flex justify-center">
+                  <div className="w-6 h-6 border-2 border-primary-container border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : inspectionInsights && inspectionInsights.live.recent.length > 0 ? (
+                <div className="space-y-3">
+                  {inspectionInsights.live.recent.map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-4 bg-surface rounded-xl border border-outline-variant flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        {item.image_url ? (
+                          <img
+                            src={item.image_url}
+                            alt={item.unit_id || item.id}
+                            className="w-14 h-14 rounded-lg object-cover border border-outline-variant bg-black"
+                          />
+                        ) : (
+                          <div className="w-14 h-14 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant">
+                            <span className="material-symbols-outlined text-[24px]">image</span>
+                          </div>
+                        )}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            {item.unit_id ? (
+                              <Link to={`/units/${encodeURIComponent(item.unit_id)}`} className="font-mono font-bold text-[14px] text-on-surface underline">
+                                {item.unit_id}
+                              </Link>
+                            ) : (
+                              <span className="font-mono font-bold text-[14px] text-on-surface">{item.id}</span>
+                            )}
+                            <span className="text-xs text-on-surface-variant font-medium">
+                              • {item.product_id}
+                            </span>
+                          </div>
+                          <p className="text-xs text-on-surface-variant mt-0.5">
+                            {item.defect
+                              ? item.where
+                                ? t('app.dashboard_live_defect_where', { defect: item.defect, where: item.where })
+                                : t('app.dashboard_live_defect', { defect: item.defect })
+                              : item.where
+                                ? t('app.dashboard_live_clean_where', { where: item.where })
+                                : t('app.dashboard_live_clean')}{' '}
+                            • {t('app.dashboard_live_confidence', { pct: (item.confidence * 100).toFixed(0) })}
+                          </p>
+                          <span className="text-[11px] text-on-surface-variant/80">
+                            {new Date(item.created_at).toLocaleString(language)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 self-end sm:self-center">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
+                            item.ai_verdict === 'ok'
+                              ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                              : item.ai_verdict === 'defective'
+                              ? 'bg-red-500/20 text-red-700 dark:text-red-300'
+                              : 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                          }`}
+                        >
+                          {enumLabel('app.dashboard_verdict_', item.ai_verdict)}
+                        </span>
+
+                        {item.human_decision ? (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded bg-surface-container text-on-surface">
+                            {enumLabel('app.dashboard_decision_', item.human_decision)}
+                          </span>
+                        ) : item.ai_verdict === 'defective' ? (
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleDecision(item.id, 'confirmed_defect')}
+                              className="min-h-[36px] px-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              title={t('app.dashboard_live_confirm_title')}
+                            >
+                              <span className="material-symbols-outlined text-[14px]">thumb_down</span>
+                              <span>{t('app.dashboard_live_confirm')}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDecision(item.id, 'overridden_ok')}
+                              className="min-h-[36px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 cursor-pointer"
+                              title={t('app.dashboard_live_override_title')}
+                            >
+                              <span className="material-symbols-outlined text-[14px]">thumb_up</span>
+                              <span>{t('app.dashboard_live_override')}</span>
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-center text-xs text-on-surface-variant bg-surface rounded-xl border border-outline-variant">
+                  {t('app.dashboard_live_empty')}
+                </div>
+              )}
+            </div>
+
+            {/* Section 2: Judges Benchmark Trials (PUBLIC DATA) */}
+            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-[18px] font-bold text-on-surface flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary-container text-[22px]">science</span>
+                    {t('app.dashboard_trials_title', { evidence: 'PUBLIC DATA' })}
+                  </h3>
+                  <p className="text-xs text-on-surface-variant mt-0.5">
+                    {t('app.dashboard_trials_desc')}
+                  </p>
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                  PUBLIC DATA: VisA (CC BY 4.0)
+                </span>
+              </div>
+
+              <div className="p-4 bg-surface rounded-xl border border-outline-variant flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs text-on-surface-variant">
+                    {t('app.dashboard_trials_total')}{' '}
+                    <strong className="text-on-surface">
+                      {inspectionInsights ? inspectionInsights.gallery.trials_count : '—'}
+                    </strong>{' '}
+                    • {t('app.dashboard_trials_hits')}{' '}
+                    <strong className="text-on-surface">
+                      {inspectionInsights ? inspectionInsights.gallery.hits_count : '—'}
+                    </strong>{' '}
+                    • {t('app.dashboard_trials_hit_rate')}{' '}
+                    <strong className="text-emerald-600 dark:text-emerald-400">
+                      {inspectionInsights && inspectionInsights.gallery.hit_rate !== null
+                        ? `${inspectionInsights.gallery.hit_rate}%`
+                        : '—'}
+                    </strong>
+                  </p>
+                  <p className="text-[11px] text-on-surface-variant/80 mt-1">
+                    {t('app.dashboard_trials_dataset')}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigate('/inspect/gallery')}
+                  className="min-h-[44px] px-4 rounded-xl border border-outline-variant bg-surface-container hover:bg-surface-container-high text-on-surface font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">photo_library</span>
+                  <span>{t('app.dashboard_trials_gallery_btn')}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Footer */}
       <footer className="w-full border-t border-outline-variant bg-surface-container-low py-4 px-6 text-center text-[13px] text-on-surface-variant">
-        TAKUMI • Skill Captured Once, Taught Live Everywhere
+        TAKUMI • {t('tagline')}
       </footer>
     </div>
   );

@@ -26,6 +26,8 @@ vi.mock('../lib/api', () => ({
   postSessionEvent: vi.fn(),
   endSession: vi.fn(),
   liveToken: vi.fn(),
+  fetchSkillMedia: vi.fn(),
+  askMaster: vi.fn(),
 }));
 
 // Mock Live Client
@@ -33,6 +35,7 @@ const mockSendText = vi.fn();
 const mockSendCameraEvent = vi.fn();
 const mockManualRetry = vi.fn();
 const mockStopGating = vi.fn();
+const mockSetExternalGating = vi.fn();
 const mockClose = vi.fn();
 const mockConnect = vi.fn().mockImplementation(() => {
   capturedCallbacks.onStateChange?.('connected');
@@ -42,47 +45,52 @@ const mockConnect = vi.fn().mockImplementation(() => {
 });
 let capturedCallbacks: Partial<LiveClientCallbacks> = {};
 
+const createDefaultMockClient = (config: { callbacks: LiveClientCallbacks }) => {
+  capturedCallbacks = config.callbacks;
+  return {
+    connect: mockConnect,
+    sendAudio: vi.fn(),
+    sendVideoFrame: vi.fn(),
+    sendText: mockSendText,
+    sendCameraEvent: mockSendCameraEvent,
+    stopGating: mockStopGating,
+    setExternalGating: mockSetExternalGating,
+    manualRetry: mockManualRetry,
+    setSpeakerMode: vi.fn(),
+    getSpeakerMode: vi.fn(() => true),
+    isGating: vi.fn(() => false),
+    getState: vi.fn(() => 'connected'),
+    getStats: vi.fn(() => ({
+      setupCompleteReceived: true,
+      setupCompleteMs: 250,
+      micChunksSent: 10,
+      videoFramesSent: 2,
+      audioChunksReceived: 5,
+      transcriptsReceived: 2,
+      lastCloseCode: null,
+      lastCloseReason: '',
+      interruptedCount: 0,
+      playbackUnderruns: 0,
+      isGating: false,
+      tokenFetchMs: 120,
+      timeToFirstAudioMs: 450,
+      lastVerifyLatencyMs: 850,
+      medianVerifyLatencyMs: 850,
+      lastPointLatencyMs: 400,
+      medianPointLatencyMs: 400,
+      lastToolLatencyMs: 850,
+      medianToolLatencyMs: 625,
+    })),
+    close: mockClose,
+  };
+};
+
 vi.mock('../lib/live/client', () => {
   return {
     computeMedian: vi.fn(() => 500),
-    GeminiLiveClient: vi.fn().mockImplementation((config: { callbacks: LiveClientCallbacks }) => {
-      capturedCallbacks = config.callbacks;
-      return {
-        connect: mockConnect,
-        sendAudio: vi.fn(),
-        sendVideoFrame: vi.fn(),
-        sendText: mockSendText,
-        sendCameraEvent: mockSendCameraEvent,
-        stopGating: mockStopGating,
-        manualRetry: mockManualRetry,
-        setSpeakerMode: vi.fn(),
-        getSpeakerMode: vi.fn(() => true),
-        isGating: vi.fn(() => false),
-        getState: vi.fn(() => 'connected'),
-        getStats: vi.fn(() => ({
-          setupCompleteReceived: true,
-          setupCompleteMs: 250,
-          micChunksSent: 10,
-          videoFramesSent: 2,
-          audioChunksReceived: 5,
-          transcriptsReceived: 2,
-          lastCloseCode: null,
-          lastCloseReason: '',
-          interruptedCount: 0,
-          playbackUnderruns: 0,
-          isGating: false,
-          tokenFetchMs: 120,
-          timeToFirstAudioMs: 450,
-          lastVerifyLatencyMs: 850,
-          medianVerifyLatencyMs: 850,
-          lastPointLatencyMs: 400,
-          medianPointLatencyMs: 400,
-          lastToolLatencyMs: 850,
-          medianToolLatencyMs: 625,
-        })),
-        close: mockClose,
-      };
-    }),
+    GeminiLiveClient: vi.fn().mockImplementation((config: { callbacks: LiveClientCallbacks }) =>
+      createDefaultMockClient(config)
+    ),
   };
 });
 
@@ -114,6 +122,10 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    const mockedLiveClient = vi.mocked(GeminiLiveClient);
+    mockedLiveClient.mockImplementation(
+      createDefaultMockClient as unknown as Parameters<typeof mockedLiveClient.mockImplementation>[0]
+    );
     window.history.pushState({}, '', '?debug=1');
 
     HTMLMediaElement.prototype.play = vi.fn().mockImplementation(() => Promise.resolve());
@@ -468,18 +480,19 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     const whyBtn = screen.getByRole('button', { name: /Why\?/i });
     fireEvent.click(whyBtn);
 
-    expect(mockSendText).toHaveBeenCalledWith(
-      'The trainee asks: why is this step done this way?'
-    );
-
-    expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
-      'session-live-123',
-      expect.objectContaining({
-        step: 1,
-        type: 'ask_why',
-        source: 'trainee',
-      })
-    );
+    await waitFor(() => {
+      expect(mockSendText).toHaveBeenCalledWith(
+        'The trainee asks: why is this step done this way?'
+      );
+      expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+        'session-live-123',
+        expect.objectContaining({
+          step: 1,
+          type: 'ask_why',
+          source: 'trainee',
+        })
+      );
+    });
   });
 
   it('0a: verify_step always checks current step regardless of step arg and returns current_step on mismatch', async () => {
@@ -598,8 +611,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     });
 
     // Trigger simulated hazard
-    const devWindow = window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: () => void };
-    devWindow.__TAKUMI_SIMULATE_HAZARD__?.();
+    fireEvent.click(screen.getByTestId('simulate-hazard-btn'));
 
     // Alert dialog STOP is displayed
     await waitFor(() => {
@@ -645,8 +657,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
       expect(apiModule.createSession).toHaveBeenCalled();
     });
 
-    const devWindow = window as unknown as { __TAKUMI_SIMULATE_HAZARD__?: () => void };
-    devWindow.__TAKUMI_SIMULATE_HAZARD__?.();
+    fireEvent.click(screen.getByTestId('simulate-hazard-btn'));
 
     await waitFor(() => {
       expect(screen.getByRole('alertdialog')).toBeDefined();
@@ -792,7 +803,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
 
   it('shows "Coaching is temporarily unavailable, please try again later" banner and status on unavailable error', async () => {
     let capturedCallbacks!: LiveClientCallbacks;
-    vi.mocked(GeminiLiveClient).mockImplementation((cfg) => {
+    vi.mocked(GeminiLiveClient).mockImplementationOnce((cfg) => {
       capturedCallbacks = cfg.callbacks;
       return {
         connect: vi.fn().mockResolvedValue(undefined),
@@ -803,6 +814,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
         setSpeakerMode: vi.fn(),
         getSpeakerMode: vi.fn().mockReturnValue(true),
         stopGating: vi.fn(),
+        setExternalGating: vi.fn(),
         recordVerifyLatency: vi.fn(),
         recordPointLatency: vi.fn(),
         recordToolLatency: vi.fn(),
@@ -837,6 +849,274 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     await waitFor(() => {
       const msgs = screen.getAllByText('Coaching is temporarily unavailable, please try again later');
       expect(msgs.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  it('handles show_master_clip tool call by playing clip, gating mic, and resolving when closed', async () => {
+    vi.mocked(apiModule.fetchSkillMedia).mockResolvedValueOnce({
+      url: 'https://storage.googleapis.com/test/step1.mp4',
+      start_s: 0,
+      end_s: 4.5,
+      why: 'Insert straight into terminal 1',
+      why_lang: 'en',
+      translated: true,
+    } as unknown as Awaited<ReturnType<typeof apiModule.fetchSkillMedia>>);
+
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    const toolPromise = capturedCallbacks.onToolCall?.({
+      id: 'call-master-1',
+      name: 'show_master_clip',
+      args: { step: 1 },
+    });
+
+    await waitFor(() => {
+      expect(apiModule.fetchSkillMedia).toHaveBeenCalledWith(typedSkill.id, 1, 'master_clip', 'en');
+      expect(mockSetExternalGating).toHaveBeenCalledWith(true);
+    });
+
+    expect(screen.getByText("Master's own demonstration")).toBeDefined();
+    expect(screen.getByText('Insert straight into terminal 1')).toBeDefined();
+
+    const closeBtn = screen.getByLabelText('Close clip');
+    fireEvent.click(closeBtn);
+
+    const result = await toolPromise;
+    expect(result).toEqual({ result: { played: true, seconds: expect.any(Number) } });
+    expect(mockSetExternalGating).toHaveBeenCalledWith(false);
+
+    expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+      'session-live-123',
+      expect.objectContaining({
+        type: 'ask_why',
+        reason: 'master_clip:played',
+      })
+    );
+  });
+
+  it('handles show_master_clip gracefully when clip is unavailable (404)', async () => {
+    vi.mocked(apiModule.fetchSkillMedia).mockRejectedValueOnce(new Error('404 Not Found'));
+
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    const result = await capturedCallbacks.onToolCall?.({
+      id: 'call-master-404',
+      name: 'show_master_clip',
+      args: { step: 1 },
+    });
+
+    expect(result).toEqual({ result: { status: 'not available' } });
+    expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+      'session-live-123',
+      expect.objectContaining({
+        type: 'ask_why',
+        reason: 'master_clip:not_available',
+      })
+    );
+  });
+
+  it('handles show_mistake_clip tool call and logs mistake_clip event on finish', async () => {
+    vi.mocked(apiModule.fetchSkillMedia).mockResolvedValueOnce({
+      url: 'https://storage.googleapis.com/test/mistake1.mp4',
+      label: 'AI-generated example of the wrong way',
+    });
+
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    const toolPromise = capturedCallbacks.onToolCall?.({
+      id: 'call-mistake-1',
+      name: 'show_mistake_clip',
+      args: { step: 1 },
+    });
+
+    await waitFor(() => {
+      expect(apiModule.fetchSkillMedia).toHaveBeenCalledWith(typedSkill.id, 1, 'mistake_clip', 'en');
+      expect(mockSetExternalGating).toHaveBeenCalledWith(true);
+    });
+
+    expect(screen.getByText('AI-generated example of the wrong way')).toBeDefined();
+
+    const closeBtn = screen.getByLabelText('Close clip');
+    fireEvent.click(closeBtn);
+
+    const result = await toolPromise;
+    expect(result).toEqual({ result: { played: true, seconds: expect.any(Number) } });
+    expect(mockSetExternalGating).toHaveBeenCalledWith(false);
+
+    expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+      'session-live-123',
+      expect.objectContaining({
+        type: 'mistake_clip',
+        reason: 'mistake_clip:played',
+      })
+    );
+  });
+
+  it('handles ask_master tool call with grounded answer', async () => {
+    vi.mocked(apiModule.askMaster).mockResolvedValueOnce({
+      answer: 'The blue wire carries 24V DC control signal.',
+      citation: { type: 'step_clip', step: 1 },
+    });
+
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    const result = await capturedCallbacks.onToolCall?.({
+      id: 'call-ask-1',
+      name: 'ask_master',
+      args: { question: 'Why blue wire?' },
+    });
+
+    expect(apiModule.askMaster).toHaveBeenCalledWith(typedSkill.id, 'Why blue wire?', 'en');
+    expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+      'session-live-123',
+      expect.objectContaining({
+        type: 'ask_master',
+        reason: 'Why blue wire?',
+      })
+    );
+    expect(result).toEqual({
+      result: {
+        answer: 'The blue wire carries 24V DC control signal.',
+        citation: { type: 'step_clip', step: 1 },
+      },
+    });
+  });
+
+  it('Why button plays master clip directly when available, and falls back to voice question when 404', async () => {
+    // 1. Available clip path
+    vi.mocked(apiModule.fetchSkillMedia).mockResolvedValueOnce({
+      url: 'https://storage.googleapis.com/test/step1.mp4',
+      start_s: 0,
+      end_s: 4.5,
+      why: 'Key master demonstration',
+      why_lang: 'en',
+      translated: true,
+    } as unknown as Awaited<ReturnType<typeof apiModule.fetchSkillMedia>>);
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    const whyBtn = screen.getByRole('button', { name: /Why\?/i });
+    fireEvent.click(whyBtn);
+
+    await waitFor(() => {
+      expect(mockSetExternalGating).toHaveBeenCalledWith(true);
+      expect(mockSendText).toHaveBeenCalledWith(
+        expect.stringContaining("[CLIP] The master's clip for step 1 is playing")
+      );
+    });
+
+    expect(screen.getByText("Master's own demonstration")).toBeDefined();
+    unmount();
+
+    // 2. Fallback path (clip 404)
+    vi.mocked(apiModule.fetchSkillMedia).mockRejectedValueOnce(new Error('404 Not Found'));
+
+    render(
+      <MemoryRouter>
+        <CoachLiveView
+          skill={typedSkill}
+          language="en"
+          stream={mockStream}
+          outputAudioContext={mockAudioContext}
+          micAudioContext={mockAudioContext}
+          onEnd={vi.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(apiModule.createSession).toHaveBeenCalled();
+    });
+
+    const whyBtnFallback = screen.getByRole('button', { name: /Why\?/i });
+    fireEvent.click(whyBtnFallback);
+
+    await waitFor(() => {
+      expect(mockSendText).toHaveBeenCalledWith(
+        'The trainee asks: why is this step done this way?'
+      );
+      expect(apiModule.postSessionEvent).toHaveBeenCalledWith(
+        'session-live-123',
+        expect.objectContaining({
+          type: 'ask_why',
+          reason: 'master_clip:not_available',
+        })
+      );
     });
   });
 });

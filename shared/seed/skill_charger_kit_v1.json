@@ -1,0 +1,91 @@
+{
+  "id": "skill_charger_kit_v1",
+  "title": "Pack a phone charger kit",
+  "source_language": "en",
+  "languages": ["en", "vi", "hi"],
+  "status": "published",
+  "master": {
+    "display_name": "TAKUMI team",
+    "role": "Written work instruction"
+  },
+  "safety_rules": ["The adapter stays unplugged from the wall socket"],
+  "steps": [
+    {
+      "n": 1,
+      "instruction": "Plug the USB cable fully into the adapter.",
+      "success_criteria": "The cable's plug is pushed all the way into the adapter's port; no metal of the plug is visible.",
+      "why": "A half-inserted plug charges slowly or not at all, and customers return it as faulty.",
+      "tools": [],
+      "hazards": ["Keep the adapter unplugged from the wall"],
+      "common_mistakes": [
+        {
+          "description": "Plug only half inserted",
+          "visual_cue": "metal of the USB plug visible outside the adapter's port"
+        }
+      ],
+      "point_hint": "the USB port on the adapter",
+      "translations": {
+        "vi": {
+          "instruction": "Cắm cáp USB vào hết cổng của củ sạc.",
+          "why": "Cắm hờ sẽ sạc chậm hoặc không sạc, và khách hàng sẽ trả lại vì lỗi."
+        },
+        "hi": {
+          "instruction": "USB केबल को एडैप्टर में पूरी तरह लगाएँ।",
+          "why": "आधा लगा प्लग धीरे चार्ज करता है या बिल्कुल नहीं, और ग्राहक इसे खराब मानकर लौटा देते हैं।"
+        }
+      }
+    },
+    {
+      "n": 2,
+      "instruction": "Coil the cable and hold the coil with a rubber band.",
+      "success_criteria": "The cable is wound into loops and one rubber band holds the loops together.",
+      "why": "A loose cable tangles in the box and gets damaged in shipping.",
+      "tools": ["rubber band"],
+      "hazards": [],
+      "common_mistakes": [
+        {
+          "description": "Cable left loose",
+          "visual_cue": "cable lying straight or in loose loops with no rubber band around it"
+        }
+      ],
+      "point_hint": "the middle of the cable coil",
+      "translations": {
+        "vi": {
+          "instruction": "Cuộn cáp lại và giữ cuộn bằng một sợi dây thun.",
+          "why": "Cáp để lỏng sẽ rối trong hộp và dễ hỏng khi vận chuyển."
+        },
+        "hi": {
+          "instruction": "केबल को लपेटें और लपेट को रबर बैंड से बाँधें।",
+          "why": "खुली केबल डिब्बे में उलझ जाती है और भेजते समय खराब हो जाती है।"
+        }
+      }
+    },
+    {
+      "n": 3,
+      "instruction": "Stick the label on the flat side of the adapter.",
+      "success_criteria": "A label is stuck flat on the adapter body, not on the cable.",
+      "why": "The label carries the serial number; on the cable it falls off and the unit can no longer be traced.",
+      "tools": ["label or sticky note"],
+      "hazards": [],
+      "common_mistakes": [
+        {
+          "description": "Label stuck on the cable",
+          "visual_cue": "label wrapped around or stuck on the cable instead of the adapter"
+        }
+      ],
+      "point_hint": "the flat side of the adapter",
+      "translations": {
+        "vi": {
+          "instruction": "Dán nhãn lên mặt phẳng của củ sạc.",
+          "why": "Nhãn có số sê-ri; dán lên cáp sẽ dễ bong và không truy xuất được sản phẩm."
+        },
+        "hi": {
+          "instruction": "लेबल को एडैप्टर की सपाट सतह पर चिपकाएँ।",
+          "why": "लेबल पर सीरियल नंबर होता है; केबल पर लगाने से वह गिर जाता है और यूनिट का पता नहीं चलता।"
+        }
+      }
+    }
+  ],
+  "created_at": "2026-10-11T16:30:00Z",
+  "published_at": "2026-10-11T16:30:00Z"
+}

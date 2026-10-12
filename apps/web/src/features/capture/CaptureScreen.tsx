@@ -11,6 +11,7 @@ import { useCameraStream } from './hooks/useCameraStream';
 import { useGeminiLive } from './hooks/useGeminiLive';
 import { useResumableUpload } from './hooks/useResumableUpload';
 import type { Capture } from '../../../../../shared/schema/ts/captures.ts';
+import { useI18n } from '../../i18n';
 
 export interface CaptureScreenProps {
   onJobCreated?: (jobId: string, skillId: string) => void;
@@ -18,6 +19,7 @@ export interface CaptureScreenProps {
 
 export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [stage, setStage] = useState<'setup' | 'recording' | 'finished'>('setup');
   const [skillTitle, setSkillTitle] = useState('');
   const [sourceLanguage, setSourceLanguage] = useState<'ja' | 'en' | 'hi' | 'vi' | 'id' | 'fil'>('ja');
@@ -78,7 +80,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
       // 1. Start camera and mic stream
       const stream = await startCamera();
       if (!stream) {
-        throw new Error('Failed to acquire camera stream');
+        throw new Error('app.capture_no_stream');
       }
 
       // 2. Optional Manual PDF upload
@@ -99,7 +101,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
 
       // 3. Create captures/{captureId} in Firestore (requires signed-in master)
       if (!auth.currentUser) {
-        throw new Error('Sign-in required: Please sign in with an authorized Master account to record captures.');
+        throw new Error('app.capture_signin_required');
       }
 
       const masterUid = auth.currentUser.uid;
@@ -248,11 +250,18 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onJobCreated }) =>
   };
 
   if (stage === 'setup') {
+    // errorMessage is a translation key or a raw error message (t returns raw text unchanged).
+    const hookError = cameraError || liveError || uploadError;
+    const shownError = errorMessage
+      ? t(errorMessage)
+      : hookError
+        ? t(hookError.key, hookError.params)
+        : null;
     return (
       <SetupForm
         onStart={handleStartCapture}
         isStarting={isCameraStarting}
-        error={errorMessage || cameraError || liveError || uploadError}
+        error={shownError}
       />
     );
   }

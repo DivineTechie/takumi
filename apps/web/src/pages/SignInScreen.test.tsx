@@ -28,7 +28,6 @@ describe('SignInScreen Test Account Integration', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
-      updateDisplayName: vi.fn(),
     });
   });
 

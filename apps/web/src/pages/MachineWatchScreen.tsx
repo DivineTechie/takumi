@@ -1,0 +1,931 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  ApiError,
+  createMachine,
+  fetchMachines,
+  fetchMySoakRuns,
+  readMachine,
+  removeMachine,
+  setupMachine,
+  type Machine,
+  type NormalizedRoi,
+  type SoakRun,
+} from '../lib/api';
+import { RateCap, RegionChange, StableValue, roiToPixels, stackLightLit, type Roi } from '../lib/machineVision';
+import { MACHINE_WATCH } from '../config';
+import { useI18n } from '../i18n';
+import { agoText, stampText, stateLabel, type TFn } from '../lib/controlEvents';
+import { latestPerMachine } from '../lib/machinesView';
+
+/**
+ * Machine Watch: a fixed camera (old phone or webcam) watches stack lights, counters and HMI
+ * screens. Gemini Robotics-ER finds the regions once; the browser then checks them every 500 ms for
+ * free and only asks Gemini Flash-Lite to read a machine when something changed. Only small region
+ * crops ever leave the device.
+ */
+
+type RoiKind = 'stack_light' | 'counter' | 'hmi';
+const ROI_KINDS: RoiKind[] = ['stack_light', 'counter', 'hmi'];
+const ROI_COLOUR: Record<RoiKind, string> = { stack_light: '#22c55e', counter: '#38bdf8', hmi: '#c084fc' };
+/** Translation keys for the box labels. */
+const ROI_LABEL: Record<RoiKind, string> = { stack_light: 'ops.watch_roi_light', counter: 'ops.watch_roi_counter', hmi: 'ops.watch_roi_screen' };
+const RUN_STATUSES = ['running', 'completed', 'cancelled'];
+
+interface DraftMachine {
+  name: string;
+  idealCycleS: number;
+  rois: Partial<Record<RoiKind, NormalizedRoi>>;
+}
+
+interface Watcher {
+  light: StableValue<string>;
+  /** Pixel-change fallback on the light region, in case the colour check misses a change (glare, odd camera colour). */
+  lightRegion: RegionChange;
+  counter: RegionChange;
+  hmi: RegionChange;
+  cap: RateCap;
+  inFlight: boolean;
+  lastReadAt: number;
+  lastCounterReadAt: number;
+  counterPending: boolean;
+  reads: number;
+  startedAt: number;
+  prevState: string | null;
+  prevAlarm: string | null;
+}
+
+interface StopAlert {
+  name: string;
+  /** Alarm text from the machine, or null when it simply stopped. */
+  text: string | null;
+  at: number;
+}
+
+interface MachineView {
+  edgeLight: string;
+  state: string | null;
+  count: number | null;
+  /** When the counter was last read by Gemini (counters are read periodically, not every frame). */
+  countAt: number | null;
+  alarm: string | null;
+  lastReadAt: number | null;
+  readsPerHour: number;
+  /** Translation key of the last read error. */
+  error: string | null;
+}
+
+const STORAGE_KEY = 'takumi.machineWatch.selected';
+
+function loadSelected(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSelected(ids: string[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+  } catch {
+    // Remembering the selection is a convenience only.
+  }
+}
+
+function parseOffset(text: string): number | null {
+  const t = text.trim();
+  if (!t) return null;
+  const parts = t.split(':').map(Number);
+  if (parts.some((n) => Number.isNaN(n))) return null;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+function clamp01(v: number) {
+  return Math.max(0, Math.min(1, v));
+}
+
+export const MachineWatchScreen: React.FC = () => {
+  const navigate = useNavigate();
+  const { t, language } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
+  const debug = useMemo(() => new URLSearchParams(window.location.search).get('debug') === '1', []);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const frameCanvas = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [source, setSource] = useState<'camera' | 'file' | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [selected, setSelected] = useState<string[]>(loadSelected);
+  const [runs, setRuns] = useState<SoakRun[]>([]);
+  const [runId, setRunId] = useState('');
+  const [offsetText, setOffsetText] = useState('');
+
+  const [mode, setMode] = useState<'idle' | 'setup' | 'watching'>('idle');
+  const [setupFrame, setSetupFrame] = useState<string | null>(null);
+  const [setupCount, setSetupCount] = useState(1);
+  const [benchMachines, setBenchMachines] = useState(false);
+  const [drafts, setDrafts] = useState<DraftMachine[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const watchersRef = useRef<Record<string, Watcher>>({});
+  const [alerts, setAlerts] = useState<Record<string, StopAlert>>({});
+  const [soundOn, setSoundOn] = useState(true);
+  const soundOnRef = useRef(soundOn);
+  soundOnRef.current = soundOn;
+  const audioRef = useRef<AudioContext | null>(null);
+  const [frameAspect, setFrameAspect] = useState(16 / 9);
+  const [win, setWin] = useState({ w: window.innerWidth, h: window.innerHeight });
+  const [portrait, setPortrait] = useState(() => window.matchMedia?.('(orientation: portrait)').matches ?? false);
+
+  useEffect(() => {
+    const onResize = () => {
+      setWin({ w: window.innerWidth, h: window.innerHeight });
+      setPortrait(window.matchMedia?.('(orientation: portrait)').matches ?? false);
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+    };
+  }, []);
+
+  /** Two short beeps and a vibration (where supported) when a machine stops or raises an alarm. */
+  const signalStop = useCallback(() => {
+    if (!soundOnRef.current) return;
+    try {
+      const ctx = audioRef.current;
+      if (ctx) {
+        [0, 0.35].forEach((t) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.25, ctx.currentTime + t);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(ctx.currentTime + t);
+          osc.stop(ctx.currentTime + t + 0.26);
+        });
+      }
+      navigator.vibrate?.([300, 150, 300]);
+    } catch {
+      // Sound is a convenience; the banner still shows.
+    }
+  }, []);
+  const [views, setViews] = useState<Record<string, MachineView>>({});
+
+  const watched = useMemo(() => machines.filter((m) => selected.includes(m.id)), [machines, selected]);
+  // Repeated setups of the same machine are listed once; older ones stay one tap away.
+  const [showOlder, setShowOlder] = useState(false);
+  const { listed, older } = useMemo(() => {
+    const { latest } = latestPerMachine(machines);
+    const keep = new Set([...latest.map((m) => m.id), ...selected]);
+    return { listed: machines.filter((m) => keep.has(m.id)), older: machines.filter((m) => !keep.has(m.id)) };
+  }, [machines, selected]);
+
+  const refreshLists = useCallback(async () => {
+    try {
+      const [ms, rs] = await Promise.all([fetchMachines(), fetchMySoakRuns()]);
+      setMachines(ms);
+      setRuns(rs);
+    } catch {
+      setMessage(tRef.current('ops.watch_load_error'));
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshLists();
+  }, [refreshLists]);
+
+  /** Reloads the caller's soak runs and picks the newest running one if none is chosen yet. */
+  const refreshRuns = useCallback(async () => {
+    try {
+      const rs = await fetchMySoakRuns();
+      setRuns(rs);
+      setRunId((current) => current || rs.find((r) => r.status === 'running')?.id || '');
+    } catch {
+      // keep the current list
+    }
+  }, []);
+
+  useEffect(() => saveSelected(selected), [selected]);
+
+  // Keep the screen awake: a phone that locks stops watching.
+  useEffect(() => {
+    let lock: WakeLockSentinel | null = null;
+    if (mode === 'watching' && 'wakeLock' in navigator) {
+      navigator.wakeLock.request('screen').then((l) => (lock = l)).catch(() => {});
+    }
+    return () => {
+      lock?.release().catch(() => {});
+    };
+  }, [mode]);
+
+  const stopSource = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
+
+  useEffect(() => stopSource, []);
+
+  const startCamera = async () => {
+    setSourceError(null);
+    stopSource();
+    try {
+      // Ask for a frame with the same shape as the phone is held. Asking a portrait iPhone for 1280x720
+      // returns a landscape frame with a small letterboxed image inside (tiny on screen and for Gemini).
+      const portraitNow = window.matchMedia?.('(orientation: portrait)').matches ?? false;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: portraitNow
+          ? { facingMode: 'environment', width: { ideal: 1080 }, height: { ideal: 1920 } }
+          : { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setSource('camera');
+    } catch {
+      setSourceError(t('ops.watch_camera_error'));
+    }
+  };
+
+  const startFile = async (file: File) => {
+    stopSource();
+    if (!videoRef.current) return;
+    videoRef.current.srcObject = null;
+    videoRef.current.src = URL.createObjectURL(file);
+    videoRef.current.loop = false;
+    await videoRef.current.play().catch(() => {});
+    setSource('file');
+  };
+
+  /** Draws the current video frame into the working canvas (max 1280 px wide) and returns its context. */
+  const grabFrame = (): CanvasRenderingContext2D | null => {
+    const video = videoRef.current;
+    if (!video || video.readyState < 2 || !video.videoWidth) return null;
+    if (!frameCanvas.current) frameCanvas.current = document.createElement('canvas');
+    const scale = Math.min(1, 1280 / video.videoWidth);
+    const w = Math.round(video.videoWidth * scale);
+    const h = Math.round(video.videoHeight * scale);
+    const c = frameCanvas.current;
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx?.drawImage(video, 0, 0, w, h);
+    return ctx;
+  };
+
+  const cropBlock = (ctx: CanvasRenderingContext2D, roi: Roi) => {
+    const p = roiToPixels(roi, ctx.canvas.width, ctx.canvas.height);
+    return ctx.getImageData(p.x, p.y, p.w, p.h);
+  };
+
+  const cropJpegB64 = (ctx: CanvasRenderingContext2D, roi: Roi): string => {
+    const p = roiToPixels(roi, ctx.canvas.width, ctx.canvas.height);
+    const scale = Math.min(1, MACHINE_WATCH.cropMaxPx / Math.max(p.w, p.h));
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(p.w * scale));
+    out.height = Math.max(1, Math.round(p.h * scale));
+    out.getContext('2d')?.drawImage(ctx.canvas, p.x, p.y, p.w, p.h, 0, 0, out.width, out.height);
+    return out.toDataURL('image/jpeg', 0.85).split(',')[1];
+  };
+
+  // A soak run started on the bench after watching began is picked up within 30 s.
+  useEffect(() => {
+    if (mode !== 'watching' || runId) return;
+    const t = setInterval(() => refreshRuns(), 30_000);
+    return () => clearInterval(t);
+  }, [mode, runId, refreshRuns]);
+
+  // Re-render every 10 s while watching so "counted … ago" and "last read" stay current.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (mode !== 'watching') return;
+    const t = setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => clearInterval(t);
+  }, [mode]);
+
+  // Restart the camera when the phone is rotated before watching, so the frame matches the new orientation.
+  const startCameraRef = useRef(startCamera);
+  startCameraRef.current = startCamera;
+  const lastPortrait = useRef(portrait);
+  useEffect(() => {
+    if (lastPortrait.current === portrait) return;
+    lastPortrait.current = portrait;
+    if (source === 'camera' && mode === 'idle') {
+      const t = setTimeout(() => startCameraRef.current(), 400);
+      return () => clearTimeout(t);
+    }
+  }, [portrait, source, mode]);
+
+  // ---------- Setup ----------
+
+  const beginSetup = async () => {
+    const ctx = grabFrame();
+    if (!ctx) {
+      setMessage(t('ops.watch_start_camera_first'));
+      return;
+    }
+    const frame = ctx.canvas.toDataURL('image/jpeg', 0.9);
+    setSetupFrame(frame);
+    setMode('setup');
+    setMessage(null);
+    const b64 = frame.split(',')[1];
+    const next: DraftMachine[] = [];
+    for (let i = 1; i <= setupCount; i++) {
+      setBusy(t('ops.watch_finding_machine', { i, n: setupCount }));
+      const name = benchMachines ? ['CNC Mill 1', 'Press 2', 'Packer 3'][i - 1] ?? `Machine ${i}` : `Machine ${i}`;
+      try {
+        const res = await setupMachine(b64, { machine_count: setupCount, machine_index: i });
+        next.push({
+          name,
+          idealCycleS: 10,
+          rois: { stack_light: res.rois.stack_light, counter: res.rois.counter ?? undefined, hmi: res.rois.hmi ?? undefined },
+        });
+      } catch (e) {
+        const detail = e instanceof ApiError ? e.message : t('ops.watch_setup_failed');
+        setMessage(t('ops.watch_setup_failed_detail', { i, detail }));
+        next.push({ name, idealCycleS: 10, rois: { stack_light: { x: 0.1 + 0.3 * (i - 1), y: 0.1, w: 0.1, h: 0.3 } } });
+      }
+    }
+    setDrafts(next);
+    setBusy(null);
+  };
+
+  const saveSetup = async () => {
+    setBusy(t('ops.watch_saving'));
+    try {
+      const created: Machine[] = [];
+      for (const [i, d] of drafts.entries()) {
+        if (!d.rois.stack_light) continue;
+        created.push(
+          await createMachine({
+            name: d.name.trim() || `Machine ${i + 1}`,
+            rois: { stack_light: d.rois.stack_light, counter: d.rois.counter ?? null, hmi: d.rois.hmi ?? null },
+            ideal_cycle_s: d.idealCycleS,
+            source: benchMachines ? 'VIRTUAL' : 'LIVE',
+            bench_slot: benchMachines ? i + 1 : null,
+          })
+        );
+      }
+      await refreshLists();
+      setSelected(created.map((m) => m.id));
+      setMode('idle');
+      setSetupFrame(null);
+      setMessage(t('ops.watch_saved', { n: created.length }));
+    } catch {
+      setMessage(t('ops.watch_save_error'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Drag to move a box; drag its corner to resize.
+  const dragRef = useRef<{ idx: number; kind: RoiKind; resize: boolean; startX: number; startY: number; roi: NormalizedRoi } | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+
+  const onPointerDown = (e: React.PointerEvent, idx: number, kind: RoiKind, resize: boolean) => {
+    const roi = drafts[idx]?.rois[kind];
+    if (!roi) return;
+    e.stopPropagation();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { idx, kind, resize, startX: e.clientX, startY: e.clientY, roi: { ...roi } };
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    const box = overlayRef.current?.getBoundingClientRect();
+    if (!d || !box) return;
+    const dx = (e.clientX - d.startX) / box.width;
+    const dy = (e.clientY - d.startY) / box.height;
+    const roi = d.resize
+      ? { ...d.roi, w: clamp01(Math.max(0.02, d.roi.w + dx)), h: clamp01(Math.max(0.02, d.roi.h + dy)) }
+      : { ...d.roi, x: clamp01(d.roi.x + dx), y: clamp01(d.roi.y + dy) };
+    roi.w = Math.min(roi.w, 1 - roi.x);
+    roi.h = Math.min(roi.h, 1 - roi.y);
+    setDrafts((prev) => prev.map((m, i) => (i === d.idx ? { ...m, rois: { ...m.rois, [d.kind]: roi } } : m)));
+  };
+
+  const onPointerUp = () => {
+    dragRef.current = null;
+  };
+
+  // ---------- Watching ----------
+
+  const doRead = useCallback(
+    async (m: Machine, ctx: CanvasRenderingContext2D, reason: 'change' | 'heartbeat', kind: 'full' | 'count' = 'full') => {
+      const w = watchersRef.current[m.id];
+      if (!w || w.inFlight) return;
+      w.inFlight = true;
+      const now = Date.now();
+      w.lastReadAt = now;
+      if (m.rois.counter) {
+        w.lastCounterReadAt = now;
+        w.counterPending = false;
+      }
+      // A count-only read sends just the counter crop (about a third of the tokens of a full read).
+      const crops: { stack_light_b64?: string; counter_b64?: string; hmi_b64?: string } = {};
+      if (kind === 'full' || !m.rois.counter) crops.stack_light_b64 = cropJpegB64(ctx, m.rois.stack_light);
+      if (m.rois.counter) crops.counter_b64 = cropJpegB64(ctx, m.rois.counter);
+      if (kind === 'full' && m.rois.hmi) crops.hmi_b64 = cropJpegB64(ctx, m.rois.hmi);
+      const video = videoRef.current;
+      const offset = parseOffset(offsetText);
+      const videoRunS = source === 'file' && video && offset !== null ? Math.max(0, video.currentTime - offset) : undefined;
+      try {
+        const res = await readMachine(m.id, {
+          crops,
+          reason,
+          detected_by: 'gemini',
+          soak_run_id: runId || undefined,
+          video_run_s: videoRunS,
+        });
+        w.reads += 1;
+        if (kind === 'full') {
+          const stoppedNow = res.state === 'stopped' && w.prevState !== 'stopped';
+          const newAlarm = !!res.alarm_text && res.alarm_text !== w.prevAlarm;
+          if (stoppedNow || newAlarm) {
+            setAlerts((prev) => ({
+              ...prev,
+              [m.id]: { name: m.name, text: res.alarm_text ?? null, at: Date.now() },
+            }));
+            signalStop();
+          } else if (res.state === 'running' || res.state === 'idle') {
+            setAlerts((prev) => {
+              if (!prev[m.id]) return prev;
+              const next = { ...prev };
+              delete next[m.id];
+              return next;
+            });
+          }
+          w.prevState = res.state ?? w.prevState;
+          w.prevAlarm = res.alarm_text;
+        }
+        const hours = Math.max(1 / 60, (Date.now() - w.startedAt) / 3_600_000);
+        setViews((prev) => ({
+          ...prev,
+          [m.id]: {
+            ...(prev[m.id] ?? { edgeLight: 'off' }),
+            state: res.state,
+            count: res.count,
+            countAt: crops.counter_b64 ? Date.now() : (prev[m.id]?.countAt ?? null),
+            alarm: res.alarm_text,
+            lastReadAt: Date.now(),
+            readsPerHour: w.reads / hours,
+            error: null,
+          },
+        }));
+      } catch (e) {
+        const msg = e instanceof ApiError && e.status === 429 ? 'ops.watch_read_limit' : 'ops.watch_read_failed';
+        setViews((prev) => ({ ...prev, [m.id]: { ...(prev[m.id] as MachineView), error: msg } }));
+      } finally {
+        w.inFlight = false;
+      }
+    },
+    [offsetText, runId, source, signalStop]
+  );
+
+  const startWatching = () => {
+    if (!watched.length) {
+      setMessage(t('ops.watch_pick_machine'));
+      return;
+    }
+    const now = Date.now();
+    watchersRef.current = Object.fromEntries(
+      watched.map((m) => [
+        m.id,
+        {
+          light: new StableValue<string>(MACHINE_WATCH.lightStableFrames),
+          lightRegion: new RegionChange(MACHINE_WATCH.lightDiffThreshold, MACHINE_WATCH.regionStableFrames),
+          counter: new RegionChange(MACHINE_WATCH.regionDiffThreshold, MACHINE_WATCH.regionStableFrames),
+          hmi: new RegionChange(MACHINE_WATCH.regionDiffThreshold, MACHINE_WATCH.regionStableFrames),
+          cap: new RateCap(MACHINE_WATCH.maxReadsPerMinute, 60_000),
+          inFlight: false,
+          lastReadAt: 0,
+          lastCounterReadAt: 0,
+          counterPending: false,
+          reads: 0,
+          startedAt: now,
+          prevState: null,
+          prevAlarm: null,
+        },
+      ])
+    );
+    setViews({});
+    setAlerts({});
+    setMessage(null);
+    // This tap is the user gesture browsers need before a page may play sound.
+    try {
+      audioRef.current = audioRef.current ?? new AudioContext();
+      void audioRef.current.resume();
+    } catch {
+      audioRef.current = null;
+    }
+    // Full screen and landscape where the browser allows it (Android); iPhones keep the rotate hint.
+    document.documentElement.requestFullscreen?.().catch(() => {});
+    (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock?.('landscape').catch(() => {});
+    setMode('watching');
+  };
+
+  const stopWatching = () => {
+    setMode('idle');
+    setAlerts({});
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  };
+
+  useEffect(() => {
+    if (mode !== 'watching') return;
+    const timer = setInterval(() => {
+      const ctx = grabFrame();
+      if (!ctx) return;
+      const now = Date.now();
+      for (const m of watched) {
+        const w = watchersRef.current[m.id];
+        if (!w) continue;
+        const lit = stackLightLit(cropBlock(ctx, m.rois.stack_light), m.light_order);
+        const lightChanged = w.light.push(lit.light) !== undefined;
+        const lightRegionChanged = w.lightRegion.push(cropBlock(ctx, m.rois.stack_light));
+        const hmiChanged = m.rois.hmi ? w.hmi.push(cropBlock(ctx, m.rois.hmi)) : false;
+        if (m.rois.counter && w.counter.push(cropBlock(ctx, m.rois.counter))) w.counterPending = true;
+        setViews((prev) => (prev[m.id]?.edgeLight === lit.light ? prev : { ...prev, [m.id]: { ...(prev[m.id] ?? emptyView()), edgeLight: lit.light } }));
+
+        let reason: 'change' | 'heartbeat' | null = null;
+        let kind: 'full' | 'count' = 'full';
+        if (w.lastReadAt === 0 || lightChanged || lightRegionChanged || hmiChanged) reason = 'change';
+        else if (now - w.lastReadAt > MACHINE_WATCH.heartbeatMs) reason = 'heartbeat';
+        else if (w.counterPending && now - w.lastCounterReadAt > MACHINE_WATCH.counterReadEveryMs) {
+          reason = 'change';
+          kind = 'count';
+        }
+        if (reason && !w.inFlight && w.cap.tryTake(now)) doRead(m, ctx, reason, kind);
+      }
+    }, MACHINE_WATCH.frameIntervalMs);
+    return () => clearInterval(timer);
+  }, [mode, watched, doRead]);
+
+  // ---------- Render ----------
+
+  const watching = mode === 'watching';
+  // Largest box with the camera's shape that fits the screen (full-screen watch mode).
+  const fitted =
+    win.w / win.h > frameAspect
+      ? { width: win.h * frameAspect, height: win.h, left: (win.w - win.h * frameAspect) / 2, top: 0 }
+      : { width: win.w, height: win.w / frameAspect, left: 0, top: (win.h - win.w / frameAspect) / 2 };
+
+  const toggle = (id: string) => setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+
+  return (
+    <div className="min-h-screen bg-surface text-on-surface flex flex-col">
+      <header className="px-4 py-3 border-b border-outline-variant flex items-center gap-3">
+        <button type="button" onClick={() => navigate('/')} aria-label={t('ops.common_back_home')} className="min-w-[44px] min-h-[44px]">
+          <span className="material-symbols-outlined">arrow_back</span>
+        </button>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold">{t('ops.watch_title')}</h1>
+          <p className="text-xs text-on-surface-variant">{t('ops.watch_subtitle')}</p>
+        </div>
+      </header>
+
+      {source === 'file' && (
+        <div className="bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200 text-sm font-semibold px-4 py-2" role="status">
+          {t('ops.watch_simulated_input')}
+        </div>
+      )}
+
+      <main className="flex-1 grid lg:grid-cols-[1fr_380px] gap-4 p-4">
+        <section className="flex flex-col gap-3 min-w-0">
+          {portrait && source && mode !== 'watching' && (
+            <div className="bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100 rounded-xl px-4 py-3 text-sm font-semibold" role="status">
+              {t('ops.watch_rotate_hint')}
+            </div>
+          )}
+          <div
+            className={watching ? 'fixed inset-0 z-40 bg-black' : 'relative bg-black rounded-2xl overflow-hidden w-full'}
+            style={watching ? undefined : { aspectRatio: String(frameAspect) }}
+          >
+            {/* The picture box always has the camera's shape, so boxes line up with the image. */}
+            <div
+              ref={overlayRef}
+              className="absolute touch-none"
+              style={watching ? fitted : { inset: 0 }}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+            >
+            <video
+                ref={videoRef}
+                className={`w-full h-full object-contain ${mode === 'setup' ? 'hidden' : ''}`}
+                playsInline
+                muted
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  if (v.videoWidth && v.videoHeight) setFrameAspect(v.videoWidth / v.videoHeight);
+                }}
+                onResize={(e) => {
+                  // Fires when the camera's frame size changes, e.g. after rotating the phone.
+                  const v = e.currentTarget;
+                  if (v.videoWidth && v.videoHeight) setFrameAspect(v.videoWidth / v.videoHeight);
+                }}
+              />
+              {mode === 'setup' && setupFrame && (
+                <img
+                  src={setupFrame}
+                  alt={t('ops.watch_setup_frame_alt')}
+                  className="w-full h-full object-contain"
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    if (img.naturalWidth && img.naturalHeight) setFrameAspect(img.naturalWidth / img.naturalHeight);
+                  }}
+                />
+              )}
+              {(mode === 'setup' ? drafts : []).map((d, idx) =>
+                ROI_KINDS.map((kind) => {
+                  const r = d.rois[kind];
+                  if (!r) return null;
+                  return (
+                    <div
+                      key={`${idx}-${kind}`}
+                      className="absolute border-2 cursor-move"
+                      style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%`, borderColor: ROI_COLOUR[kind] }}
+                      onPointerDown={(e) => onPointerDown(e, idx, kind, false)}
+                    >
+                      <span className="absolute -top-5 left-0 text-[11px] font-bold px-1 rounded" style={{ background: ROI_COLOUR[kind], color: '#000' }}>
+                        M{idx + 1} {t(ROI_LABEL[kind])}
+                      </span>
+                      <span
+                        className="absolute -right-2 -bottom-2 w-5 h-5 rounded-full border-2 border-white cursor-se-resize"
+                        style={{ background: ROI_COLOUR[kind] }}
+                        onPointerDown={(e) => onPointerDown(e, idx, kind, true)}
+                      />
+                    </div>
+                  );
+                })
+              )}
+              {mode === 'watching' &&
+                watched.map((m) =>
+                  ROI_KINDS.map((kind) => {
+                    const r = m.rois[kind as keyof typeof m.rois] as NormalizedRoi | undefined;
+                    if (!r) return null;
+                    return (
+                      <div
+                        key={`${m.id}-${kind}`}
+                        className="absolute border pointer-events-none"
+                        style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%`, borderColor: ROI_COLOUR[kind] }}
+                      />
+                    );
+                  })
+                )}
+            </div>
+            {!source && (
+              <div className="absolute inset-0 flex items-center justify-center text-on-surface-variant text-sm p-4 text-center">
+                {t('ops.watch_mount_hint')}
+              </div>
+            )}
+            {watching && (
+              <>
+                <div className="absolute top-2 left-2 right-2 flex items-start justify-between gap-2 pointer-events-none">
+                  <div className="flex flex-col gap-2 pointer-events-auto">
+                    {Object.entries(alerts).map(([id, a]) => (
+                      <div key={id} className="bg-red-600 text-white rounded-xl px-4 py-3 shadow-lg animate-pulse" role="alert" data-testid="stop-alert">
+                        <div className="text-lg font-bold">{t('ops.watch_alert_title', { name: a.name })}</div>
+                        <div className="text-sm">{a.text ?? t('ops.watch_alert_stopped')}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 pointer-events-auto">
+                    <button type="button" onClick={() => setSoundOn((v) => !v)} aria-label={soundOn ? t('ops.watch_mute_alerts') : t('ops.watch_unmute_alerts')} className="min-w-[48px] min-h-[48px] rounded-xl bg-black/60 text-white">
+                      <span className="material-symbols-outlined">{soundOn ? 'volume_up' : 'volume_off'}</span>
+                    </button>
+                    <button type="button" onClick={stopWatching} className="min-h-[48px] px-4 rounded-xl bg-red-700 text-white font-bold">
+                      {t('ops.watch_stop')}
+                    </button>
+                  </div>
+                </div>
+                {portrait && (
+                  <div className="absolute inset-x-4 top-20 bg-amber-500/90 text-black rounded-xl px-4 py-3 text-sm font-bold text-center">
+                    {t('ops.watch_rotate_hint_short')}
+                  </div>
+                )}
+                <div className="absolute bottom-2 left-2 right-2 flex flex-wrap gap-2 justify-center">
+                  {watched.map((m) => {
+                    const v = views[m.id];
+                    const colour = v?.state === 'stopped' ? 'bg-red-600' : v?.state === 'idle' ? 'bg-amber-500 text-black' : v?.state === 'running' ? 'bg-green-600' : 'bg-neutral-700';
+                    return (
+                      <div key={m.id} className={`${colour} text-white rounded-xl px-3 py-2 text-sm shadow`} data-testid={`watch-chip-${m.id}`}>
+                        <span className="font-bold">{m.name}</span> · {v?.state ? stateLabel(t, v.state) : '…'}
+                        {v?.count !== null && v?.count !== undefined && ` · ${v.count}`}
+                        {v?.countAt && <span className="block text-[11px] opacity-80">{t('ops.watch_counted', { ago: sinceText(t, v.countAt) })}</span>}
+                        {v?.alarm && <span className="block text-xs">{v.alarm}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={startCamera} className="min-h-[56px] px-5 rounded-xl bg-primary text-on-primary font-bold">
+              {t('ops.watch_start_camera')}
+            </button>
+            {debug && (
+              <label className="min-h-[56px] px-5 rounded-xl bg-surface-container-high font-bold flex items-center cursor-pointer">
+                {t('ops.watch_use_video')}
+                <input type="file" accept="video/*" className="hidden" onChange={(e) => e.target.files?.[0] && startFile(e.target.files[0])} />
+              </label>
+            )}
+            {mode === 'watching' ? (
+              <button type="button" onClick={stopWatching} className="min-h-[56px] px-5 rounded-xl bg-red-700 text-white font-bold">
+                {t('ops.watch_stop')}
+              </button>
+            ) : (
+              <button type="button" onClick={startWatching} disabled={!source || mode === 'setup'} className="min-h-[56px] px-5 rounded-xl bg-emerald-700 text-white font-bold disabled:opacity-40">
+                {t('ops.watch_start')}
+              </button>
+            )}
+          </div>
+          {sourceError && <p className="text-red-300 text-sm">{sourceError}</p>}
+          {message && <p className="text-amber-800 dark:text-amber-200 text-sm font-semibold" role="status">{message}</p>}
+          {busy && <p className="text-on-surface-variant text-sm" role="status">{busy}</p>}
+        </section>
+
+        <aside className="flex flex-col gap-4">
+          {mode === 'setup' ? (
+            <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-3">
+              <h2 className="font-bold">{t('ops.watch_setup_title')}</h2>
+              <p className="text-sm text-on-surface-variant">{t('ops.watch_setup_hint')}</p>
+              {drafts.map((d, i) => (
+                <div key={i} className="flex flex-col gap-2 border-t border-outline-variant pt-2">
+                  <label className="text-sm">
+                    {t('ops.watch_setup_name')}
+                    <input
+                      value={d.name}
+                      onChange={(e) => setDrafts((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+                      className="w-full min-h-[44px] rounded-lg bg-surface-container-high px-2"
+                    />
+                  </label>
+                  <label className="text-sm">
+                    {t('ops.watch_setup_cycle')}
+                    <input
+                      type="number"
+                      min={0.1}
+                      step={0.1}
+                      value={d.idealCycleS}
+                      onChange={(e) => setDrafts((p) => p.map((x, j) => (j === i ? { ...x, idealCycleS: Number(e.target.value) || 10 } : x)))}
+                      className="w-full min-h-[44px] rounded-lg bg-surface-container-high px-2"
+                    />
+                  </label>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <button type="button" onClick={saveSetup} disabled={!!busy} className="min-h-[56px] flex-1 rounded-xl bg-primary text-on-primary font-bold">
+                  {t('ops.watch_setup_save')}
+                </button>
+                <button type="button" onClick={() => setMode('idle')} className="min-h-[56px] px-4 rounded-xl bg-surface-container-high">
+                  {t('ops.common_cancel')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-3">
+                <h2 className="font-bold">{t('ops.watch_new_title')}</h2>
+                <label className="text-sm flex items-center gap-2">
+                  {t('ops.watch_new_count')}
+                  <select value={setupCount} onChange={(e) => setSetupCount(Number(e.target.value))} className="min-h-[44px] rounded-lg bg-surface-container-high px-2">
+                    {[1, 2, 3].map((n) => (
+                      <option key={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm flex items-center gap-2">
+                  <input type="checkbox" checked={benchMachines} onChange={(e) => setBenchMachines(e.target.checked)} />
+                  {t('ops.watch_new_bench', { rig: 'HOME RIG' })}
+                </label>
+                <button type="button" onClick={beginSetup} disabled={!source || !!busy || mode === 'watching'} className="min-h-[56px] rounded-xl bg-surface-container-high font-bold disabled:opacity-40">
+                  {t('ops.watch_new_find')}
+                </button>
+              </div>
+
+              <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-2">
+                <h2 className="font-bold">{t('ops.watch_list_title')}</h2>
+                {machines.length === 0 && <p className="text-sm text-on-surface-variant">{t('ops.watch_list_empty')}</p>}
+                {[...listed, ...(showOlder ? older : [])].map((m) => (
+                  <div key={m.id} className="flex items-center gap-2 text-sm min-h-[44px]">
+                    <label className="flex flex-1 items-center gap-2 min-h-[44px]">
+                      <input type="checkbox" checked={selected.includes(m.id)} onChange={() => toggle(m.id)} disabled={mode === 'watching'} />
+                      <span className="flex-1 min-w-0 break-words">{m.name}</span>
+                      <span className="text-xs text-on-surface-variant">
+                        {m.source === 'VIRTUAL' ? 'HOME RIG' : 'LIVE'} · {stampText(m.created_at, language)}
+                      </span>
+                    </label>
+                    <button
+                      type="button"
+                      aria-label={t('ops.watch_list_remove', { name: m.name })}
+                      disabled={mode === 'watching'}
+                      onClick={async () => {
+                        try {
+                          await removeMachine(m.id);
+                          setSelected((prev) => prev.filter((x) => x !== m.id));
+                          await refreshLists();
+                        } catch {
+                          setMessage(t('ops.watch_remove_error'));
+                        }
+                      }}
+                      className="min-w-[44px] min-h-[44px] rounded-lg text-on-surface-variant disabled:opacity-40"
+                    >
+                      <span className="material-symbols-outlined">delete</span>
+                    </button>
+                  </div>
+                ))}
+                {older.length > 0 && (
+                  <button type="button" onClick={() => setShowOlder((v) => !v)} className="min-h-[44px] self-start px-3 rounded-lg text-sm font-bold text-primary">
+                    {showOlder ? t('ops.watch_list_older_hide') : t('ops.watch_list_older_show', { n: older.length })}
+                  </button>
+                )}
+              </div>
+
+              <div className="bg-surface-container rounded-2xl p-4 flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-bold">{t('ops.watch_run_title')}</h2>
+                  <button type="button" onClick={refreshRuns} disabled={mode === 'watching'} className="min-h-[44px] px-3 rounded-lg bg-surface-container-high text-sm font-bold">
+                    {t('ops.watch_run_refresh')}
+                  </button>
+                </div>
+                <select
+                  value={runId}
+                  onChange={(e) => setRunId(e.target.value)}
+                  onFocus={refreshRuns}
+                  disabled={mode === 'watching'}
+                  aria-label={t('ops.watch_run_label')}
+                  className="min-h-[44px] rounded-lg bg-surface-container-high px-2 text-sm"
+                >
+                  <option value="">{t('ops.watch_run_none')}</option>
+                  {runs.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.id.slice(-6).toUpperCase()} · {RUN_STATUSES.includes(r.status) ? t(`ops.watch_run_status_${r.status}`) : r.status} ·{' '}
+                      {new Date(r.started_at).toLocaleString(language)}
+                    </option>
+                  ))}
+                </select>
+                {source === 'file' && runId && (
+                  <label className="text-sm">
+                    {t('ops.watch_run_offset')}
+                    <input value={offsetText} onChange={(e) => setOffsetText(e.target.value)} placeholder="0:12" className="w-full min-h-[44px] rounded-lg bg-surface-container-high px-2" />
+                  </label>
+                )}
+              </div>
+            </>
+          )}
+
+          {mode === 'watching' && (
+            <div className="flex flex-col gap-2">
+              {watched.map((m) => {
+                const v = views[m.id];
+                const ago = v?.lastReadAt ? Math.round((Date.now() - v.lastReadAt) / 1000) : null;
+                return (
+                  <div key={m.id} className="bg-surface-container rounded-2xl p-3" data-testid={`watch-card-${m.id}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold min-w-0 break-words">{m.name}</span>
+                      <span className="text-xs px-2 py-1 rounded-full bg-surface-container-high">{v?.state ? stateLabel(t, v.state) : '…'}</span>
+                    </div>
+                    <div className="text-sm text-on-surface-variant mt-1">
+                      {t('ops.watch_card_light_count', { light: v?.edgeLight ?? '…', count: v?.count ?? '—' })}
+                      {v?.countAt ? ` (${t('ops.watch_counted', { ago: sinceText(t, v.countAt) })})` : ''}
+                    </div>
+                    {v?.alarm && <div className="text-sm text-red-300 font-bold">{v.alarm}</div>}
+                    <div className="text-xs text-on-surface-variant mt-1">
+                      {t('ops.watch_card_last_read', {
+                        ago: ago === null ? '—' : t('ops.common_s_ago', { n: ago }),
+                        n: v ? v.readsPerHour.toFixed(0) : 0,
+                      })}
+                    </div>
+                    {v?.error && <div className="text-xs text-amber-300">{t(v.error)}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </aside>
+      </main>
+    </div>
+  );
+};
+
+function emptyView(): MachineView {
+  return { edgeLight: 'off', state: null, count: null, countAt: null, alarm: null, lastReadAt: null, readsPerHour: 0, error: null };
+}
+
+function sinceText(t: TFn, at: number): string {
+  return agoText(t, (Date.now() - at) / 1000);
+}
+
+export default MachineWatchScreen;

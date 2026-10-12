@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takumi.dev/schemas/products.json",
+  "title": "Product",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique product identifier (e.g. pcb1, candle)"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable product name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Physical visual description of the product"
+    },
+    "defect_types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of defect types for this product"
+    },
+    "reference_image_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 3,
+      "maxItems": 3,
+      "description": "Cloud Storage paths to 3 known-good reference units"
+    },
+    "default_mode": {
+      "type": "string",
+      "enum": ["few_false_alarms", "catch_everything"],
+      "description": "Default inspection mode"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["LIVE", "PUBLIC DATA: VisA (CC BY 4.0)"],
+      "description": "Data provenance tag"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Product creation timestamp"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "description",
+    "defect_types",
+    "reference_image_paths",
+    "default_mode",
+    "source",
+    "created_at"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,208 @@
+{
+ "label": "TEST FIXTURES",
+ "generated": "2026-10-11",
+ "note": "Scripted scenarios with a known right answer, run through the deployed agent code and real Gemini calls. Not factory data.",
+ "maintenance": {
+  "n": 12,
+  "pass": {
+   "cause_in_guide": 12,
+   "minutes_from_guide": 12,
+   "repeat_flag_right": 12,
+   "safety_present": 12
+  },
+  "all_checks": 12,
+  "median_s": 17.2,
+  "cases": [
+   {
+    "alarm": "E-104",
+    "repeat": false,
+    "seconds": 16.4,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Dull or chipped cutting tool",
+    "priority": "medium"
+   },
+   {
+    "alarm": "E-104",
+    "repeat": true,
+    "seconds": 18.0,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Spindle Bearing Wear",
+    "priority": "high"
+   },
+   {
+    "alarm": "E-221",
+    "repeat": false,
+    "seconds": 15.2,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Coolant tank below minimum level",
+    "priority": "medium"
+   },
+   {
+    "alarm": "E-221",
+    "repeat": true,
+    "seconds": 17.0,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Leak at a hose, fitting, or the tank",
+    "priority": "high"
+   },
+   {
+    "alarm": "E-310",
+    "repeat": false,
+    "seconds": 17.2,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Guard door not fully closed",
+    "priority": "medium"
+   },
+   {
+    "alarm": "E-310",
+    "repeat": true,
+    "seconds": 18.7,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Door interlock switch misaligned or dirty",
+    "priority": "high"
+   },
+   {
+    "alarm": "E-415",
+    "repeat": false,
+    "seconds": 17.5,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Air hose disconnected, kinked, or leaking",
+    "priority": "medium"
+   },
+   {
+    "alarm": "E-415",
+    "repeat": true,
+    "seconds": 19.0,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Regulator set too low or filter blocked",
+    "priority": "high"
+   },
+   {
+    "alarm": "E-502",
+    "repeat": false,
+    "seconds": 16.1,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Part or blank stuck in the feeder",
+    "priority": "medium"
+   },
+   {
+    "alarm": "E-502",
+    "repeat": true,
+    "seconds": 14.7,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Feeder guide worn or misadjusted",
+    "priority": "high"
+   },
+   {
+    "alarm": "E-618",
+    "repeat": false,
+    "seconds": 17.2,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Oil cooler fins blocked with dust",
+    "priority": "medium"
+   },
+   {
+    "alarm": "E-618",
+    "repeat": true,
+    "seconds": 20.5,
+    "cause_in_guide": true,
+    "minutes_from_guide": true,
+    "repeat_flag_right": true,
+    "safety_present": true,
+    "top_cause": "Cooler fan failure or intermittent fan operation",
+    "priority": "high"
+   }
+  ]
+ },
+ "traceback": {
+  "cases": [
+   {
+    "name": "label on cable, mistake recorded at step 3",
+    "seconds": 21.8,
+    "step": 3,
+    "holds": [
+     "T1-0002"
+    ],
+    "confidence": "high",
+    "step_right": true,
+    "holds_exact": true,
+    "no_unsupported_hold": true
+   },
+   {
+    "name": "loose cable, step 2 not verified",
+    "seconds": 19.7,
+    "step": 2,
+    "holds": [
+     "T2-0011"
+    ],
+    "confidence": "high",
+    "step_right": true,
+    "holds_exact": true,
+    "no_unsupported_hold": true
+   },
+   {
+    "name": "no recorded cause",
+    "seconds": 21.6,
+    "step": null,
+    "holds": [],
+    "confidence": "low",
+    "step_right": true,
+    "holds_exact": true,
+    "no_unsupported_hold": true
+   },
+   {
+    "name": "two mistakes, only one explains the defect",
+    "seconds": 16.9,
+    "step": 3,
+    "holds": [
+     "T4-0032"
+    ],
+    "confidence": "high",
+    "step_right": true,
+    "holds_exact": true,
+    "no_unsupported_hold": true
+   }
+  ],
+  "n": 4,
+  "pass": {
+   "step_right": 4,
+   "holds_exact": 4,
+   "no_unsupported_hold": 4
+  },
+  "median_s": 20.65
+ },
+ "judge_model": "gemini-3.5-flash-lite"
+}

@@ -24,7 +24,8 @@
         "point",
         "verify",
         "coach_line",
-        "trainee_line"
+        "trainee_line",
+        "mistake_clip"
       ]
     },
     "source": {
