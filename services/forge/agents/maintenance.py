@@ -101,7 +101,7 @@ class MaintenanceTools:
             "state": m.get("state"),
             "alarm_text": m.get("last_alarm"),
             "last_count": m.get("last_count"),
-            "stopped_since": stopped_since,
+            # Minutes, not a timestamp: the draft is read by people on the floor.
             "minutes_stopped": minutes,
             "last_seen_at": m.get("last_seen_at"),
         }
@@ -152,7 +152,7 @@ INVESTIGATOR_INSTRUCTION = """You are the maintenance lead of a small factory. A
 2. Then call lookup_alarm_guide with the exact alarm text from the status. If the machine is not stopped, say so.
 3. Rank the likely causes. Use the history: the same alarm repeating in the last days, many stops, or a past
    work order that did not fix it make a deeper cause more likely. Cite the fact behind each cause.
-4. Write notes: what stopped and since when, ranked causes with evidence, ordered steps for the technician,
+4. Write notes: what stopped and for how many minutes, ranked causes with evidence, ordered steps for the technician,
    safety points, parts, typical time from the guide, whether it is a repeat issue, and a priority
    (urgent for a safety hazard, high if it stopped production and repeats, medium otherwise).
    Typical time: use the upper number of the guide's typical_minutes.
@@ -160,6 +160,7 @@ The alarm guide is a team-written guide, not a vendor manual. Never invent alarm
 
 REPORTER_INSTRUCTION = """Turn the maintenance lead's notes into the work order. Use only facts from the notes:
 {findings}
+Never write raw timestamps or ISO dates; say how long ago, for example "stopped 6 minutes ago".
 Steps are short imperative sentences. operator_alert is what a speaker on the floor says, for example:
 "Press 2 has stopped: coolant low. Please top up the coolant tank and check for leaks under the machine."
 No names of people."""
