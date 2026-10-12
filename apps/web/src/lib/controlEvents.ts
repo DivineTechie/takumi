@@ -23,7 +23,13 @@ export function agoText(t: TFn, seconds: number, withHours = false): string {
 const english: TFn = (key, params) => getTranslation('en', key, params);
 
 /** Plain-language line for one control-tower event (English when no `t` is given). */
-export function describe(e: ControlFeedItem, t: TFn = english): string {
+export function describe(e: ControlFeedItem, t: TFn = english, names: Record<string, string> = {}): string {
+  const name = e.kind === 'machine' && e.machine_id ? names[e.machine_id] : undefined;
+  const line = describeEvent(e, t, !!name);
+  return name ? `${name} · ${line}` : line;
+}
+
+function describeEvent(e: ControlFeedItem, t: TFn, named: boolean): string {
   const d = e.detail || {};
   const step = e.step ?? '?';
   switch (`${e.kind}.${e.event_type}`) {
@@ -52,8 +58,10 @@ export function describe(e: ControlFeedItem, t: TFn = english): string {
     case 'inspection.decision':
       return t('ops.event_supervisor_decision', { decision: String(e.status ?? '').replace('_', ' ') });
     case 'machine.state_change':
-      return t('ops.event_machine_state', {
-        from: d.from_state ? stateLabel(t, String(d.from_state)) : '?',
+      // The first reading of a newly watched machine has no previous state.
+      if (!d.from_state) return t('ops.event_machine_first', { to: stateLabel(t, String(d.to_state ?? e.status ?? '')) });
+      return t(named ? 'ops.event_state_short' : 'ops.event_machine_state', {
+        from: stateLabel(t, String(d.from_state)),
         to: stateLabel(t, String(d.to_state ?? e.status ?? '')),
       });
     case 'machine.alarm':

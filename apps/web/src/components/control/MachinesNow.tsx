@@ -33,7 +33,9 @@ export const MachinesNow: React.FC<{
   onDraft?: (m: Machine) => void;
   /** Called for machines that stopped while the page was open (not ones already stopped at load). */
   onNewStop?: (m: Machine) => void;
-}> = ({ onDraft, onNewStop }) => {
+  /** Receives every machine list it loads (the control tower names machines in its feed). */
+  onMachines?: (ms: Machine[]) => void;
+}> = ({ onDraft, onNewStop, onMachines }) => {
   const { t } = useI18n();
   const [machines, setMachines] = useState<Machine[] | null>(null);
   const [alertsOn, setAlertsOn] = useState(false);
@@ -42,6 +44,8 @@ export const MachinesNow: React.FC<{
   const loadedRef = useRef(false);
   const onNewStopRef = useRef(onNewStop);
   onNewStopRef.current = onNewStop;
+  const onMachinesRef = useRef(onMachines);
+  onMachinesRef.current = onMachines;
 
   const beep = useCallback(() => {
     const ctx = audioRef.current;
@@ -61,6 +65,7 @@ export const MachinesNow: React.FC<{
   const load = useCallback(async () => {
     try {
       const ms = await fetchMachines();
+      onMachinesRef.current?.(ms);
       const nowStopped = new Set(ms.filter((m) => liveState(m) === 'stopped').map((m) => m.id));
       const fresh = ms.filter((m) => nowStopped.has(m.id) && !stoppedRef.current.has(m.id));
       if (fresh.length > 0 && alertsOn) beep();

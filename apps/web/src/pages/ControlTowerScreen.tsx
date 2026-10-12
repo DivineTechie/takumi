@@ -65,6 +65,8 @@ export const ControlTowerScreen: React.FC = () => {
   const [error, setError] = useState(false);
   const [draftRequest, setDraftRequest] = useState<DraftRequest | null>(null);
   const [autoDraft, setAutoDraft] = useState(false);
+  const [machineNames, setMachineNames] = useState<Record<string, string>>({});
+  const onMachines = useCallback((ms: Machine[]) => setMachineNames(Object.fromEntries(ms.map((m) => [m.id, m.name]))), []);
   const requestDraft = useCallback((m: Machine) => setDraftRequest({ machineId: m.id, name: m.name, nonce: Date.now() + Math.random() }), []);
   // The voice copilot waits for the visible maintenance agent run to finish.
   const draftForCopilot = useCallback(
@@ -109,7 +111,7 @@ export const ControlTowerScreen: React.FC = () => {
       <main className="max-w-6xl mx-auto p-4 grid gap-4 lg:grid-cols-[1fr_380px]">
         <div className="space-y-4 min-w-0">
           <CopilotPanel draftWorkOrder={draftForCopilot} />
-          <MachinesNow onDraft={requestDraft} onNewStop={autoDraft ? requestDraft : undefined} />
+          <MachinesNow onDraft={requestDraft} onNewStop={autoDraft ? requestDraft : undefined} onMachines={onMachines} />
           <WorkOrdersPanel request={draftRequest} autoDraft={autoDraft} onAutoDraftChange={setAutoDraft} />
           <OrdersPanel />
           {error && <p className="text-red-400">{t('ops.tower_load_error')}</p>}
@@ -130,7 +132,7 @@ export const ControlTowerScreen: React.FC = () => {
               <li key={i} className="flex gap-2 text-sm">
                 <span className="material-symbols-outlined text-[18px] text-on-surface-variant shrink-0">{KIND_ICON[e.kind] ?? 'circle'}</span>
                 <div className="min-w-0">
-                  <div className="break-words">{describe(e, t)}</div>
+                  <div className="break-words">{describe(e, t, machineNames)}</div>
                   <div className="text-xs text-on-surface-variant">
                     {new Date(e.ts).toLocaleTimeString(language)} · {e.source}
                     {e.unit_id && (

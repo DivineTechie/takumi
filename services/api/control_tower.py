@@ -33,6 +33,8 @@ RECENT_SQL = """
 SELECT ts, kind, event_type, source, unit_id, machine_id, product_id, station, step, status, detail
 FROM `{table}`
 WHERE ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @hours HOUR)
+  -- Counter reads arrive every couple of minutes per machine; they feed the KPIs, not the human-readable feed.
+  AND NOT (kind = 'machine' AND event_type IN ('count', 'heartbeat'))
 ORDER BY ts DESC
 LIMIT @limit
 """
