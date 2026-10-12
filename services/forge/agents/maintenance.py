@@ -51,6 +51,19 @@ class WorkOrderDraft(BaseModel):
     operator_alert: str = Field(description="One or two short spoken sentences for the operator on the floor.")
 
 
+def stopped_for_text(minutes: float | None) -> str | None:
+    """'under a minute', '6 minutes', '1 h 20 min' (None when unknown)."""
+    if minutes is None:
+        return None
+    if minutes < 1:
+        return "under a minute"
+    if minutes < 60:
+        m = round(minutes)
+        return f"{m} minute" if m == 1 else f"{m} minutes"
+    h, m = divmod(round(minutes), 60)
+    return f"{h} h {m} min" if m else f"{h} h"
+
+
 class MaintenanceTools:
     """Read-only tools over Firestore for one stopped machine."""
 
@@ -101,8 +114,9 @@ class MaintenanceTools:
             "state": m.get("state"),
             "alarm_text": m.get("last_alarm"),
             "last_count": m.get("last_count"),
-            # Minutes, not a timestamp: the draft is read by people on the floor.
+            # Plain words, not a timestamp: the draft is read by people on the floor.
             "minutes_stopped": minutes,
+            "stopped_for": stopped_for_text(minutes),
             "last_seen_at": m.get("last_seen_at"),
         }
 
@@ -160,7 +174,8 @@ The alarm guide is a team-written guide, not a vendor manual. Never invent alarm
 
 REPORTER_INSTRUCTION = """Turn the maintenance lead's notes into the work order. Use only facts from the notes:
 {findings}
-Never write raw timestamps or ISO dates; say how long ago, for example "stopped 6 minutes ago".
+Never write raw timestamps, ISO dates or "0 minutes"; use the stopped_for wording from the notes, for example
+"stopped under a minute ago" or "stopped 6 minutes ago".
 Steps are short imperative sentences. operator_alert is what a speaker on the floor says, for example:
 "Press 2 has stopped: coolant low. Please top up the coolant tank and check for leaks under the machine."
 No names of people."""

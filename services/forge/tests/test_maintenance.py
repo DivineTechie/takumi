@@ -46,6 +46,12 @@ def test_status_reports_minutes_stopped_from_last_stop():
     s = MaintenanceTools(FakeDB(_store()), "m1", now=NOW).get_machine_status()
     assert s["state"] == "stopped" and s["alarm_text"] == "E-221 COOLANT LOW" and s["minutes_stopped"] == 6.0
     assert "stopped_since" not in s  # people read the draft: minutes, never a raw timestamp
+    assert s["stopped_for"] == "6 minutes"
+
+
+def test_stopped_for_wording():
+    from services.forge.agents.maintenance import stopped_for_text
+    assert [stopped_for_text(x) for x in (None, 0.2, 1.0, 6.4, 60, 80)] == [None, "under a minute", "1 minute", "6 minutes", "1 h", "1 h 20 min"]
 
 
 def test_history_is_this_machine_last_7_days_only():
