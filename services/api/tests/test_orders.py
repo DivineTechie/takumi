@@ -57,3 +57,14 @@ def test_list_projects_from_real_counts_and_excludes_gallery_inspections():
     assert o["rate_per_hour"] == round(100 / (24 / 60), 1)
     assert o["on_track"] is False and o["shortfall"] > 0
     assert o["machines"][0]["ideal_rate_per_hour"] == 450.0
+
+
+def test_orders_overdue_by_more_than_half_a_day_are_not_todays():
+    from shared.ops.demand import STALE_AFTER_HOURS, is_current
+
+    now = datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc)
+    due = lambda hours: {"due_at": (now + timedelta(hours=hours)).isoformat()}  # noqa: E731
+    assert is_current(due(3), now)
+    assert is_current(due(-2), now)  # overdue a little: still shown, with its shortfall
+    assert not is_current(due(-STALE_AFTER_HOURS - 1), now)
+    assert is_current({}, now)

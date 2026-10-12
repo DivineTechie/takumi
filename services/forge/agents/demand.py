@@ -20,7 +20,7 @@ from google.genai import types
 from pydantic import BaseModel, Field
 
 from services.forge.config import MODEL_FLASH
-from shared.ops.demand import order_status
+from shared.ops.demand import is_current, order_status
 
 logger = logging.getLogger("forge.agents.demand")
 
@@ -59,6 +59,8 @@ class DemandTools:
         out = []
         for snap in self.db.collection("orders").where("status", "==", "open").stream():
             order = snap.to_dict() or {}
+            if not is_current(order, self.now):
+                continue
             status = order_status(self.db, order, self.now)
             self.orders[status["order_id"]] = status
             out.append(status)

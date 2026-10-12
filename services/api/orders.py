@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.auth import AuthUser, get_firestore_client, require_role
-from shared.ops.demand import order_status
+from shared.ops.demand import is_current, order_status
 
 router = APIRouter(tags=["orders"])
 
@@ -58,6 +58,7 @@ def list_orders(user: AuthUser = Depends(require_role("supervisor"))) -> list[di
     db = get_firestore_client()
     now = datetime.now(timezone.utc)
     orders = [d.to_dict() or {} for d in db.collection("orders").where("status", "==", "open").stream()]
+    orders = [o for o in orders if is_current(o, now)]  # an order overdue for half a day is no longer today's
     orders.sort(key=lambda o: str(o.get("due_at") or ""))
     return [order_status(db, o, now) for o in orders]
 

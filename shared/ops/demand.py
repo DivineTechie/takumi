@@ -20,6 +20,20 @@ def _ts(v: Any) -> datetime | None:
         return None
 
 
+# An open order whose due time passed longer ago than this is no longer "today's" order.
+STALE_AFTER_HOURS = 12
+
+
+def is_current(order: dict[str, Any], now: datetime) -> bool:
+    """True while an open order is due, or overdue by less than STALE_AFTER_HOURS."""
+    due = _ts(order.get("due_at"))
+    if due is None:
+        return True
+    if due.tzinfo is None and now.tzinfo is not None:
+        due = due.replace(tzinfo=now.tzinfo)
+    return (now - due).total_seconds() <= STALE_AFTER_HOURS * 3600
+
+
 def machine_output(count_events: list[dict[str, Any]], since: datetime, now: datetime, rate_window_s: float = 1800.0) -> dict[str, Any]:
     """Parts made since `since` and the parts/hour over the last `rate_window_s` (accepted counter reads only)."""
     pts = sorted(
