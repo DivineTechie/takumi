@@ -996,6 +996,8 @@ export const CoachLiveView: React.FC<CoachLiveViewProps> = ({
       micHandleRef.current?.stop();
       client.close();
     };
+    // The coaching language is fixed for the whole session; changing it later must not reconnect Live.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream, outputAudioContext, micAudioContext]);
 
   // Sync speakerMode updates dynamically

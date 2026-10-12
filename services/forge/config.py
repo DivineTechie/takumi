@@ -1,18 +1,16 @@
-"""Model IDs and runtime configuration for TAKUMI Forge service.
+"""Model IDs and runtime configuration for TAKUMI Forge service (Google ADK agents and the Studio).
 
-Model IDs live ONLY in services/*/config.py and apps/web/src/config.ts.
-Never use Gemini 1.x/2.x names or Imagen.
-Do not set temperature (deprecated on 3.6+).
+Model IDs live ONLY in services/*/config.py. Never use Gemini 1.x/2.x names or Imagen.
+Do not set temperature (deprecated on 3.6+). Each ID can be overridden with an environment
+variable of the same name, so a retired preview model can be swapped without a code change.
 """
 
 import os
 
 # Approved Google Model IDs
-MODEL_FLASH = "gemini-3.8-flash"
-MODEL_FLASH_LITE = "gemini-3.5-flash-lite"
-MODEL_ROBOTICS_ER = "gemini-robotics-er-2-preview"
-MODEL_OMNI = "gemini-omni-1.1-flash"
-MODEL_TTS = "gemini-3.8-flash-tts"
+MODEL_FLASH = os.environ.get("MODEL_FLASH", "gemini-3.8-flash")
+MODEL_FLASH_LITE = os.environ.get("MODEL_FLASH_LITE", "gemini-3.5-flash-lite")
+MODEL_ROBOTICS_ER = os.environ.get("MODEL_ROBOTICS_ER", "gemini-robotics-er-2-preview")
 
 # Environment & Credentials
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
