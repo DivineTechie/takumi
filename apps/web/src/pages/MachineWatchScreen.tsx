@@ -745,7 +745,7 @@ export const MachineWatchScreen: React.FC = () => {
             )}
           </div>
           {sourceError && <p className="text-red-300 text-sm">{sourceError}</p>}
-          {message && <p className="text-amber-200 text-sm" role="status">{message}</p>}
+          {message && <p className="text-amber-800 dark:text-amber-200 text-sm font-semibold" role="status">{message}</p>}
           {busy && <p className="text-on-surface-variant text-sm" role="status">{busy}</p>}
         </section>
 
