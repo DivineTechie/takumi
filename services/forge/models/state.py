@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class StepData(BaseModel):
     n: int
+    title: str = ""
     instruction: str
     success_criteria: str
     why: str = ""
@@ -16,13 +17,10 @@ class StepData(BaseModel):
     common_mistakes: list[dict[str, str]] = Field(default_factory=list)
     point_hint: str | None = None
     point_yx: list[int] | None = None
-    clip: dict[str, float] = Field(default_factory=lambda: {"start_s": 0.0, "end_s": 10.0})
-    keyframe_s: float = 0.0
-    keyframe_uri: str | None = None
-    card_image_uri: str | None = None
-    mistake_clip_uri: str | None = None
+    clip: dict[str, float] | None = None
+    keyframe_s: float | None = None
     verifier: dict[str, Any] | None = None
-    translations: dict[str, dict[str, str]] = Field(default_factory=dict)
+    translations: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class ForgeState(BaseModel):
@@ -30,17 +28,18 @@ class ForgeState(BaseModel):
     capture_id: str
     skill_id: str
     title: str = ""
-    source_language: str = "ja"
-    languages: list[str] = Field(default_factory=lambda: ["en", "ja", "vi", "hi", "id", "fil"])
+    source_language: str = "en"
+    # Languages the lesson is available in; the localizer adds each language it really translated.
+    languages: list[str] = Field(default_factory=lambda: ["en"])
     master_info: dict[str, str] = Field(
         default_factory=lambda: {"display_name": "Master Craftsman", "role": "Senior Technician"}
     )
     video_uri: str = ""
     duration_s: float = 0.0
     transcript: list[dict[str, Any]] = Field(default_factory=list)
-    manual_uris: list[str] = Field(default_factory=list)
-    file_search_store: str | None = None
     safety_rules: list[str] = Field(default_factory=list)
     steps: list[StepData] = Field(default_factory=list)
-    glossary: dict[str, dict[str, str]] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
+    # Local copy of the video for this run only (a temp dir the pipeline deletes at the end).
+    work_dir: str | None = Field(default=None, exclude=True)
+    local_video_path: str | None = Field(default=None, exclude=True)

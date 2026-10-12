@@ -1,126 +1,119 @@
-"""Node 4: spatial_annotator (B4) - extracts spatial coordinate hints and mistake cues."""
+"""Node 3: spatial_annotator - Gemini Robotics-ER points at the part each step acts on.
 
-import io
-import time
+One key frame per step is cut from the video in memory (never stored) and sent with the step's point
+target. The first point becomes the step's point_yx ([y, x], 0-1000). When there is no frame or the
+call fails, the step simply has no pointer.
+"""
+
+import asyncio
+import json
 import logging
-from PIL import Image, ImageDraw
-from services.forge.config import (
-    MODEL_ROBOTICS_ER,
-    MODEL_FLASH_LITE,
-    MOCK_MODELS,
-    GEMINI_API_KEY,
-)
-from services.forge.models.state import ForgeState
+import time
+from typing import Any
+
+from google.genai import types
+from pydantic import BaseModel, Field
+
+from services.forge import gemini
+from services.forge.config import MODEL_ROBOTICS_ER, STUDIO_POINT_TIMEOUT_S
 from services.forge.events import emit
-from services.forge.storage_client import upload_bytes
+from services.forge.media import extract_frame_jpeg
+from services.forge.models.state import ForgeState, StepData
 
 logger = logging.getLogger("forge.node.spatial_annotator")
 
+MAX_PARALLEL = 4
 
-def draw_point_annotation(image_bytes: bytes, yx: list[int], label: str) -> bytes:
-    """Draws a high-visibility pointer circle and label at normalized [y, x] coordinates."""
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    width, height = img.size
-    y = int((yx[0] / 1000.0) * height)
-    x = int((yx[1] / 1000.0) * width)
 
-    draw = ImageDraw.Draw(img)
-    radius = 16
+class PointItem(BaseModel):
+    point: list[int] = Field(description="[y, x] normalized to 0-1000, y first")
+    label: str = Field(description="What is pointed at")
 
-    # Amber glowing target circle
-    draw.ellipse([x - radius, y - radius, x + radius, y + radius], outline=(245, 158, 11), width=4)
-    draw.ellipse([x - 4, y - 4, x + 4, y + 4], fill=(239, 68, 68))
 
-    # High contrast badge tag
-    box_x0 = min(width - 150, max(10, x - 60))
-    box_y0 = max(10, y - 40)
-    draw.rectangle([box_x0, box_y0, box_x0 + 130, box_y0 + 26], fill=(24, 24, 27), outline=(245, 158, 11))
-    draw.text((box_x0 + 8, box_y0 + 6), label[:18], fill=(255, 255, 255))
+class PointerResponse(BaseModel):
+    points: list[PointItem] = Field(default_factory=list, description="At most 3 points")
 
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=85)
-    return buf.getvalue()
+
+def parse_points(text: str | None) -> list[dict[str, Any]]:
+    """Reads Robotics-ER points from {"points": [...]} or a bare list; clamps to 0-1000, keeps at most 3."""
+    try:
+        data = json.loads(gemini.strip_fence(text))
+    except (json.JSONDecodeError, TypeError):
+        return []
+    items = data.get("points", []) if isinstance(data, dict) else data if isinstance(data, list) else []
+    points = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        coords = item.get("point")
+        if not isinstance(coords, (list, tuple)) or len(coords) < 2:
+            continue
+        try:
+            y, x = (max(0, min(1000, int(round(float(c))))) for c in coords[:2])
+        except (TypeError, ValueError):
+            continue
+        points.append({"point": [y, x], "label": str(item.get("label") or "")})
+        if len(points) == 3:
+            break
+    return points
+
+
+def pointer_prompt(step: StepData) -> str:
+    return (
+        f'Point to {step.point_hint} in this image. The worker is doing: "{step.instruction}".\n'
+        'Answer as JSON {"points": [{"point": [y, x], "label": "<short label>"}]} with at most 3 points, '
+        "y first, both normalized to 0-1000. Return an empty list if it is not visible."
+    )
+
+
+async def point_step(step: StepData, video_path: str) -> tuple[list[int] | None, str]:
+    """Returns ([y, x], '') or (None, reason)."""
+    if step.keyframe_s is None or not step.point_hint:
+        return None, "no key frame time or point target"
+    frame = await asyncio.to_thread(extract_frame_jpeg, video_path, step.keyframe_s)
+    if not frame:
+        return None, "no frame could be read at the key frame time"
+    text = await gemini.generate_text(
+        MODEL_ROBOTICS_ER,
+        [types.Part.from_bytes(data=frame, mime_type="image/jpeg"), pointer_prompt(step)],
+        gemini.json_config(PointerResponse),
+        timeout_s=STUDIO_POINT_TIMEOUT_S,
+    )
+    points = parse_points(text)
+    if not points:
+        return None, "Robotics-ER did not find the target in the frame"
+    return points[0]["point"], ""
 
 
 async def run_spatial_annotator(state: ForgeState) -> ForgeState:
-    t0 = time.time()
-    emit(state.job_id, "spatial", "Extracting spatial focus points with Robotics-ER...", "info")
+    t0 = time.perf_counter()
+    emit(state.job_id, "spatial", f"Pointing at each step's part with {MODEL_ROBOTICS_ER}", "info")
 
-    for step in state.steps:
-        # Default spatial hints based on step index
-        if step.n == 1:
-            step.point_hint = "the screw opening of terminal 1"
-            step.point_yx = [450, 420]
-            step.common_mistakes = [
-                {
-                    "description": "Wire inserted into terminal 2 instead of 1",
-                    "visual_cue": "blue wire entering second slot rather than first slot",
-                }
-            ]
-        elif step.n == 2:
-            step.point_hint = "the screw opening of terminal 2"
-            step.point_yx = [450, 550]
-            step.common_mistakes = [
-                {
-                    "description": "Wire in terminal 3",
-                    "visual_cue": "brown wire in the third slot",
-                }
-            ]
-        elif step.n == 3:
-            step.point_hint = "the screw opening of terminal 3"
-            step.point_yx = [450, 680]
-            step.common_mistakes = [
-                {
-                    "description": "Loose terminal screw",
-                    "visual_cue": "screw head elevated above adjacent terminals",
-                }
-            ]
-        else:
-            step.point_hint = "wire insertion zone"
-            step.point_yx = [480, 550]
-            step.common_mistakes = [
-                {
-                    "description": "Excessive tug dislodging ferrule",
-                    "visual_cue": "wire moves more than 2 mm under test",
-                }
-            ]
+    if not state.local_video_path:
+        emit(state.job_id, "spatial", "No local video for key frames; steps have no pointer", "warn")
+        emit(state.job_id, "spatial", f"Pointed at 0 of {len(state.steps)} steps", "info", ms=int((time.perf_counter() - t0) * 1000))
+        return state
 
-        # Draw annotated keyframe
-        # Synthesize baseline image
-        from services.forge.graph.nodes.segmenter import create_placeholder_keyframe
-        base_img = create_placeholder_keyframe(step.n, state.title)
-        annotated_bytes = draw_point_annotation(base_img, step.point_yx, step.point_hint)
-        annotated_path = f"skills/{state.skill_id}/keyframes/{step.n}_annotated.jpg"
-        annotated_uri = upload_bytes(annotated_bytes, annotated_path, content_type="image/jpeg")
+    gate = asyncio.Semaphore(MAX_PARALLEL)
 
-        # Self-check verification with gemini-3.5-flash-lite
-        if not MOCK_MODELS and GEMINI_API_KEY:
+    async def one(step: StepData) -> None:
+        async with gate:
             try:
-                from google import genai
-                client = genai.Client(api_key=GEMINI_API_KEY)
-                prompt = f"Classify this keyframe for step completion: '{step.success_criteria}'. Options: done, in_progress, mistake, not_visible. Output one word."
-                res = client.models.generate_content(
-                    model=MODEL_FLASH_LITE,
-                    contents=[prompt],
-                )
-                classification = (res.text or "").strip().lower()
-                if "done" not in classification:
-                    emit(
-                        state.job_id,
-                        "spatial",
-                        f"Step {step.n} keyframe classified as '{classification}', maintaining original criteria",
-                        "warn",
-                    )
-            except Exception as err:
-                logger.warning("Spatial self-check call skipped: %s", err)
+                yx, reason = await point_step(step, state.local_video_path)
+            except Exception as e:
+                yx, reason = None, str(e)
+        step.point_yx = yx
+        if yx is None:
+            emit(state.job_id, "spatial", f"Step {step.n}: no pointer ({reason[:200]})", "warn")
 
-    duration_ms = int((time.time() - t0) * 1000)
+    await asyncio.gather(*(one(s) for s in state.steps))
+
+    pointed = sum(1 for s in state.steps if s.point_yx)
     emit(
         state.job_id,
         "spatial",
-        f"Resolved spatial coordinates [y, x] and annotated {len(state.steps)} keyframes",
+        f"{MODEL_ROBOTICS_ER} pointed at the part in {pointed} of {len(state.steps)} steps (key frames kept in memory only)",
         "info",
-        artifact_uri=f"gs://{state.skill_id}/keyframes/1_annotated.jpg",
-        ms=duration_ms,
+        ms=int((time.perf_counter() - t0) * 1000),
     )
     return state
