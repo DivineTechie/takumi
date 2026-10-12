@@ -24,9 +24,8 @@ flowchart TD
     Live["gemini-3.8-live<br/>Station Watch voice, Ask TAKUMI copilot (single-use tokens)"]
     TTS["gemini-3.8-flash-tts<br/>spoken floor alerts in 6 languages"]
     Lite["gemini-3.5-flash-lite<br/>inspection screen, step watcher, machine reads"]
-    Flash["gemini-3.8-flash<br/>inspection confirm, step verifier, ADK agents"]
+    Flash["gemini-3.8-flash<br/>inspection confirm, step verifier, ADK agents,<br/>Studio video segmentation and translation"]
     ER["gemini-robotics-er-2-preview<br/>pointing, Machine Watch setup"]
-    Omni["gemini-omni-1.1-flash<br/>demo video segmentation"]
   end
 
   subgraph Data["Data"]
@@ -43,7 +42,7 @@ flowchart TD
   Station & MachineCam & Inspect & Office --> Hosting --> API
   Office -- "/forge/*" --> Forge
   API --> Lite & Flash & ER & TTS
-  Forge --> Flash & Omni & ER
+  Forge --> Flash & Lite & ER
   API --> FS & GCS
   Forge --> FS
   API -- "every event" --> PS --> BQ
@@ -59,7 +58,7 @@ flowchart TD
 - **Trace-back.** `POST /forge/agents/traceback` (supervisor) runs an ADK investigator agent with read-only tools (unit history, similar units at the same station and step, the step's work instruction) and a reporter agent with a response schema. Hold candidates are checked against what the tools returned. Holds (`POST /api/units/hold`) and review requests (`POST /api/review-requests`) happen only when a supervisor approves; the master applies a request in the Studio.
 - **Maintenance agent.** `POST /forge/agents/maintenance` (supervisor, machine must be stopped) runs an ADK investigator with four read-only tools (machine status, 7-day stops and alarms, the alarm guide, past work orders), called in parallel with low thinking, and a Flash-Lite reporter with a response schema. The draft is saved in `work_orders`; a repeat request for the same stop within an hour returns the same draft. `POST /api/work-orders/{id}/decision` approves or dismisses it (published as an event); `POST /api/work-orders/{id}/speak` translates the floor alert (Flash-Lite) and speaks it (Gemini TTS), caching the audio in Cloud Storage per language.
 - **Ask TAKUMI.** The control tower opens a Gemini Live session with a single-use, supervisor-only token. The model's function calls (machines now, orders projection, quality totals, work orders, the planner agent, the maintenance agent) run in the browser against TAKUMI's API with the supervisor's own sign-in, so the model can only see data the supervisor can see and cannot approve anything.
-- **Standard Work Studio.** An ADK 2 `Workflow` graph of FunctionNodes: load capture, segment, extract reasons, spatial hints, verify, localise, then illustration and mistake clips in parallel, join, publish.
+- **Standard Work Studio.** An ADK 2 `Workflow` graph of FunctionNodes: load the capture, then `gemini-3.8-flash` watches the uploaded video (Gemini Files API, deleted after use) and writes the steps with their reasons and timestamps; then in parallel Robotics-ER points at each step's part on an in-memory key frame, Flash-Lite checks that each success criterion is a visible fact, and Flash translates into five languages; join, then the lesson is validated against the schema and saved for the master's review. Each node reports its own progress and errors; runs are limited per master per day. Details: [services/forge/README.md](../services/forge/README.md).
 - **Events.** `services/api/events_bus.py` publishes one event shape to Pub/Sub (fire-and-forget, never slowing a request). A BigQuery subscription writes it to `takumi.events` (partitioned by day, clustered by kind and source). `GET /api/control/summary` aggregates it per source label for the control tower.
 
 ## Security and privacy

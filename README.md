@@ -19,7 +19,7 @@ TAKUMI turns **a camera the factory already has** (an old phone or a cheap webca
 | **Station Watch** | At a manual station the camera follows each step of the work instruction, speaks to the operator in their language, points at the right spot, blocks the unit until a step is visibly correct, and raises a full-screen STOP on a safety hazard. | `gemini-3.8-live` (voice), `gemini-3.5-flash-lite` (step watcher), `gemini-3.8-flash` (verifier), `gemini-robotics-er-2-preview` (pointing) |
 | **Machine Watch** | The camera reads stack lights, parts counters and HMI alarm screens, with no wiring: uptime, stops, alarms and counts. "Gemini configures, the edge watches, Gemini reasons": one setup call finds the regions, the browser checks them for free twice a second, and Gemini reads them only when something changes. | `gemini-robotics-er-2-preview` (setup), `gemini-3.5-flash-lite` (reads) |
 | **Unit records & quality trace-back** | Each unit's serial links its stations and inspections. When a unit fails, an ADK agent finds the station and step where the defect most likely started, the other units that went through the same step, and a fix to the work instruction. The supervisor approves holds; the master applies the fix in the Standard Work Studio. | Google ADK agents on `gemini-3.8-flash`, Firestore |
-| **Standard Work Studio** | A master demonstrates a task once; a Google ADK 2 workflow turns the video into a step-by-step instruction with success criteria, the reason for each step, pointing hints and translations into 6 languages. | ADK 2 Workflow graph, `gemini-omni-1.1-flash`, `gemini-3.8-flash`, `gemini-robotics-er-2-preview` |
+| **Standard Work Studio** | A master demonstrates a task once; a Google ADK 2 workflow turns the video into a step-by-step instruction with success criteria, the reason for each step, pointing hints and translations into 6 languages, checked by a model and reviewed by the master. | ADK 2 Workflow graph, `gemini-3.8-flash` (video), `gemini-robotics-er-2-preview`, `gemini-3.5-flash-lite` |
 | **Events pipeline & control tower** | Every station step, inspection, machine event and hold is published to Pub/Sub; a BigQuery subscription stores it; the control tower shows quality, stoppages and holds per source. | Pub/Sub, BigQuery |
 | **Maintenance agent** | When a machine stops, an ADK agent reads its state, 7 days of stops and alarms, the alarm guide and past work orders, and drafts a work order with likely causes, steps, safety and parts. The supervisor approves; the floor alert is spoken in six languages. | Google ADK agents on `gemini-3.8-flash`, `gemini-3.8-flash-tts` |
 | **Ask TAKUMI** | Supervisors ask by voice in any language ("Will we make today's orders?"). Gemini Live answers by voice using tools over TAKUMI's own data and can call the maintenance and planner agents; it cannot approve anything. | `gemini-3.8-live` with function calling, single-use tokens |
@@ -58,11 +58,10 @@ Every number TAKUMI shows is labelled **LIVE** (our deployment), **HOME RIG** (o
 
 | Service / model | Job in TAKUMI |
 |---|---|
-| `gemini-3.5-flash-lite` | Inspection screening against references; Station Watch step watcher; Machine Watch reads |
-| `gemini-3.8-flash` | Inspection confirmation; step verification against visible success criteria; trace-back agent |
+| `gemini-3.5-flash-lite` | Inspection screening against references; Station Watch step watcher; Machine Watch reads; Studio check that success criteria are visible facts |
+| `gemini-3.8-flash` | Inspection confirmation; step verification against visible success criteria; trace-back agent; segmenting a master's demonstration video into steps and translating them |
 | `gemini-3.8-live` | Real-time voice coaching in 6 languages |
-| `gemini-robotics-er-2-preview` | Pointing at parts; finding stack lights, counters and HMI screens at Machine Watch setup |
-| `gemini-omni-1.1-flash` | Segmenting a master's demonstration video into steps |
+| `gemini-robotics-er-2-preview` | Pointing at parts (live and on each Studio step's key frame); finding stack lights, counters and HMI screens at Machine Watch setup |
 | Google ADK 2 | Standard Work Studio workflow graph; quality trace-back agent (investigator with tools + reporter with a response schema) |
 | Cloud Run, Firebase Hosting, Firebase Auth | Serving, sign-in, roles (trainee, supervisor, master) |
 | Firestore, Cloud Storage | Records and media (signed URLs only) |
