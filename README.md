@@ -11,6 +11,7 @@ Any camera a factory already has becomes its quality and operations layer, built
 
 | | Link |
 | :--- | :--- |
+| 🎥 **Demo video** (2:49) | [youtu.be/C8BlBFzSVY4](https://youtu.be/C8BlBFzSVY4) |
 | 🌐 **Live app** | [takumi-cup-2026.web.app](https://takumi-cup-2026.web.app) |
 | 🧭 **Judges' guide** (accounts and 5-minute walkthroughs) | [docs/JUDGES.md](docs/JUDGES.md) |
 | 🎬 **Product tour** (no sign-in needed) | [takumi-cup-2026.web.app/tour](https://takumi-cup-2026.web.app/tour) |
@@ -56,7 +57,7 @@ All screenshots are of the deployed app.
 | <img src="docs/screenshots/ask-takumi.jpg" alt="Ask TAKUMI voice copilot answering in Hindi" width="440"><br>**Ask TAKUMI:** a spoken question in Hindi, answered by voice from real counts | <img src="docs/screenshots/machine-watch.jpg" alt="Machine Watch on a phone detecting a stop" width="440"><br>**Machine Watch:** the phone sees Press 2 stop with an alarm in seconds |
 | <img src="docs/screenshots/machine-setup.jpg" alt="Gemini Robotics-ER finds each light, counter and screen" width="200"><br>**Setup:** Gemini Robotics-ER boxes every lamp, counter and screen | <img src="docs/screenshots/station-watch-hindi.jpg" alt="Station Watch start screen in Hindi" width="200"><br>**Station Watch** in the operator's language (six languages) |
 
-A 2:49 demo video shows the whole shift end to end.
+[Watch the 2:49 demo video](https://youtu.be/C8BlBFzSVY4): the whole shift end to end, recorded on the live app.
 
 ---
 

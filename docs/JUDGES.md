@@ -1,5 +1,6 @@
 # TAKUMI (匠): judges' guide
 
+- **Demo video (2:49)**: [https://youtu.be/C8BlBFzSVY4](https://youtu.be/C8BlBFzSVY4)
 - **Live app**: [https://takumi-cup-2026.web.app](https://takumi-cup-2026.web.app)
 - **System status**: [https://takumi-cup-2026.web.app/status](https://takumi-cup-2026.web.app/status)
 - **No sign-in needed**: [product tour](https://takumi-cup-2026.web.app/tour) · [evaluations](https://takumi-cup-2026.web.app/evals)
