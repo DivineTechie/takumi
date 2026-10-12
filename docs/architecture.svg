@@ -64,8 +64,8 @@
   <rect class="run" x="700" y="264" width="470" height="150" rx="10"/>
   <text class="t" x="715" y="290">takumi-forge · Cloud Run</text>
   <text class="s" x="715" y="314">• Standard Work Studio: Google ADK 2 Workflow graph</text>
-  <text class="s" x="715" y="334">  (segment, reasons, pointing hints, verify, translate,</text>
-  <text class="s" x="715" y="354">  media in parallel, publish)</text>
+  <text class="s" x="715" y="334">  (video to steps, then pointing, criteria check and</text>
+  <text class="s" x="715" y="354">  translation in parallel, publish for review)</text>
   <text class="s" x="715" y="374">• Google ADK agents: maintenance work orders, quality</text>
   <text class="s" x="715" y="394">  trace-back, demand planner (read-only tools, schemas)</text>
 
@@ -87,16 +87,16 @@
   <text class="s" x="273" y="513">watcher, machine reads</text>
   <rect class="ai" x="488" y="450" width="214" height="74" rx="10"/>
   <text class="t" x="502" y="476">gemini-3.8-flash</text>
-  <text class="s" x="502" y="497">inspection confirm, step</text>
-  <text class="s" x="502" y="513">verifier, ADK agents</text>
+  <text class="s" x="502" y="497">confirm, step verifier,</text>
+  <text class="s" x="502" y="513">Studio video, ADK agents</text>
   <rect class="ai" x="717" y="450" width="214" height="74" rx="10"/>
   <text class="t" x="731" y="476">gemini-robotics-er-2</text>
   <text class="s" x="731" y="497">pointing at parts,</text>
   <text class="s" x="731" y="513">Machine Watch setup</text>
   <rect class="ai" x="946" y="450" width="214" height="74" rx="10"/>
-  <text class="t" x="960" y="476">gemini-omni-1.1-flash</text>
-  <text class="s" x="960" y="497">segments a master's</text>
-  <text class="s" x="960" y="513">demonstration video</text>
+  <text class="t" x="960" y="476">Gemini Files API</text>
+  <text class="s" x="960" y="497">master video for Studio</text>
+  <text class="s" x="960" y="513">segmentation (deleted)</text>
 
   <!-- Data -->
   <path class="a" d="M251 414 V556"/><path class="a" d="M480 414 V556"/>

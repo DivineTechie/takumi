@@ -29,7 +29,6 @@ export function useResumableUpload(): UseResumableUploadResult {
   useEffect(() => {
     const handleOnline = () => {
       if (uploadTaskRef.current && uploadTaskRef.current.snapshot.state === 'paused') {
-        console.log('Network restored. Resuming upload...');
         uploadTaskRef.current.resume();
       }
     };
@@ -131,21 +130,9 @@ export function useResumableUpload(): UseResumableUploadResult {
           (snapshot) => {
             const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
             setUploadProgress(Math.round(progress));
-
-            if (snapshot.state === 'paused') {
-              console.log('Upload paused (possibly network drop)');
-            }
           },
           (error) => {
-            console.warn('Firebase Storage upload failed/unauthorized:', error);
-            if (error.code === 'storage/unauthorized') {
-              console.warn('Storage unauthorized (requires master auth). Falling back to mock URI.');
-              setIsUploading(false);
-              setUploadProgress(100);
-              const bucket = storage.app.options.storageBucket || 'takumi-cup-2026.firebasestorage.app';
-              resolve(`gs://${bucket}/${targetPath}`);
-              return;
-            }
+            console.warn('Firebase Storage upload failed:', error);
             setUploadError({ key: 'app.capture_upload_failed', params: { message: error.message } });
             setIsUploading(false);
             reject(error);

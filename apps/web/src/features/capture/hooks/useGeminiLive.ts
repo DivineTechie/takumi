@@ -260,7 +260,6 @@ export function useGeminiLive(options: UseGeminiLiveOptions): UseGeminiLiveResul
 
           // Auto-reconnect if recording is still active
           if (shouldStayConnectedRef.current) {
-            console.log('Gemini Live connection dropped. Reconnecting with new token...');
             try {
               const tokenRes = await fetchLiveToken('interview');
               await connectWebSocket(tokenRes.token);

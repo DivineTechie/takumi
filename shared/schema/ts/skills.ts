@@ -29,6 +29,10 @@ export interface Skill {
   file_search_store?: string;
   steps: {
     n: number;
+    /**
+     * Short name of the step
+     */
+    title?: string;
     instruction: string;
     success_criteria: string;
     why: string;
@@ -61,12 +65,15 @@ export interface Skill {
       conflict: boolean;
       detail: string;
       suggestion: string;
-      citation: string;
+      citation?: string;
     };
     translations: {
       [k: string]: {
+        title?: string;
         instruction: string;
+        success_criteria?: string;
         why: string;
+        hazards?: string[];
         audio_uri?: string;
       };
     };

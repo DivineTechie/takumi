@@ -84,15 +84,18 @@ class Verifier(BaseModel):
     conflict: bool
     detail: str
     suggestion: str
-    citation: str
+    citation: str | None = None
 
 
 class Translations(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
     )
+    title: str | None = None
     instruction: str
+    success_criteria: str | None = None
     why: str
+    hazards: list[str] | None = None
     audio_uri: AnyUrl | None = None
 
 
@@ -101,6 +104,7 @@ class Step(BaseModel):
         extra='forbid',
     )
     n: conint(ge=1)
+    title: str | None = Field(None, description='Short name of the step')
     instruction: str
     success_criteria: str
     why: str

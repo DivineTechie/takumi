@@ -260,12 +260,24 @@ export async function fetchForgeJob(jobId: string): Promise<ForgeJobStatus> {
   return await apiFetch<ForgeJobStatus>(`/forge/jobs/${jobId}`);
 }
 
+export type RegeneratePart = 'instruction' | 'success_criteria' | 'why';
+
+export interface RegeneratedStepPart {
+  skill_id: string;
+  n: number;
+  part: RegeneratePart;
+  /** New English text written by Gemini from the stored lesson and the master's narration. */
+  text: string;
+  /** The same text in the lesson's other languages, keyed by language code. */
+  translations: Record<string, string>;
+}
+
 export async function regenerateStepPart(
   skillId: string,
   n: number,
-  part: string
-): Promise<{ success: boolean; message?: string }> {
-  return await apiFetch<{ success: boolean; message?: string }>('/forge/steps/regenerate', {
+  part: RegeneratePart
+): Promise<RegeneratedStepPart> {
+  return await apiFetch<RegeneratedStepPart>('/forge/steps/regenerate', {
     method: 'POST',
     body: JSON.stringify({ skill_id: skillId, n, part }),
   });

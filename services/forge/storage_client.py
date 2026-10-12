@@ -22,27 +22,12 @@ def get_storage_client() -> Any:
     return _storage_client
 
 
-def upload_bytes(
-    data: bytes,
-    destination_blob_path: str,
-    content_type: str = "image/jpeg",
-) -> str:
-    """Uploads bytes to the configured Cloud Storage bucket and returns gs:// URI."""
-    gs_uri = f"gs://{STORAGE_BUCKET}/{destination_blob_path}"
-
-    client = get_storage_client()
-    if client is None or LOCAL_DEV or MOCK_MODELS:
-        logger.info("Local/Mock upload to %s (%s bytes)", gs_uri, len(data))
-        return gs_uri
-
-    try:
-        bucket = client.bucket(STORAGE_BUCKET)
-        blob = bucket.blob(destination_blob_path)
-        blob.upload_from_string(data, content_type=content_type)
-        return gs_uri
-    except Exception as e:
-        logger.error("Failed to upload to %s: %s", gs_uri, e)
-        return gs_uri
+def blob_path_from_uri(uri: str) -> str:
+    """gs://<our bucket>/<path> -> <path>. Media outside the Studio's bucket is refused."""
+    prefix = f"gs://{STORAGE_BUCKET}/"
+    if not uri or not uri.startswith(prefix) or len(uri) == len(prefix):
+        raise ValueError("the capture video is not in the TAKUMI storage bucket")
+    return uri[len(prefix):]
 
 
 def blob_exists(blob_path: str) -> bool:
@@ -57,6 +42,19 @@ def blob_exists(blob_path: str) -> bool:
     except Exception as e:
         logger.warning("Error checking if blob %s exists: %s", blob_path, e)
         return False
+
+
+def blob_size(blob_path: str) -> int | None:
+    """Size in bytes, or None when the blob does not exist (or storage is unavailable)."""
+    client = get_storage_client()
+    if client is None or LOCAL_DEV or MOCK_MODELS:
+        return None
+    try:
+        blob = client.bucket(STORAGE_BUCKET).get_blob(blob_path)
+        return int(blob.size) if blob is not None and blob.size is not None else None
+    except Exception as e:
+        logger.warning("Error reading size of blob %s: %s", blob_path, e)
+        return None
 
 
 def download_blob_to_file(source_blob_path: str, local_filepath: str) -> bool:
@@ -80,19 +78,17 @@ def upload_file(
     local_filepath: str,
     destination_blob_path: str,
     content_type: str = "video/mp4",
-) -> str:
-    """Uploads a local file to Cloud Storage and returns the gs:// URI."""
-    gs_uri = f"gs://{STORAGE_BUCKET}/{destination_blob_path}"
+) -> bool:
+    """Uploads a local file to Cloud Storage. Returns False when the upload did not happen."""
     client = get_storage_client()
     if client is None or LOCAL_DEV or MOCK_MODELS:
-        logger.info("Local/Mock upload_file to %s from %s", gs_uri, local_filepath)
-        return gs_uri
+        logger.info("Storage unavailable; not uploading %s", destination_blob_path)
+        return False
     try:
         bucket = client.bucket(STORAGE_BUCKET)
         blob = bucket.blob(destination_blob_path)
         blob.upload_from_filename(local_filepath, content_type=content_type)
-        return gs_uri
+        return True
     except Exception as e:
-        logger.error("Failed to upload_file to %s: %s", gs_uri, e)
-        return gs_uri
-
+        logger.error("Failed to upload_file to %s: %s", destination_blob_path, e)
+        return False
