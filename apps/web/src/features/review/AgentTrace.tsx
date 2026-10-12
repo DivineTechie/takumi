@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { collection, query, orderBy, onSnapshot, doc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { fetchForgeJob, ApiError } from '../../lib/api';
 import { getVideoObjectUrl } from './mediaStorage';
 import { useI18n } from '../../i18n';
 import {
@@ -15,10 +14,8 @@ import {
   Layers,
   FileCheck,
   Languages,
-  Image as ImageIcon,
   AlertTriangle,
   Play,
-  FastForward,
 } from 'lucide-react';
 
 export interface AgentTraceProps {
@@ -38,29 +35,35 @@ interface AgentEvent {
 
 interface AssembledStep {
   n: number;
+  title?: string;
   instruction: string;
   success_criteria?: string;
   why?: string;
-  translations?: Record<string, { instruction: string; why: string }>;
-  keyframe_uri?: string;
-  card_image_uri?: string;
-  mistake_clip_uri?: string;
+  translations?: Record<string, { title?: string; instruction: string; why: string }>;
   point_hint?: string;
   clip?: { start_s: number; end_s: number };
-  motion_cue?: string;
 }
 
+type JobStatus = 'queued' | 'running' | 'done' | 'failed';
+
 // Name and description are translation keys: app.trace_agent_<id>_name / app.trace_agent_<id>_desc.
+// spatial, verifier and localizer run in parallel after the segmenter.
 const AGENT_NODES = [
   { id: 'segmenter', icon: Layers },
-  { id: 'why', icon: Sparkles },
   { id: 'spatial', icon: Play },
   { id: 'verifier', icon: FileCheck },
   { id: 'localizer', icon: Languages },
-  { id: 'illustrator', icon: ImageIcon, parallel: true },
-  { id: 'mistakes', icon: AlertTriangle, parallel: true },
   { id: 'publisher', icon: CheckCircle2 },
 ];
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English (en)',
+  ja: '日本語 (ja)',
+  vi: 'Tiếng Việt (vi)',
+  hi: 'हिन्दी (hi)',
+  id: 'Bahasa Indonesia (id)',
+  fil: 'Tagalog (fil)',
+};
 
 function formatTimestamp(secs: number): string {
   const m = Math.floor(secs / 60);
@@ -126,333 +129,44 @@ function extractThumbnailFromVideo(
 }
 
 /**
- * Computes chronological step clips strictly based on the ACTUAL recorded video duration and task.
+ * Live trace of one Standard Work Studio job. Everything shown comes from Firestore:
+ * forge_jobs/{jobId} (status), forge_jobs/{jobId}/events (what each node reported) and the
+ * skills/{skillId} document the publisher writes. The recording plays from this device when present.
  */
-function getDynamicStepsForRecording(
-  totalSeconds: number,
-  title?: string
-): AssembledStep[] {
-  const D = Math.max(totalSeconds, 2.5);
-  const normalizedTitle = (title || '').toLowerCase();
-
-  // 1. Determine number of steps according to video length
-  let stepCount = 3;
-  if (D < 7.5) {
-    stepCount = 2;
-  } else if (D <= 20.0) {
-    stepCount = 3;
-  } else if (D <= 38.0) {
-    stepCount = 4;
-  } else {
-    stepCount = 5;
-  }
-
-  // Calculate natural, non-arbitrary cut boundaries for stepCount over duration D
-  const clips: Array<{ start_s: number; end_s: number }> = [];
-  if (stepCount === 2) {
-    const t1 = +(D * 0.48).toFixed(1);
-    clips.push({ start_s: 0.0, end_s: t1 });
-    clips.push({ start_s: t1, end_s: +D.toFixed(1) });
-  } else if (stepCount === 3) {
-    const t1 = +(D * 0.34).toFixed(1);
-    const t2 = +(D * 0.69).toFixed(1);
-    clips.push({ start_s: 0.0, end_s: t1 });
-    clips.push({ start_s: t1, end_s: t2 });
-    clips.push({ start_s: t2, end_s: +D.toFixed(1) });
-  } else if (stepCount === 4) {
-    const t1 = +(D * 0.24).toFixed(1);
-    const t2 = +(D * 0.51).toFixed(1);
-    const t3 = +(D * 0.77).toFixed(1);
-    clips.push({ start_s: 0.0, end_s: t1 });
-    clips.push({ start_s: t1, end_s: t2 });
-    clips.push({ start_s: t2, end_s: t3 });
-    clips.push({ start_s: t3, end_s: +D.toFixed(1) });
-  } else {
-    const t1 = +(D * 0.18).toFixed(1);
-    const t2 = +(D * 0.39).toFixed(1);
-    const t3 = +(D * 0.61).toFixed(1);
-    const t4 = +(D * 0.82).toFixed(1);
-    clips.push({ start_s: 0.0, end_s: t1 });
-    clips.push({ start_s: t1, end_s: t2 });
-    clips.push({ start_s: t2, end_s: t3 });
-    clips.push({ start_s: t3, end_s: t4 });
-    clips.push({ start_s: t4, end_s: +D.toFixed(1) });
-  }
-
-  // 2. Select contextual steps based on recorded title / task
-  interface StepBlueprint {
-    instruction: string;
-    success_criteria: string;
-    why: string;
-    point_hint: string;
-    motion_cue: string;
-  }
-
-  let blueprints: StepBlueprint[] = [];
-
-  if (normalizedTitle.includes('valve') || normalizedTitle.includes('hydraulic') || normalizedTitle.includes('pressure')) {
-    blueprints = [
-      {
-        instruction: 'Loosen the 17 mm locking jam nut counter-clockwise two turns',
-        success_criteria: 'Jam nut backed off two threads while hex adjuster remains stationary',
-        why: 'Relieves mechanical locking friction without altering the internal spool spring calibration.',
-        point_hint: '17 mm hex jam nut collar',
-        motion_cue: 'Open wrench counter-clockwise break & rotation',
-      },
-      {
-        instruction: 'Connect digital pressure gauge coupler to diagnostic port M3',
-        success_criteria: 'Coupler snapped securely onto port M3 with zero fluid leakage',
-        why: 'Port M3 taps directly into the primary pilot gallery for accurate pressure reading.',
-        point_hint: 'Diagnostic test port M3 nipple',
-        motion_cue: 'Quick-connect collar snap & lock verification',
-      },
-      {
-        instruction: 'Turn 6 mm hex adjustment screw clockwise to target 210 bar',
-        success_criteria: 'Digital gauge displays 210 bar +/- 2 bar steady reading',
-        why: 'Clockwise rotation compresses the relief spring to increase cracking pressure.',
-        point_hint: '6 mm central adjuster socket',
-        motion_cue: 'Hex key clockwise rotation with gauge readout monitoring',
-      },
-      {
-        instruction: 'Torque the 17 mm jam nut to 45 Nm without altering hex position',
-        success_criteria: 'Torque wrench clicks at 45 Nm with adjustment screw stationary',
-        why: 'Prevents vibrational drift during heavy duty hydraulic cycling.',
-        point_hint: 'Jam nut contact face',
-        motion_cue: 'Torque wrench dual-hand stabilization until click',
-      },
-      {
-        instruction: 'Cycle relief valve three times to verify pressure stability',
-        success_criteria: 'Pressure peaks repeatably within +/- 1 bar across cycles',
-        why: 'Eliminates hysteresis from seal friction before commissioning.',
-        point_hint: 'Gauge pressure readout display',
-        motion_cue: 'Manual cycle lever actuation & peak pressure hold',
-      },
-    ];
-  } else if (normalizedTitle.includes('solder') || normalizedTitle.includes('qfp') || normalizedTitle.includes('ic') || normalizedTitle.includes('pcb')) {
-    blueprints = [
-      {
-        instruction: 'Dispense thin line of tacky flux across all perimeter pads',
-        success_criteria: 'Continuous thin flux film covers copper pads without pooling',
-        why: 'Tacky flux cleans copper oxide and promotes capillary action without boiling.',
-        point_hint: 'Perimeter SMD pad row',
-        motion_cue: 'Syringe needle glide across copper contact pads',
-      },
-      {
-        instruction: 'Place IC with ESD tweezers aligning pin 1 corner chamfer dot',
-        success_criteria: 'All 32 IC leads sit squarely centered on copper pads',
-        why: 'Misalignment bridges adjacent leads or causes tombstoning during reflow.',
-        point_hint: 'Pin 1 index dot and corner pad',
-        motion_cue: 'Microscope-guided dual-axis tweezers positioning',
-      },
-      {
-        instruction: 'Tack diagonal corner pins 1 and 17 with chisel tip',
-        success_criteria: 'Pins 1 and 17 have shiny concave fillets with alignment held',
-        why: 'Opposing corners lock mechanical alignment against surface tension pull.',
-        point_hint: 'Pin 1 and pin 17 corner pads',
-        motion_cue: '350°C iron chisel tip contact and light solder feed',
-      },
-      {
-        instruction: 'Drag solder remaining lead rows with 0.5 mm solder wire',
-        success_criteria: 'Uniform shiny solder fillets across all leads with zero bridges',
-        why: 'Capillary force pulls molten solder into each joint while excess adheres to tip.',
-        point_hint: 'Lead row contact tips',
-        motion_cue: 'Steady horizontal sweep across lead rows',
-      },
-      {
-        instruction: 'Clean flux residue with isopropyl alcohol and inspect under 20x magnification',
-        success_criteria: 'Clean board surface with zero solder balls, bridges, or lifted leads',
-        why: 'Ionic flux residue causes dendritic growth and leakage currents over time.',
-        point_hint: 'Lead gaps and component body margin',
-        motion_cue: 'ESD swab cleaning & stereo microscope inspection',
-      },
-    ];
-  } else if (title && !normalizedTitle.includes('terminal') && !normalizedTitle.includes('din') && !normalizedTitle.includes('wire')) {
-    // Custom skill title entered by the user
-    blueprints = [
-      {
-        instruction: `Prepare workspace and align components for ${title}`,
-        success_criteria: `Components and tools arranged per standard operating procedure`,
-        why: `Proper staging eliminates handling errors and ensures ergonomic assembly posture.`,
-        point_hint: `Component alignment reference marks`,
-        motion_cue: `Component inspection and workstation layout`,
-      },
-      {
-        instruction: `Position and engage primary fixture for ${title}`,
-        success_criteria: `Fixture locked firmly in position with zero clearance play`,
-        why: `Secures workpiece against unwanted movement during assembly operations.`,
-        point_hint: `Primary mounting points`,
-        motion_cue: `Fixture positioning and clamp engagement`,
-      },
-      {
-        instruction: `Perform precision assembly and torque fasteners for ${title}`,
-        success_criteria: `Fasteners torqued to specified limits with visible witness marks`,
-        why: `Correct clamping force prevents structural looseness under vibrational load.`,
-        point_hint: `Fastener drive heads`,
-        motion_cue: `Fastener insertion and calibrated torque execution`,
-      },
-      {
-        instruction: `Conduct physical verification and quality check for ${title}`,
-        success_criteria: `Assembly passes dimensional check with zero physical defects`,
-        why: `Confirms standard conformance before passing the component downstream.`,
-        point_hint: `Critical inspection interfaces`,
-        motion_cue: `Manual gauge check and visual clearance scan`,
-      },
-      {
-        instruction: `Log completion and apply quality inspection seal for ${title}`,
-        success_criteria: `Inspection barcode scanned and tamper seal affixed`,
-        why: `Maintains complete manufacturing traceability per ISO 9001 standards.`,
-        point_hint: `Component serial label`,
-        motion_cue: `Barcode scan and inspection stamp application`,
-      },
-    ];
-  } else {
-    // Default manufacturing reference: Terminal block wiring
-    blueprints = [
-      {
-        instruction: 'Insert the blue wire into terminal 1 and tighten its screw',
-        success_criteria: 'A blue wire ferrule enters terminal 1, leftmost terminal; no bare copper visible',
-        why: 'Terminal 1 is neutral under IEC colour code. Swapping it fails factory inspection; ferrules stop strands splaying.',
-        point_hint: 'the screw opening of terminal 1',
-        motion_cue: 'Left ferrule entry & 3mm screwdriver clockwise rotation',
-      },
-      {
-        instruction: 'Insert the brown wire into terminal 2 and tighten its screw',
-        success_criteria: 'A brown wire enters terminal 2; blue wire remains secure in terminal 1',
-        why: 'Terminal 2 is line conductor 1. Placing it in the wrong terminal risks equipment malfunction.',
-        point_hint: 'the screw opening of terminal 2',
-        motion_cue: 'Right ferrule entry & terminal clamp torque',
-      },
-      {
-        instruction: 'Gently tug wires and verify zero bare copper is visible outside clamp',
-        success_criteria: 'Wires remain seated firmly under light tug with zero exposed copper outside terminal blocks',
-        why: 'Exposed copper can bridge adjacent terminal slots causing dangerous short circuits.',
-        point_hint: 'terminal block clamp rows',
-        motion_cue: 'Two-finger pull test & visual alignment inspection',
-      },
-      {
-        instruction: 'Engage terminal partition plate and tighten end stop bracket',
-        success_criteria: 'Partition seated flush between poles; end stop screw torqued firmly to DIN rail',
-        why: 'Provides dielectric creepage insulation and prevents lateral terminal block shift.',
-        point_hint: 'DIN rail end clamp bracket',
-        motion_cue: 'End stop slide & DIN rail clamp screw lock',
-      },
-      {
-        instruction: 'Affix terminal marker tags 1 and 2 to corresponding positions',
-        success_criteria: 'Marker tags snapped flush into terminal top label slots in numerical order',
-        why: 'Clear labeling ensures unambiguous field service identification during plant commissioning.',
-        point_hint: 'Top marker label slot',
-        motion_cue: 'Tag snap-in & legend alignment check',
-      },
-    ];
-  }
-
-  // Assemble dynamic steps matched to clips and blueprints
-  return clips.map((clip, idx) => {
-    const bp = blueprints[idx] || blueprints[blueprints.length - 1];
-    return {
-      n: idx + 1,
-      instruction: bp.instruction,
-      success_criteria: bp.success_criteria,
-      why: bp.why,
-      point_hint: bp.point_hint,
-      motion_cue: bp.motion_cue,
-      clip,
-    };
-  });
-}
-
-const TRANSLATIONS_MAP: Record<string, Record<string, { instruction: string; why: string }>> = {
-  ja: {
-    1: { instruction: '青い線を端子1に差し込み、ネジを締めます', why: 'IEC規格で端子1は中性線です。間違えると検査不合格になります。' },
-    2: { instruction: '茶色の線を端子2に差し込み、ネジを締めます', why: '端子2はライン1導体です。誤配線は機器故障を招きます。' },
-    3: { instruction: '各線を軽く引っ張り、銅線の露出がないことを確認します', why: '露出した銅線は隣接端子と短絡事故を起こす危険があります。' },
-  },
-  vi: {
-    1: { instruction: 'Cắm dây màu xanh dương vào cổng 1 và siết chặt ốc', why: 'Cổng 1 là dây trung tính theo mã IEC. Nối sai sẽ không đạt kiểm tra.' },
-    2: { instruction: 'Cắm dây màu nâu vào cổng 2 và siết chặt ốc', why: 'Cổng 2 là dây pha 1. Cắm nhầm cổng sẽ gây lỗi thiết bị.' },
-    3: { instruction: 'Kéo nhẹ các dây và kiểm tra không lộ dây đồng', why: 'Dây đồng lộ ra có thể chạm vào cổng bên cạnh gây chập điện.' },
-  },
-  hi: {
-    1: { instruction: 'नीले तार को टर्मिनल 1 में डालें और स्क्रू को कसें', why: 'IEC रंग कोड के अनुसार टर्मिनल 1 न्यूट्रल है। गलत तार लगाने पर निरीक्षण विफल होगा।' },
-    2: { instruction: 'भूरे तार को टर्मिनल 2 में डालें और स्क्रू को कसें', why: 'टर्मिनल 2 लाइन 1 है। गलत टर्मिनल में लगाने पर उपकरण खराब हो सकता है।' },
-    3: { instruction: 'तारों को हल्के से खींचें और जांचें कि तांबा बाहर न दिखे', why: 'खुला तांबा पास के टर्मिनल से संपर्क कर शॉर्ट सर्किट कर सकता है।' },
-  },
-  id: {
-    1: { instruction: 'Masukkan kabel biru ke terminal 1 dan kencangkan sekrupnya', why: 'Terminal 1 adalah netral menurut kode IEC.' },
-    2: { instruction: 'Masukkan kabel cokelat ke terminal 2 dan kencangkan sekrupnya', why: 'Terminal 2 adalah konduktor fasa 1.' },
-    3: { instruction: 'Tarik kabel perlahan dan pastikan tidak ada tembaga yang terlihat', why: 'Tembaga terbuka dapat menyebabkan korsleting.' },
-  },
-  fil: {
-    1: { instruction: 'Ipasok ang asul na kawad sa terminal 1 at higpitan ang tornilyo', why: 'Ang Terminal 1 ay neutral sa ilalim ng IEC code.' },
-    2: { instruction: 'Ipasok ang kulay-kape na kawad sa terminal 2 at higpitan ang tornilyo', why: 'Ang Terminal 2 ay line conductor 1.' },
-    3: { instruction: 'Bahagyang hilahin ang mga kawad at suriin na walang nakalitaw na tanso', why: 'Maaaring magdulot ng short circuit ang nakalitaw na tanso.' },
-  },
-};
-
 export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavigateToReview }) => {
   const { jobId: paramJobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const { t } = useI18n();
+  const tf = (key: string, fallback: string, params?: Record<string, string | number>) => {
+    const text = t(key, params);
+    return text === key ? fallback : text;
+  };
   const jobId = propJobId || paramJobId || '';
   const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [activeAgent, setActiveAgent] = useState<string>('segmenter');
-  const [completedAgents, setCompletedAgents] = useState<Set<string>>(new Set());
   const [skillId, setSkillId] = useState<string>('');
-  const [jobStatus, setJobStatus] = useState<'queued' | 'running' | 'done' | 'failed'>('running');
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [steps, setSteps] = useState<AssembledStep[]>([]);
+  const [lessonLanguages, setLessonLanguages] = useState<string[]>(['en']);
   const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
 
-  // Recorded task title & metadata
-  const [recordedTitle, setRecordedTitle] = useState<string>(() => {
-    return (
-      sessionStorage.getItem(`takumi_title_${jobId}`) ||
-      sessionStorage.getItem('takumi_last_title') ||
-      ''
-    );
-  });
-
-  // Master Video playback & live duration state
   const [masterVideoUrl, setMasterVideoUrl] = useState<string | null>(null);
-  const [videoDuration, setVideoDuration] = useState<number>(() => {
-    const cached =
-      sessionStorage.getItem(`takumi_duration_${jobId}`) ||
-      sessionStorage.getItem('takumi_last_duration');
-    return cached ? parseFloat(cached) : 15.0;
-  });
+  const [videoDuration, setVideoDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [clipThumbnails, setClipThumbnails] = useState<Record<number, string>>({});
   const masterVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Load recorded master video from IndexedDB / sessionStorage
+  // The recording saved on this device for this job (IndexedDB), if any.
   useEffect(() => {
     let active = true;
-    const loadVideo = async () => {
-      // 1. Try by exact job ID
-      let url = await getVideoObjectUrl(jobId);
-      // 2. Try by last recorded video
-      if (!url) {
-        url = await getVideoObjectUrl('last_recorded_video');
-      }
-      // 3. Fallback to sessionStorage URL
-      if (!url) {
-        const sessionUrl =
-          sessionStorage.getItem(`takumi_video_url_${jobId}`) ||
-          sessionStorage.getItem('takumi_last_video_url');
-        if (sessionUrl) url = sessionUrl;
-      }
-
-      if (active && url) {
-        setMasterVideoUrl(url);
-      }
-    };
-
-    loadVideo();
+    getVideoObjectUrl(jobId).then((url) => {
+      if (active && url) setMasterVideoUrl(url);
+    });
     return () => {
       active = false;
     };
   }, [jobId]);
 
-  // Extract keyframe video thumbnails directly from the recorded video canvas
+  // Thumbnails cut from the recording at the clips the segmenter found.
   useEffect(() => {
     if (!masterVideoUrl || steps.length === 0) return;
     let active = true;
@@ -478,46 +192,22 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
     return () => {
       active = false;
     };
-  }, [masterVideoUrl, steps.length]);
+  }, [masterVideoUrl, steps]);
 
-  // Handle video element loaded metadata to extract the TRUE recorded duration (resolving WebM Infinity)
+  // The true duration of the recording (WebM from MediaRecorder reports Infinity until probed).
   const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const video = e.currentTarget;
     const dur = video.duration;
-
-    const applyDuration = (validDur: number) => {
-      const rounded = Math.max(1.0, +validDur.toFixed(1));
-      setVideoDuration(rounded);
-      sessionStorage.setItem(`takumi_duration_${jobId}`, String(rounded));
-      sessionStorage.setItem('takumi_last_duration', String(rounded));
-
-      // Recompute dynamic steps from true video duration and title
-      setSteps((prev) => {
-        const dynamic = getDynamicStepsForRecording(rounded, recordedTitle);
-        if (prev.length === 0) return dynamic;
-        return dynamic.map((dStep, idx) => {
-          const old = prev[idx];
-          return {
-            ...dStep,
-            why: old?.why || dStep.why,
-            point_hint: old?.point_hint || dStep.point_hint,
-            translations: old?.translations || dStep.translations,
-          };
-        });
-      });
-    };
-
-    if (dur && !isNaN(dur) && isFinite(dur) && dur > 0) {
-      applyDuration(dur);
+    if (dur && isFinite(dur) && dur > 0) {
+      setVideoDuration(+dur.toFixed(1));
     } else if (dur === Infinity) {
-      // Chromium MediaRecorder bug: probe currentTime to find exact WebM duration
       video.currentTime = 1e101;
       video.ontimeupdate = () => {
         video.ontimeupdate = null;
         const probed = video.currentTime;
         video.currentTime = 0;
         if (probed && isFinite(probed) && probed > 0) {
-          applyDuration(probed);
+          setVideoDuration(+probed.toFixed(1));
         }
       };
     }
@@ -527,273 +217,51 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
     setCurrentTime(e.currentTarget.currentTime);
   };
 
-  // Stream live events from Firestore onSnapshot
+  // Job status and the events each node reports.
   useEffect(() => {
     if (!jobId) return;
-
-    // Fetch initial job doc to get skill_id and title
-    const jobDocRef = doc(db, 'forge_jobs', jobId);
-    getDoc(jobDocRef).then((snap) => {
-      if (snap.exists()) {
+    const unsubJob = onSnapshot(
+      doc(db, 'forge_jobs', jobId),
+      (snap) => {
+        if (!snap.exists()) return;
         const data = snap.data();
         if (data.skill_id) setSkillId(data.skill_id);
-        if (data.status) setJobStatus(data.status);
-        if (data.skill_title && !recordedTitle) setRecordedTitle(data.skill_title);
-      }
-    });
-
-    const eventsRef = collection(db, 'forge_jobs', jobId, 'events');
-    const q = query(eventsRef, orderBy('t', 'asc'));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) {
-        return;
-      }
-
-      const newEvents: AgentEvent[] = [];
-      const completed = new Set<string>();
-
-      snapshot.forEach((docSnap) => {
-        const ev = { id: docSnap.id, ...docSnap.data() } as AgentEvent;
-        newEvents.push(ev);
-        if (ev.level === 'info' && ev.ms !== undefined) {
-          completed.add(ev.agent);
-        }
-      });
-
-      setEvents(newEvents);
-      setCompletedAgents(completed);
-
-      if (newEvents.length > 0) {
-        const last = newEvents[newEvents.length - 1];
-        setActiveAgent(last.agent);
-        if (last.agent === 'publisher' && last.level === 'info') {
-          setJobStatus('done');
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, [jobId, recordedTitle]);
-
-  // When skill_id is known, stream skill doc for real-time lesson assembling
-  useEffect(() => {
-    if (!skillId) return;
-    const skillDocRef = doc(db, 'skills', skillId);
-    const unsub = onSnapshot(skillDocRef, (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.steps && Array.isArray(data.steps) && data.steps.length > 0) {
-          setSteps(data.steps as AssembledStep[]);
-        }
-      }
-    });
-    return () => unsub();
-  }, [skillId]);
-
-  // Periodic Forge Job status poll via /forge/jobs/:id API
-  useEffect(() => {
-    if (!jobId) return;
-
-    let cancelled = false;
-    const pollStatus = async () => {
-      try {
-        const status = await fetchForgeJob(jobId);
-        if (cancelled) return;
-        if (status.skill_id) setSkillId(status.skill_id);
-        if (status.status) setJobStatus(status.status);
-      } catch (err: unknown) {
-        if (err instanceof ApiError) {
-          console.warn(`Forge status API error (${err.status}):`, err.message);
-        }
-      }
-    };
-
-    pollStatus();
-    const interval = setInterval(pollStatus, 4000);
+        if (data.status) setJobStatus(data.status as JobStatus);
+      },
+      (err) => console.warn('Could not read the Studio job:', err)
+    );
+    const unsubEvents = onSnapshot(
+      query(collection(db, 'forge_jobs', jobId, 'events'), orderBy('t', 'asc')),
+      (snapshot) => {
+        const loaded: AgentEvent[] = [];
+        snapshot.forEach((docSnap) => {
+          loaded.push({ id: docSnap.id, ...docSnap.data() } as AgentEvent);
+        });
+        setEvents(loaded);
+      },
+      (err) => console.warn('Could not read the Studio events:', err)
+    );
     return () => {
-      cancelled = true;
-      clearInterval(interval);
+      unsubJob();
+      unsubEvents();
     };
   }, [jobId]);
 
-  // Automated progressive pipeline runner for local development (strictly DEV only)
+  // The lesson the publisher saved.
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
-
-    // Only run progressive simulation in DEV if no live events exist after 1.2s
-    const timer = setTimeout(() => {
-      if (events.length > 0) return;
-
-      let stepStage = 0;
-      const interval = setInterval(() => {
-        stepStage += 1;
-
-        if (stepStage === 1) {
-          // 1. Segmenter finishes: Clips are created strictly from videoDuration and recorded task
-          setActiveAgent('why');
-          setCompletedAgents(new Set(['segmenter']));
-          const initialSteps = getDynamicStepsForRecording(videoDuration, recordedTitle);
-          setSteps(initialSteps);
-          setEvents((prev) => [
-            ...prev,
-            {
-              id: 'ev_seg',
-              agent: 'segmenter',
-              level: 'info',
-              message: `Segmented master video (${videoDuration.toFixed(1)}s) into ${initialSteps.length} chronological clips`,
-              ms: 1840,
-              t: new Date().toISOString(),
-            },
-          ]);
-        } else if (stepStage === 2) {
-          // 2. Why Extractor finishes: Why rationale pops in
-          setActiveAgent('spatial');
-          setCompletedAgents((c) => new Set([...c, 'why']));
-          setSteps((prev) =>
-            prev.map((s) => ({
-              ...s,
-              why: s.why || 'Critical manufacturing tolerance: prevents assembly defect and ensures ISO compliance.',
-            }))
-          );
-          setEvents((prev) => [
-            ...prev,
-            {
-              id: 'ev_why',
-              agent: 'why',
-              level: 'info',
-              message: 'Extracted craftsman rationale from interviewer dialogue',
-              ms: 920,
-              t: new Date().toISOString(),
-            },
-          ]);
-        } else if (stepStage === 3) {
-          // 3. Spatial Annotator finishes: Point hints pop in
-          setActiveAgent('verifier');
-          setCompletedAgents((c) => new Set([...c, 'spatial']));
-          setSteps((prev) =>
-            prev.map((s) => ({
-              ...s,
-              point_hint: s.point_hint || 'Component alignment datum mark',
-            }))
-          );
-          setEvents((prev) => [
-            ...prev,
-            {
-              id: 'ev_spatial',
-              agent: 'spatial',
-              level: 'info',
-              message: 'Mapped normalized [y, x] tool coordinates via Gemini Robotics-ER',
-              ms: 1450,
-              t: new Date().toISOString(),
-            },
-          ]);
-        } else if (stepStage === 4) {
-          // 4. Verifier finishes
-          setActiveAgent('localizer');
-          setCompletedAgents((c) => new Set([...c, 'verifier']));
-          setEvents((prev) => [
-            ...prev,
-            {
-              id: 'ev_ver',
-              agent: 'verifier',
-              level: 'info',
-              message: 'Verified compliance against factory manufacturing safety standards',
-              ms: 610,
-              t: new Date().toISOString(),
-            },
-          ]);
-        } else if (stepStage === 5) {
-          // 5. Localizer finishes: Translations populated
-          setActiveAgent('illustrator');
-          setCompletedAgents((c) => new Set([...c, 'localizer']));
-          setSteps((prev) =>
-            prev.map((s) => {
-              const tr: Record<string, { instruction: string; why: string }> = {};
-              for (const lang of ['ja', 'vi', 'hi', 'id', 'fil']) {
-                if (TRANSLATIONS_MAP[lang]?.[s.n]) {
-                  tr[lang] = TRANSLATIONS_MAP[lang][s.n];
-                }
-              }
-              return { ...s, translations: tr };
-            })
-          );
-          setEvents((prev) => [
-            ...prev,
-            {
-              id: 'ev_loc',
-              agent: 'localizer',
-              level: 'info',
-              message: 'Synthesized 6-language terminology and TTS audio clips',
-              ms: 1250,
-              t: new Date().toISOString(),
-            },
-          ]);
-        } else if (stepStage === 6) {
-          // 6. Illustrator & Mistakes finish
-          setActiveAgent('publisher');
-          setCompletedAgents((c) => new Set([...c, 'illustrator', 'mistakes']));
-          setEvents((prev) => [
-            ...prev,
-            {
-              id: 'ev_media',
-              agent: 'illustrator',
-              level: 'info',
-              message: 'Generated step keyframes and error prevention simulations',
-              ms: 1100,
-              t: new Date().toISOString(),
-            },
-          ]);
-        } else if (stepStage === 7) {
-          // 7. Publisher finishes
-          setActiveAgent('');
-          setCompletedAgents((c) => new Set([...c, 'publisher']));
-          setJobStatus('done');
-          setSkillId(`skill_${jobId}`);
-          setEvents((prev) => [
-            ...prev,
-            {
-              id: 'ev_pub',
-              agent: 'publisher',
-              level: 'info',
-              message: 'Skill published to Firestore schema (status: in_review)',
-              ms: 420,
-              t: new Date().toISOString(),
-            },
-          ]);
-          clearInterval(interval);
-        }
-      }, 1600);
-
-      return () => clearInterval(interval);
-    }, 1200);
-
-    return () => clearTimeout(timer);
-  }, [events.length, videoDuration, recordedTitle, jobId]);
-
-  // Fast forward helper
-  const handleFastForward = () => {
-    const all = new Set(AGENT_NODES.map((n) => n.id));
-    setCompletedAgents(all);
-    setActiveAgent('');
-    setJobStatus('done');
-    setSkillId(`skill_${jobId}`);
-    const dynamic = getDynamicStepsForRecording(videoDuration, recordedTitle);
-    setSteps(
-      dynamic.map((s) => {
-        const tr: Record<string, { instruction: string; why: string }> = {};
-        for (const lang of ['ja', 'vi', 'hi', 'id', 'fil']) {
-          if (TRANSLATIONS_MAP[lang]?.[s.n]) {
-            tr[lang] = TRANSLATIONS_MAP[lang][s.n];
-          }
-        }
-        return {
-          ...s,
-          translations: tr,
-        };
-      })
+    if (!skillId) return;
+    const unsub = onSnapshot(
+      doc(db, 'skills', skillId),
+      (snap) => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        setSteps(Array.isArray(data.steps) ? (data.steps as AssembledStep[]) : []);
+        if (Array.isArray(data.languages) && data.languages.length > 0) setLessonLanguages(data.languages as string[]);
+      },
+      (err) => console.warn('Could not read the lesson:', err)
     );
-  };
+    return () => unsub();
+  }, [skillId]);
 
   const seekToClip = (startS: number) => {
     if (masterVideoRef.current) {
@@ -802,12 +270,20 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
     }
   };
 
-  const isSegmenterDone = completedAgents.has('segmenter') || steps.length > 0;
-  const isWhyDone = completedAgents.has('why');
-  const isSpatialDone = completedAgents.has('spatial');
-  const isLocalizerDone = completedAgents.has('localizer');
+  // A node is done when it reported a timed info event; it failed when it reported an error.
+  const completedAgents = new Set(events.filter((e) => e.level === 'info' && e.ms !== undefined).map((e) => e.agent));
+  const failedAgents = new Set(events.filter((e) => e.level === 'error').map((e) => e.agent));
+  const lastError = [...events].reverse().find((e) => e.level === 'error');
+  const isDone = jobStatus === 'done';
+  const isFailed = jobStatus === 'failed' || failedAgents.size > 0;
+  const runningAgents = new Set(
+    isDone || isFailed
+      ? []
+      : events.filter((e) => !completedAgents.has(e.agent) && !failedAgents.has(e.agent)).map((e) => e.agent)
+  );
+  const hasSteps = steps.length > 0;
+  const timelineSeconds = Math.max(videoDuration, ...steps.map((s) => s.clip?.end_s ?? 0), 1);
 
-  // Determine which step is currently playing in the master video
   const activeStepIndex = steps.findIndex(
     (s) => s.clip && currentTime >= s.clip.start_s && currentTime <= s.clip.end_s
   );
@@ -859,72 +335,64 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {jobStatus !== 'done' && (
-            <button
-              onClick={handleFastForward}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                backgroundColor: '#27272a',
-                color: '#d4d4d8',
-                border: '1px solid #3f3f46',
-                padding: '0.45rem 0.85rem',
-                borderRadius: '0.5rem',
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-              title={t('app.trace_fast_forward_title')}
-            >
-              <FastForward size={14} />
-              <span>{t('app.trace_fast_forward')}</span>
-            </button>
-          )}
-
-          {jobStatus === 'done' && (
-            <button
-              onClick={() => {
-                if (onNavigateToReview) {
-                  onNavigateToReview(skillId || 'skill_terminal_wiring_v1');
-                } else {
-                  navigate(`/review/${skillId || 'skill_terminal_wiring_v1'}`);
-                }
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                backgroundColor: '#10b981',
-                color: '#ffffff',
-                border: 'none',
-                padding: '0.55rem 1.25rem',
-                borderRadius: '0.65rem',
-                fontWeight: 700,
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
-              }}
-            >
-              <span>{t('app.trace_review_lesson')}</span>
-              <ArrowRight size={16} />
-            </button>
-          )}
-        </div>
+        {isDone && skillId && (
+          <button
+            onClick={() => {
+              if (onNavigateToReview) {
+                onNavigateToReview(skillId);
+              } else {
+                navigate(`/review/${skillId}`);
+              }
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              backgroundColor: '#10b981',
+              color: '#ffffff',
+              border: 'none',
+              padding: '0.55rem 1.25rem',
+              minHeight: '44px',
+              borderRadius: '0.65rem',
+              fontWeight: 700,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)',
+            }}
+          >
+            <span>{t('app.trace_review_lesson')}</span>
+            <ArrowRight size={16} />
+          </button>
+        )}
       </header>
 
-      {/* 3-Column Responsive Grid */}
-      <div
-        style={{
-          flex: 1,
-          display: 'grid',
-          gridTemplateColumns: '330px 1fr 380px',
-          height: 'calc(100vh - 61px)',
-          overflow: 'hidden',
-        }}
-      >
-        {/* LEFT COLUMN: Master Recording & Dynamic Clip Timeline */}
+      {isFailed && (
+        <div
+          role="alert"
+          style={{
+            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+            borderBottom: '1px solid #ef4444',
+            color: '#fca5a5',
+            padding: '0.75rem 1.5rem',
+            display: 'flex',
+            gap: '0.6rem',
+            alignItems: 'flex-start',
+            fontSize: '0.9rem',
+          }}
+        >
+          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+          <div>
+            <div style={{ fontWeight: 700, color: '#fecaca' }}>
+              {tf('app.trace_failed', 'The Studio could not finish this recording.')}
+            </div>
+            {lastError && <div style={{ marginTop: '0.2rem' }}>{lastError.message}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* One column on phones, three on wide screens */}
+      <div className="grid flex-1 grid-cols-1 lg:grid-cols-[330px_1fr_380px] lg:h-[calc(100vh-61px)] lg:overflow-hidden">
+        {/* LEFT COLUMN: Master Recording & Clip Timeline */}
         <section
           style={{
             borderRight: '1px solid #27272a',
@@ -941,7 +409,6 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
               <span>{t('app.trace_master_recording')}</span>
             </div>
 
-            {/* Video Player */}
             {masterVideoUrl ? (
               <div>
                 <div style={{ borderRadius: '0.75rem', overflow: 'hidden', border: '1px solid #3f3f46', backgroundColor: '#000000' }}>
@@ -961,12 +428,11 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                   />
                 </div>
 
-                {/* Segmented Timeline Bar directly beneath the video player */}
-                {isSegmenterDone && (
+                {hasSteps && (
                   <div style={{ marginTop: '0.65rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#a1a1aa', marginBottom: '0.35rem' }}>
                       <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-                        {formatTimestamp(currentTime)} / {formatTimestamp(videoDuration)}
+                        {formatTimestamp(currentTime)} / {formatTimestamp(timelineSeconds)}
                       </span>
                       <span style={{ color: '#fbbf24', fontWeight: 600 }}>
                         {activeStepIndex >= 0 ? t('app.trace_step_active', { n: steps[activeStepIndex].n }) : t('app.trace_ready')}
@@ -979,7 +445,6 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                         backgroundColor: '#27272a',
                         borderRadius: '0.375rem',
                         overflow: 'hidden',
-                        display: 'flex',
                         position: 'relative',
                         cursor: 'pointer',
                         border: '1px solid #3f3f46',
@@ -987,47 +452,37 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                       onClick={(e) => {
                         const rect = e.currentTarget.getBoundingClientRect();
                         const clickRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                        seekToClip(clickRatio * videoDuration);
+                        seekToClip(clickRatio * timelineSeconds);
                       }}
                     >
                       {steps.map((s, idx) => {
-                        const segStart = s.clip?.start_s || 0;
-                        const segEnd = s.clip?.end_s || videoDuration;
-                        const widthPct = Math.max(5, ((segEnd - segStart) / Math.max(videoDuration, 1)) * 100);
+                        if (!s.clip) return null;
                         const isCurrent = activeStepIndex === idx;
                         const colors = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899'];
                         const baseColor = colors[idx % colors.length];
-
                         return (
                           <div
                             key={s.n}
-                            title={t('app.trace_segment_title', { n: s.n, start: segStart.toFixed(1), end: segEnd.toFixed(1) })}
+                            title={t('app.trace_segment_title', { n: s.n, start: s.clip.start_s.toFixed(1), end: s.clip.end_s.toFixed(1) })}
                             style={{
-                              width: `${widthPct}%`,
+                              position: 'absolute',
+                              top: 0,
+                              bottom: 0,
+                              left: `${(s.clip.start_s / timelineSeconds) * 100}%`,
+                              width: `${((s.clip.end_s - s.clip.start_s) / timelineSeconds) * 100}%`,
                               backgroundColor: isCurrent ? baseColor : `${baseColor}55`,
-                              borderRight: idx < steps.length - 1 ? '1px solid #09090b' : 'none',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontSize: '0.65rem',
-                              fontWeight: 700,
-                              color: isCurrent ? '#ffffff' : '#a1a1aa',
-                              userSelect: 'none',
-                              transition: 'background-color 0.2s',
+                              borderRight: '1px solid #09090b',
                             }}
-                          >
-                            {widthPct > 14 ? t('app.trace_segment_short', { n: s.n }) : ''}
-                          </div>
+                          />
                         );
                       })}
 
-                      {/* Playhead indicator */}
                       <div
                         style={{
                           position: 'absolute',
                           top: 0,
                           bottom: 0,
-                          left: `${(currentTime / Math.max(videoDuration, 1)) * 100}%`,
+                          left: `${(currentTime / timelineSeconds) * 100}%`,
                           width: '3px',
                           backgroundColor: '#ffffff',
                           boxShadow: '0 0 6px #ffffff',
@@ -1065,19 +520,13 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
             )}
           </div>
 
-          {/* Segmented Clip Markers */}
+          {/* Clips found by the segmenter */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
             <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#d4d4d8', marginBottom: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'center', justifyContent: 'space-between' }}>
               <span>{t('app.trace_clip_markers')}</span>
-              {isSegmenterDone && (
-                <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 600 }}>
-                  {t('app.trace_clips_summary', { count: steps.length, seconds: videoDuration.toFixed(1) })}
-                </span>
-              )}
             </div>
 
-            {/* Waiting placeholder if Segmenter not finished */}
-            {!isSegmenterDone ? (
+            {!hasSteps ? (
               <div
                 style={{
                   backgroundColor: '#18181b',
@@ -1091,50 +540,37 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                   gap: '0.5rem',
                 }}
               >
-                <Clock size={22} style={{ color: '#fbbf24' }} />
-                <div style={{ fontSize: '0.85rem', color: '#f4f4f5', fontWeight: 600 }}>{t('app.trace_analyzing')}</div>
-                <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.4 }}>
-                  {t('app.trace_analyzing_desc')}
+                <Clock size={22} style={{ color: isFailed ? '#f87171' : '#fbbf24' }} />
+                <div style={{ fontSize: '0.85rem', color: '#f4f4f5', fontWeight: 600 }}>
+                  {isFailed ? tf('app.trace_failed', 'The Studio could not finish this recording.') : t('app.trace_analyzing')}
                 </div>
+                {!isFailed && (
+                  <div style={{ fontSize: '0.75rem', color: '#71717a', lineHeight: 1.4 }}>
+                    {t('app.trace_analyzing_desc')}
+                  </div>
+                )}
               </div>
             ) : (
-              /* Chronological clips based on recorded video */
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                 {steps.map((s, idx) => {
-                  const startS = s.clip?.start_s ?? 0;
-                  const endS = s.clip?.end_s ?? videoDuration;
                   const isPlaying = activeStepIndex === idx;
-                  const duration = +(endS - startS).toFixed(1);
-                  const clipProgressPct = Math.min(
-                    100,
-                    Math.max(0, ((currentTime - startS) / Math.max(0.1, duration)) * 100)
-                  );
                   const hasThumbnail = Boolean(clipThumbnails[s.n]);
 
                   return (
                     <div
                       key={s.n}
-                      onClick={() => seekToClip(startS)}
+                      onClick={() => s.clip && seekToClip(s.clip.start_s)}
                       style={{
                         backgroundColor: isPlaying ? 'rgba(245, 158, 11, 0.12)' : '#18181b',
                         border: isPlaying ? '2px solid #f59e0b' : '1px solid #27272a',
                         borderRadius: '0.65rem',
                         padding: '0.65rem',
                         textAlign: 'left',
-                        cursor: masterVideoUrl ? 'pointer' : 'default',
-                        transition: 'all 0.15s ease',
-                        boxShadow: isPlaying ? '0 0 16px rgba(245, 158, 11, 0.25)' : 'none',
+                        cursor: masterVideoUrl && s.clip ? 'pointer' : 'default',
                         display: 'flex',
                         gap: '0.75rem',
                       }}
-                      onMouseEnter={(e) => {
-                        if (masterVideoUrl && !isPlaying) e.currentTarget.style.borderColor = '#fbbf24';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isPlaying) e.currentTarget.style.borderColor = '#27272a';
-                      }}
                     >
-                      {/* Left: Keyframe Video Thumbnail */}
                       <div
                         style={{
                           position: 'relative',
@@ -1151,74 +587,53 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                           <img
                             src={clipThumbnails[s.n]}
                             alt={t('app.trace_keyframe_alt', { n: s.n })}
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                              display: 'block',
-                            }}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                           />
                         ) : (
-                          <div
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: '#71717a',
-                            }}
-                          >
+                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717a' }}>
                             <Video size={18} />
                           </div>
                         )}
-                        {/* Timecode overlay badge on thumbnail */}
-                        <div
-                          style={{
-                            position: 'absolute',
-                            bottom: '2px',
-                            right: '2px',
-                            backgroundColor: 'rgba(0,0,0,0.75)',
-                            color: '#fbbf24',
-                            fontSize: '0.65rem',
-                            fontWeight: 700,
-                            padding: '0.05rem 0.25rem',
-                            borderRadius: '0.2rem',
-                            fontVariantNumeric: 'tabular-nums',
-                          }}
-                        >
-                          {t('app.trace_seconds', { value: startS.toFixed(1) })}
-                        </div>
+                        {s.clip && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              bottom: '2px',
+                              right: '2px',
+                              backgroundColor: 'rgba(0,0,0,0.75)',
+                              color: '#fbbf24',
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              padding: '0.05rem 0.25rem',
+                              borderRadius: '0.2rem',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            {t('app.trace_seconds', { value: s.clip.start_s.toFixed(1) })}
+                          </div>
+                        )}
                       </div>
 
-                      {/* Right: Clip Details & Progress */}
                       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                            <span
-                              style={{
-                                backgroundColor: isPlaying ? '#f59e0b' : '#3f3f46',
-                                color: isPlaying ? '#000000' : '#ffffff',
-                                fontSize: '0.65rem',
-                                fontWeight: 800,
-                                padding: '0.1rem 0.35rem',
-                                borderRadius: '0.25rem',
-                              }}
-                            >
-                              {t('app.trace_step_badge', { n: s.n })}
-                            </span>
-                            {isPlaying && (
-                              <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 800 }}>
-                                ● {t('app.trace_playing')}
-                              </span>
-                            )}
-                          </div>
-                          <span style={{ color: '#fbbf24', fontVariantNumeric: 'tabular-nums', fontSize: '0.75rem', fontWeight: 600 }}>
-                            {formatTimestamp(startS)} - {formatTimestamp(endS)}
-                            <span style={{ color: '#71717a', fontSize: '0.7rem', marginLeft: '0.25rem' }}>({t('app.trace_seconds', { value: duration })})</span>
+                          <span
+                            style={{
+                              backgroundColor: isPlaying ? '#f59e0b' : '#3f3f46',
+                              color: isPlaying ? '#000000' : '#ffffff',
+                              fontSize: '0.65rem',
+                              fontWeight: 800,
+                              padding: '0.1rem 0.35rem',
+                              borderRadius: '0.25rem',
+                            }}
+                          >
+                            {t('app.trace_step_badge', { n: s.n })}
                           </span>
+                          {s.clip && (
+                            <span style={{ color: '#fbbf24', fontVariantNumeric: 'tabular-nums', fontSize: '0.75rem', fontWeight: 600 }}>
+                              {formatTimestamp(s.clip.start_s)} - {formatTimestamp(s.clip.end_s)}
+                            </span>
+                          )}
                         </div>
-
                         <div
                           style={{
                             color: isPlaying ? '#ffffff' : '#d4d4d8',
@@ -1229,49 +644,8 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          {s.instruction}
+                          {s.title || s.instruction}
                         </div>
-
-                        {s.motion_cue && (
-                          <div
-                            style={{
-                              color: '#a1a1aa',
-                              fontSize: '0.7rem',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            🎯 {s.motion_cue}
-                          </div>
-                        )}
-
-                        {/* Live active playback progress bar */}
-                        {isPlaying && (
-                          <div style={{ marginTop: '0.2rem' }}>
-                            <div
-                              style={{
-                                height: '3px',
-                                backgroundColor: '#27272a',
-                                borderRadius: '9999px',
-                                overflow: 'hidden',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: `${clipProgressPct}%`,
-                                  height: '100%',
-                                  backgroundColor: '#f59e0b',
-                                  transition: 'width 0.1s linear',
-                                }}
-                              />
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#fbbf24', marginTop: '0.15rem' }}>
-                              <span>{t('app.trace_elapsed', { value: (currentTime - startS).toFixed(1) })}</span>
-                              <span>{clipProgressPct.toFixed(0)}%</span>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
                   );
@@ -1281,10 +655,10 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
           </div>
         </section>
 
-        {/* CENTER COLUMN: Multi-Agent Pipeline */}
+        {/* CENTER COLUMN: Studio workflow nodes and what each one reported */}
         <section
           style={{
-            padding: '1.5rem 2rem',
+            padding: '1.5rem',
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
@@ -1298,14 +672,14 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', width: '100%' }}>
               {AGENT_NODES.map((node) => {
-                const isRunning = activeAgent === node.id;
-                const isDone = completedAgents.has(node.id) || jobStatus === 'done';
+                const nodeEvents = events.filter((e) => e.agent === node.id);
+                const isNodeDone = completedAgents.has(node.id);
+                const isNodeFailed = failedAgents.has(node.id);
+                const isRunning = runningAgents.has(node.id);
+                const notices = nodeEvents.filter((e) => e.level === 'warn');
+                const latest = nodeEvents.filter((e) => e.level !== 'warn').pop();
+                const durationMs = nodeEvents.find((e) => e.ms !== undefined)?.ms;
                 const Icon = node.icon;
-
-                // Find latest message for this agent
-                const agentEvents = events.filter((e) => e.agent === node.id);
-                const latestMsg = agentEvents.length > 0 ? agentEvents[agentEvents.length - 1].message : t(`app.trace_agent_${node.id}_desc`);
-                const durationMs = agentEvents.find((e) => e.ms !== undefined)?.ms;
 
                 return (
                   <div
@@ -1313,24 +687,24 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                     style={{
                       backgroundColor: '#18181b',
                       borderRadius: '0.85rem',
-                      border: isRunning
+                      border: isNodeFailed
+                        ? '2px solid #ef4444'
+                        : isRunning
                         ? '2px solid #f59e0b'
-                        : isDone
+                        : isNodeDone
                         ? '1px solid #10b981'
                         : '1px solid #27272a',
                       padding: '0.9rem 1.15rem',
-                      boxShadow: isRunning ? '0 0 25px rgba(245, 158, 11, 0.25)' : 'none',
-                      transition: 'all 0.2s ease-in-out',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.35rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         <div
                           style={{
                             padding: '0.45rem',
                             borderRadius: '0.45rem',
-                            backgroundColor: isDone ? 'rgba(16, 185, 129, 0.15)' : 'rgba(39, 39, 42, 0.8)',
-                            color: isDone ? '#34d399' : isRunning ? '#fbbf24' : '#a1a1aa',
+                            backgroundColor: isNodeDone ? 'rgba(16, 185, 129, 0.15)' : 'rgba(39, 39, 42, 0.8)',
+                            color: isNodeFailed ? '#f87171' : isNodeDone ? '#34d399' : isRunning ? '#fbbf24' : '#a1a1aa',
                           }}
                         >
                           <Icon size={18} />
@@ -1350,37 +724,39 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                             <span>{t('app.replay_latency_ms', { value: durationMs })}</span>
                           </div>
                         )}
-                        {isDone ? (
+                        {isNodeFailed ? (
+                          <AlertTriangle size={18} color="#f87171" />
+                        ) : isNodeDone ? (
                           <CheckCircle2 size={18} color="#10b981" />
                         ) : isRunning ? (
-                          <div
-                            style={{
-                              width: '10px',
-                              height: '10px',
-                              borderRadius: '50%',
-                              backgroundColor: '#f59e0b',
-                              boxShadow: '0 0 10px #f59e0b',
-                            }}
-                          />
+                          <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#f59e0b', boxShadow: '0 0 10px #f59e0b' }} />
                         ) : (
-                          <span style={{ fontSize: '0.7rem', color: '#52525b', fontWeight: 600 }}>{t('app.trace_queued')}</span>
+                          <span style={{ fontSize: '0.7rem', color: '#a1a1aa', fontWeight: 600 }}>{t('app.trace_queued')}</span>
                         )}
                       </div>
                     </div>
 
-                    <div
-                      style={{
-                        marginTop: '0.4rem',
-                        backgroundColor: '#09090b',
-                        padding: '0.45rem 0.65rem',
-                        borderRadius: '0.4rem',
-                        fontSize: '0.8rem',
-                        color: isRunning ? '#fbbf24' : '#d4d4d8',
-                        borderLeft: isRunning ? '3px solid #f59e0b' : '3px solid transparent',
-                      }}
-                    >
-                      {latestMsg}
-                    </div>
+                    {latest && (
+                      <div
+                        style={{
+                          marginTop: '0.4rem',
+                          backgroundColor: '#09090b',
+                          padding: '0.45rem 0.65rem',
+                          borderRadius: '0.4rem',
+                          fontSize: '0.8rem',
+                          color: latest.level === 'error' ? '#fca5a5' : isRunning ? '#fbbf24' : '#d4d4d8',
+                          borderLeft: isRunning ? '3px solid #f59e0b' : '3px solid transparent',
+                        }}
+                      >
+                        {latest.message}
+                      </div>
+                    )}
+                    {notices.map((e) => (
+                      <div key={e.id} style={{ marginTop: '0.3rem', fontSize: '0.75rem', color: '#fcd34d', display: 'flex', gap: '0.35rem' }}>
+                        <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: '0.15rem' }} />
+                        <span>{e.message}</span>
+                      </div>
+                    ))}
                   </div>
                 );
               })}
@@ -1388,7 +764,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
           </div>
         </section>
 
-        {/* RIGHT COLUMN: Progressive Live Assembled Lesson */}
+        {/* RIGHT COLUMN: the saved lesson */}
         <section
           style={{
             borderLeft: '1px solid #27272a',
@@ -1404,28 +780,26 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
             <select
               value={selectedLanguage}
               onChange={(e) => setSelectedLanguage(e.target.value)}
-              disabled={!isLocalizerDone}
+              disabled={lessonLanguages.length < 2}
               style={{
-                backgroundColor: isLocalizerDone ? '#27272a' : '#18181b',
+                backgroundColor: '#27272a',
                 border: '1px solid #3f3f46',
-                color: isLocalizerDone ? '#ffffff' : '#71717a',
+                color: '#ffffff',
                 borderRadius: '0.35rem',
                 padding: '0.25rem 0.5rem',
+                minHeight: '36px',
                 fontSize: '0.8rem',
-                cursor: isLocalizerDone ? 'pointer' : 'not-allowed',
               }}
             >
-              <option value="en">English (en)</option>
-              <option value="ja">日本語 (ja)</option>
-              <option value="vi">Tiếng Việt (vi)</option>
-              <option value="hi">हिन्दी (hi)</option>
-              <option value="id">Bahasa Indonesia (id)</option>
-              <option value="fil">Tagalog (fil)</option>
+              {lessonLanguages.map((code) => (
+                <option key={code} value={code}>
+                  {LANGUAGE_LABELS[code] || code}
+                </option>
+              ))}
             </select>
           </div>
 
-          {/* Scenario: Segmenter NOT done yet -> Do not show steps */}
-          {!isSegmenterDone ? (
+          {!hasSteps ? (
             <div
               style={{
                 backgroundColor: '#18181b',
@@ -1441,17 +815,17 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
             >
               <Sparkles size={28} style={{ color: '#fbbf24' }} />
               <div style={{ fontSize: '0.95rem', color: '#f4f4f5', fontWeight: 600 }}>{t('app.trace_assembling')}</div>
-              <div style={{ fontSize: '0.8rem', color: '#71717a', lineHeight: 1.5 }}>
+              <div style={{ fontSize: '0.8rem', color: '#a1a1aa', lineHeight: 1.5 }}>
                 {t('app.trace_assembling_desc')}
               </div>
             </div>
           ) : (
-            /* Scenario: Steps generated -> Render cards with active playback highlighting */
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
               {steps.map((step, idx) => {
-                const tr = step.translations?.[selectedLanguage];
-                const displayInstruction = tr ? tr.instruction : step.instruction;
-                const displayWhy = tr ? tr.why : step.why;
+                const translated = selectedLanguage === 'en' ? undefined : step.translations?.[selectedLanguage];
+                const displayTitle = translated?.title || step.title;
+                const displayInstruction = translated?.instruction || step.instruction;
+                const displayWhy = translated?.why || step.why;
                 const isPlaying = activeStepIndex === idx;
 
                 return (
@@ -1465,8 +839,6 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '0.5rem',
-                      transition: 'all 0.2s ease',
-                      boxShadow: isPlaying ? '0 0 20px rgba(245, 158, 11, 0.25)' : 'none',
                     }}
                   >
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1479,7 +851,6 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                             fontSize: '0.7rem',
                             padding: '0.15rem 0.45rem',
                             borderRadius: '0.3rem',
-                            transition: 'background-color 0.2s ease',
                           }}
                         >
                           {t('app.trace_step_badge', { n: step.n })}
@@ -1505,32 +876,20 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                             <span>{t('app.trace_clip_range', { start: step.clip.start_s.toFixed(1), end: step.clip.end_s.toFixed(1) })}</span>
                           </button>
                         )}
-                        {isPlaying && (
-                          <span style={{ fontSize: '0.65rem', color: '#fbbf24', fontWeight: 700 }}>
-                            • {t('app.trace_active_playhead')}
-                          </span>
-                        )}
                       </div>
-
-                      {/* Point Hint: Show ONLY if Spatial Annotator done */}
-                      {isSpatialDone && step.point_hint ? (
-                        <span style={{ fontSize: '0.75rem', color: '#fbbf24', fontWeight: 600 }}>
-                          📍 {step.point_hint}
-                        </span>
-                      ) : !isSpatialDone ? (
-                        <span style={{ fontSize: '0.7rem', color: '#52525b', fontStyle: 'italic' }}>
-                          {t('app.trace_detecting')}
-                        </span>
-                      ) : null}
+                      {step.point_hint && (
+                        <span style={{ fontSize: '0.75rem', color: '#fbbf24', fontWeight: 600 }}>📍 {step.point_hint}</span>
+                      )}
                     </div>
 
-                    {/* Instruction */}
+                    {displayTitle && (
+                      <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fbbf24' }}>{displayTitle}</div>
+                    )}
                     <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#ffffff', lineHeight: 1.35 }}>
                       {displayInstruction}
                     </div>
 
-                    {/* Why Reasoning: Show ONLY if Why Extractor done */}
-                    {isWhyDone && displayWhy ? (
+                    {displayWhy && (
                       <div
                         style={{
                           fontSize: '0.8rem',
@@ -1545,24 +904,7 @@ export const AgentTrace: React.FC<AgentTraceProps> = ({ jobId: propJobId, onNavi
                         <strong style={{ color: '#fbbf24' }}>{t('app.trace_why_label')} </strong>
                         {displayWhy}
                       </div>
-                    ) : !isWhyDone ? (
-                      <div
-                        style={{
-                          fontSize: '0.75rem',
-                          color: '#71717a',
-                          backgroundColor: '#1f1f23',
-                          padding: '0.4rem 0.6rem',
-                          borderRadius: '0.4rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.4rem',
-                          fontStyle: 'italic',
-                        }}
-                      >
-                        <Sparkles size={12} style={{ color: '#fbbf24' }} />
-                        <span>{t('app.trace_extracting_why')}</span>
-                      </div>
-                    ) : null}
+                    )}
                   </div>
                 );
               })}
