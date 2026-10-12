@@ -28,6 +28,6 @@ bq add-iam-policy-binding --member="serviceAccount:${PUBSUB_AGENT}" --role=roles
 # 4. BigQuery subscription (message JSON keys map to table columns)
 gcloud pubsub subscriptions describe "$SUB" --project="$PROJECT" >/dev/null 2>&1 || \
   gcloud pubsub subscriptions create "$SUB" --project="$PROJECT" --topic="$TOPIC" \
-    --bigquery-table="$PROJECT:$TABLE" --use-table-schema --drop-unknown-fields
+    --bigquery-table="$PROJECT:$TABLE" --use-table-schema --drop-unknown-fields --expiration-period=never
 
 echo "Events pipeline ready: $TOPIC -> $SUB -> $TABLE"
