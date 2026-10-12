@@ -73,7 +73,7 @@
   <path class="ad" d="M30 124 H18 V488 H30"/>
   <text class="f" x="10" y="250" transform="rotate(-90 10 250)">voice · single-use token</text>
 
-  <path class="a" d="M366 414 V448"/><path class="a" d="M595 414 V448"/><path class="a" d="M660 414 L800 448"/>
+  <path class="a" d="M366 414 V448"/><path class="a" d="M595 414 V448"/><path class="a" d="M660 414 L790 448"/><path class="a" d="M688 414 L1000 448"/>
   <path class="a" d="M850 414 V448"/><path class="a" d="M1053 414 V448"/>
 
   <!-- Models -->
@@ -86,17 +86,17 @@
   <text class="s" x="273" y="497">inspection screen, step</text>
   <text class="s" x="273" y="513">watcher, machine reads</text>
   <rect class="ai" x="488" y="450" width="214" height="74" rx="10"/>
-  <text class="t" x="502" y="476">gemini-3.8-flash</text>
-  <text class="s" x="502" y="497">confirm, step verifier,</text>
-  <text class="s" x="502" y="513">Studio video, ADK agents</text>
+  <text class="t" x="502" y="476">gemini-3.8-flash-tts</text>
+  <text class="s" x="502" y="497">spoken floor alerts</text>
+  <text class="s" x="502" y="513">in six languages</text>
   <rect class="ai" x="717" y="450" width="214" height="74" rx="10"/>
-  <text class="t" x="731" y="476">gemini-robotics-er-2</text>
-  <text class="s" x="731" y="497">pointing at parts,</text>
-  <text class="s" x="731" y="513">Machine Watch setup</text>
+  <text class="t" x="731" y="476">gemini-3.8-flash</text>
+  <text class="s" x="731" y="497">confirm, verify, ADK agents,</text>
+  <text class="s" x="731" y="513">Studio video → steps</text>
   <rect class="ai" x="946" y="450" width="214" height="74" rx="10"/>
-  <text class="t" x="960" y="476">Gemini Files API</text>
-  <text class="s" x="960" y="497">master video for Studio</text>
-  <text class="s" x="960" y="513">segmentation (deleted)</text>
+  <text class="t" x="960" y="476">gemini-robotics-er-2</text>
+  <text class="s" x="960" y="497">pointing at parts,</text>
+  <text class="s" x="960" y="513">Machine Watch setup</text>
 
   <!-- Data -->
   <path class="a" d="M251 414 V556"/><path class="a" d="M480 414 V556"/>
