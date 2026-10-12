@@ -47,10 +47,12 @@ function versionPlugin() {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '');
   const apiTarget = env.VITE_DEV_API_TARGET || process.env.VITE_DEV_API_TARGET;
+  // Optional: a separately running Forge service (agents, Studio); defaults to the API target.
+  const forgeTarget = env.VITE_DEV_FORGE_TARGET || process.env.VITE_DEV_FORGE_TARGET || apiTarget;
 
   if (mode === 'development') {
     if (apiTarget) {
-      console.info(`[vite] Proxying /api and /forge to ${apiTarget}`);
+      console.info(`[vite] Proxying /api to ${apiTarget} and /forge to ${forgeTarget}`);
     } else {
       console.info(
         '[vite] VITE_DEV_API_TARGET is not set; API proxy is disabled. Set VITE_DEV_API_TARGET in .env.development.local to proxy /api and /forge.'
@@ -68,7 +70,7 @@ export default defineConfig(({ mode }) => {
               changeOrigin: true,
             },
             '/forge': {
-              target: apiTarget,
+              target: forgeTarget,
               changeOrigin: true,
             },
           },
