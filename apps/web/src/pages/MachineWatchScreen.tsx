@@ -588,7 +588,7 @@ export const MachineWatchScreen: React.FC = () => {
       </header>
 
       {source === 'file' && (
-        <div className="bg-amber-500/20 text-amber-200 text-sm px-4 py-2" role="status">
+        <div className="bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200 text-sm font-semibold px-4 py-2" role="status">
           {t('ops.watch_simulated_input')}
         </div>
       )}
@@ -596,7 +596,7 @@ export const MachineWatchScreen: React.FC = () => {
       <main className="flex-1 grid lg:grid-cols-[1fr_380px] gap-4 p-4">
         <section className="flex flex-col gap-3 min-w-0">
           {portrait && source && mode !== 'watching' && (
-            <div className="bg-amber-500/20 text-amber-100 rounded-xl px-4 py-3 text-sm" role="status">
+            <div className="bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100 rounded-xl px-4 py-3 text-sm font-semibold" role="status">
               {t('ops.watch_rotate_hint')}
             </div>
           )}
