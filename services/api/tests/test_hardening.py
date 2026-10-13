@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
@@ -80,7 +81,9 @@ def test_api_status_public_and_returns_metrics():
         assert last_24h["p90_ms"]["watch"] == 510
 
 
-def test_csp_report_returns_204_and_logs():
+def test_csp_report_returns_204_and_logs(caplog):
+    from services.api.telemetry import StructuredJsonFormatter
+
     client = TestClient(app)
     csp_payload = {
         "csp-report": {
@@ -95,8 +98,15 @@ def test_csp_report_returns_204_and_logs():
         }
     }
 
-    resp = client.post("/api/csp-report", json=csp_payload)
+    with caplog.at_level("WARNING"):
+        resp = client.post("/api/csp-report", json=csp_payload)
     assert resp.status_code == 204
+
+    record = next(r for r in caplog.records if r.getMessage() == "CSP violation reported")
+    entry = json.loads(StructuredJsonFormatter().format(record))
+    assert entry["event"] == "csp_violation"
+    assert entry["effective_directive"] == "style-src"
+    assert entry["blocked_uri"] == "http://evil.com/style.css"
 
 
 def test_api_calls_timing_measurement_with_delay():

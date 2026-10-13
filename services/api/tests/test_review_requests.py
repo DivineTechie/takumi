@@ -12,7 +12,7 @@ BODY = {"skill_id": "skill_cable", "step": 2, "reason": "Trace-back of SN-0042",
         "source": "traceback", "unit_id": "SN-0042"}
 
 
-def _db(skill):
+def _db(skill, open_requests=()):
     db = MagicMock()
     skill_snap = MagicMock(exists=skill is not None)
     skill_snap.to_dict.return_value = skill
@@ -24,6 +24,12 @@ def _db(skill):
             col.document.return_value.get.return_value = skill_snap
         else:
             col.document.return_value = new_ref
+            snaps = []
+            for i, r in enumerate(open_requests):
+                snap = MagicMock(id=f"rr_open_{i}")
+                snap.to_dict.return_value = r
+                snaps.append(snap)
+            col.where.return_value.where.return_value.stream.return_value = snaps
         return col
 
     db.collection.side_effect = collection
@@ -57,3 +63,17 @@ def test_creates_open_request():
     assert saved["status"] == "open" and saved["step"] == 2 and saved["source"] == "traceback"
     assert saved["created_by_uid"] == "u1"
     assert "suggested_success_criteria" not in saved
+
+
+def test_same_suggestion_twice_returns_the_open_request():
+    existing = {"skill_id": "skill_cable", "step": 2, "unit_id": "SN-0042", "status": "open", "reason": "Trace-back of SN-0042"}
+    db, ref = _db({"steps": [{"n": 2}]}, open_requests=[existing])
+    with _as("supervisor"), patch("services.api.review_requests.get_firestore_client", return_value=db):
+        res = client.post("/api/review-requests", json=BODY, headers=AUTH)
+    assert res.json()["existing"] is True and res.json()["id"] == "rr_open_0"
+    ref.set.assert_not_called()
+    # another step or unit is a new request
+    db, ref = _db({"steps": [{"n": 2}]}, open_requests=[dict(existing, unit_id="SN-0007")])
+    with _as("supervisor"), patch("services.api.review_requests.get_firestore_client", return_value=db):
+        client.post("/api/review-requests", json=BODY, headers=AUTH)
+    ref.set.assert_called_once()

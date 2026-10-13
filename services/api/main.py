@@ -1304,14 +1304,14 @@ async def post_csp_report(request: Request) -> Response:
             report_payload = data.get("csp-report", data)
             logger.warning(
                 "CSP violation reported",
-                extra={
+                extra={"props": {
                     "event": "csp_violation",
                     "document_uri": report_payload.get("document-uri"),
                     "violated_directive": report_payload.get("violated-directive"),
                     "effective_directive": report_payload.get("effective-directive"),
                     "blocked_uri": report_payload.get("blocked-uri"),
                     "status_code": report_payload.get("status-code"),
-                },
+                }},
             )
     except Exception as exc:
         logger.warning(f"Failed to parse CSP report: {exc}")

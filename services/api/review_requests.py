@@ -37,6 +37,12 @@ def create_review_request(req: ReviewRequestCreate, user: AuthUser = Depends(req
     if not any(s.get("n") == req.step for s in steps):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Step {req.step} not found in this skill")
 
+    # Sending the same suggestion twice (same step, same unit) returns the open request instead of a duplicate.
+    for snap in db.collection("review_requests").where("skill_id", "==", req.skill_id).where("status", "==", "open").stream():
+        open_req = snap.to_dict() or {}
+        if open_req.get("step") == req.step and open_req.get("unit_id") == req.unit_id:
+            return {"id": snap.id, **open_req, "existing": True}
+
     data: dict[str, Any] = {
         "skill_id": req.skill_id,
         "step": req.step,

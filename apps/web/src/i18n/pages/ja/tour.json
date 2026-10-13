@@ -3,7 +3,7 @@
   "tour.flow_act": "対処",
   "tour.flow_act_1": "保全エージェントが指図書を作成し、現場の言語で伝達",
   "tour.flow_act_2": "追跡エージェントが不良の発生工程と対象ロットを特定",
-  "tour.flow_act_3": "TAKUMIに音声で確認：「今日の生産計画に間に合う？」",
+  "tour.flow_act_3": "Ask TAKUMIに音声で質問：本日のオーダーは間に合う？",
   "tour.flow_sense": "検知",
   "tour.flow_sense_1": "Machine Watchが積層信号灯、カウンター、アラーム画面を監視",
   "tour.flow_sense_2": "Station Watchが手作業の各工程をトラッキング",
