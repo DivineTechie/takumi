@@ -730,6 +730,7 @@ export interface TracebackResult {
     hold_unit_ids: string[];
     hold_reason: string;
     work_instruction_fix: string | null;
+    success_criteria_fix?: string | null;
   };
   agent_steps: { agent: string; tool: string; args: Record<string, unknown> }[];
 }
@@ -761,7 +762,7 @@ export async function createReviewRequest(req: {
   skill_id: string;
   step: number;
   reason: string;
-  suggested_instruction: string;
+  suggested_instruction?: string;
   suggested_success_criteria?: string;
   source: 'traceback' | 'supervisor';
   unit_id?: string;

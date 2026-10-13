@@ -40,7 +40,12 @@ class TracebackReport(BaseModel):
     confidence: Literal["low", "medium", "high"] = "low"
     hold_unit_ids: list[str] = Field(default_factory=list, description="Other units to put on hold for re-inspection.")
     hold_reason: str = ""
-    work_instruction_fix: str | None = Field(default=None, description="Suggested change to the step's instruction or success criteria.")
+    work_instruction_fix: str | None = Field(
+        default=None, description="The new instruction text for the step, written as the instruction itself (no labels)."
+    )
+    success_criteria_fix: str | None = Field(
+        default=None, description="New camera success criteria for the step (visible facts only), if they should change."
+    )
 
 
 class TracebackTools:
@@ -172,7 +177,9 @@ step's instruction or success criteria that would prevent this. Never mention or
 REPORTER_INSTRUCTION = """Turn the investigator's notes into the report. Use only facts in the notes:
 {findings}
 List in hold_unit_ids only unit ids that the notes say find_similar_units returned. If the root cause is unknown,
-leave the root cause fields empty, set confidence to low and leave hold_unit_ids empty."""
+leave the root cause fields empty, set confidence to low and leave hold_unit_ids empty.
+Put only the new instruction text in work_instruction_fix and any new success criteria in success_criteria_fix,
+without labels such as "Instruction:"."""
 
 
 def build_traceback_agent(tools: TracebackTools) -> SequentialAgent:

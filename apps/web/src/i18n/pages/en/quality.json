@@ -265,6 +265,7 @@
   "quality.unit_step_get_unit_history": "Read the unit’s stations and inspections",
   "quality.unit_step_get_work_instruction": "Read the work instruction for that step",
   "quality.unit_suggested_change": "Suggested work-instruction change",
+  "quality.unit_suggested_criteria": "Success criteria: {criteria}",
   "quality.unit_tool_history": "Unit history",
   "quality.unit_tool_same_step": "Units through the same step",
   "quality.unit_tool_work_instruction": "Work instruction",

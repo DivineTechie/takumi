@@ -82,7 +82,8 @@ describe('UnitScreen', () => {
         confidence: 'high',
         hold_unit_ids: ['SN-0043', 'SN-0044'],
         hold_reason: 'Same step 2 issue',
-        work_instruction_fix: 'Add an orientation mark.',
+        // Older reports put both parts in one labelled string; the page splits them.
+        work_instruction_fix: 'Instruction: Add an orientation mark. Success Criteria: The mark faces up.',
       },
       agent_steps: [{ agent: 'investigator', tool: 'get_unit_history', args: { unit_id: 'SN-0042' } }],
     });
@@ -94,6 +95,7 @@ describe('UnitScreen', () => {
     expect(screen.getByText('Read the unit’s stations and inspections')).toBeInTheDocument();
     expect(screen.getByLabelText('Trace-back graph')).toBeInTheDocument();
     expect(screen.getByText('Add an orientation mark.')).toBeInTheDocument();
+    expect(screen.getByText('Success criteria: The mark faces up.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'SN-0044' }));
     fireEvent.click(screen.getByText('Approve: hold 1 unit(s)'));
@@ -103,7 +105,14 @@ describe('UnitScreen', () => {
     fireEvent.click(screen.getByText('Send to the Standard Work Studio (step 2)'));
     await waitFor(() =>
       expect(apiModule.createReviewRequest).toHaveBeenCalledWith(
-        expect.objectContaining({ skill_id: 'skill_cable', step: 2, suggested_instruction: 'Add an orientation mark.', source: 'traceback', unit_id: 'SN-0042' })
+        expect.objectContaining({
+          skill_id: 'skill_cable',
+          step: 2,
+          suggested_instruction: 'Add an orientation mark.',
+          suggested_success_criteria: 'The mark faces up.',
+          source: 'traceback',
+          unit_id: 'SN-0042',
+        })
       )
     );
     expect(await screen.findByText('Sent to the Standard Work Studio')).toBeInTheDocument();
