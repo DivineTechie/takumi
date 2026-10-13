@@ -102,11 +102,7 @@ def screen_text(text: str, purpose: str = "point_target") -> dict[str, Any]:
                 # Log structured warning: purpose and categories only, NEVER raw text
                 logger.warning(
                     "Model Armor blocked untrusted text",
-                    extra={
-                        "event": "model_armor_block",
-                        "purpose": purpose,
-                        "categories": cats,
-                    },
+                    extra={"props": {"event": "model_armor_block", "purpose": purpose, "categories": cats}},
                 )
                 return {"allowed": False, "categories": cats}
 
@@ -122,21 +118,21 @@ def screen_text(text: str, purpose: str = "point_target") -> dict[str, Any]:
             # Fail-CLOSED for free-form questions
             logger.warning(
                 "Model Armor screening failed (fail-closed)",
-                extra={"event": "model_armor_fail_closed", "purpose": purpose, "reason": reason_label},
+                extra={"props": {"event": "model_armor_fail_closed", "purpose": purpose, "reason": reason_label}},
             )
             return {"allowed": False, "categories": [reason_label]}
         else:
             # Fail-OPEN for /api/point targets so coach does not break
             logger.warning(
                 "Model Armor screening failed (fail-open)",
-                extra={"event": "model_armor_fail_open", "purpose": purpose, "reason": reason_label},
+                extra={"props": {"event": "model_armor_fail_open", "purpose": purpose, "reason": reason_label}},
             )
             return {"allowed": True, "categories": []}
 
     except Exception as exc:
         logger.error(
             "Model Armor screening unexpected error",
-            extra={"event": "model_armor_error", "purpose": purpose, "error_type": type(exc).__name__},
+            extra={"props": {"event": "model_armor_error", "purpose": purpose, "error_type": type(exc).__name__}},
         )
         if purpose == "question":
             return {"allowed": False, "categories": ["error"]}
