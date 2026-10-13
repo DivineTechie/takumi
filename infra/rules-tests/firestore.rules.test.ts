@@ -60,6 +60,13 @@ describe('Firestore Security Rules', () => {
         title: 'Published Skill',
       });
 
+      // Seed a written work instruction (no capture behind it)
+      await setDoc(doc(db, 'skills', 'skill_written'), {
+        id: 'skill_written',
+        status: 'published',
+        title: 'Written Skill',
+      });
+
       // Seed draft skill
       await setDoc(doc(db, 'skills', 'skill_draft'), {
         id: 'skill_draft',
@@ -192,6 +199,28 @@ describe('Firestore Security Rules', () => {
         title: 'Master-2 unauthorized title update',
       })
     );
+  });
+
+  it('any master updating a written work instruction is allowed', async () => {
+    const master2Db = testEnv.authenticatedContext('master-2', { role: 'master' }).firestore();
+    await assertSucceeds(
+      updateDoc(doc(master2Db, 'skills', 'skill_written'), {
+        title: 'Applied review request',
+      })
+    );
+  });
+
+  it('supervisor or trainee updating a written work instruction is denied', async () => {
+    const supervisorDb = testEnv.authenticatedContext('supervisor-1', { role: 'supervisor' }).firestore();
+    const trainee1Db = testEnv.authenticatedContext('trainee-1', { role: 'trainee' }).firestore();
+    await assertFails(updateDoc(doc(supervisorDb, 'skills', 'skill_written'), { title: 'Supervisor edit' }));
+    await assertFails(updateDoc(doc(trainee1Db, 'skills', 'skill_written'), { title: 'Trainee edit' }));
+  });
+
+  it('master attaching a capture to a skill is denied', async () => {
+    const master1Db = testEnv.authenticatedContext('master-1', { role: 'master' }).firestore();
+    await assertFails(updateDoc(doc(master1Db, 'skills', 'skill_written'), { capture_id: 'cap_1' }));
+    await assertFails(updateDoc(doc(master1Db, 'skills', 'skill_published'), { capture_id: 'cap_2' }));
   });
 
   it('master changing a review_request field other than status is denied', async () => {

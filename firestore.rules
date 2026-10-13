@@ -47,12 +47,15 @@ service cloud.firestore {
 
     // skills: any signed-in user can read docs with status == "published".
     // Role master or supervisor can read all skills.
-    // Role master may update a skill only if get(/databases/$(database)/documents/captures/$(resource.data.capture_id)).data.master_uid == request.auth.uid.
+    // Role master may update a skill made from their own capture, or any written work instruction (no capture
+    // behind it: it belongs to the factory, not to one master). capture_id itself never changes.
     // No client creates; Forge creates skills server-side.
     match /skills/{skillId} {
       allow read: if isSupervisor() || isMaster() || (isSignedIn() && resource.data.status == "published");
       allow create, delete: if false;
-      allow update: if isMaster() && isCaptureMaster(resource.data.capture_id);
+      allow update: if isMaster()
+        && request.resource.data.get('capture_id', null) == resource.data.get('capture_id', null)
+        && (resource.data.get('capture_id', null) == null || isCaptureMaster(resource.data.capture_id));
     }
 
     // forge_jobs and forge_jobs/*/events: readable by role master or supervisor. No client writes.

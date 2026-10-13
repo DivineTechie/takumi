@@ -77,3 +77,21 @@ def test_same_suggestion_twice_returns_the_open_request():
     with _as("supervisor"), patch("services.api.review_requests.get_firestore_client", return_value=db):
         client.post("/api/review-requests", json=BODY, headers=AUTH)
     ref.set.assert_called_once()
+
+
+def test_a_fix_may_change_only_the_success_criteria():
+    db, ref = _db({"steps": [{"n": 2}]})
+    body = {k: v for k, v in BODY.items() if k != "suggested_instruction"} | {"suggested_success_criteria": "A rubber band holds the coiled cable"}
+    with _as("supervisor"), patch("services.api.review_requests.get_firestore_client", return_value=db):
+        assert client.post("/api/review-requests", json=body, headers=AUTH).status_code == 201
+    saved = ref.set.call_args[0][0]
+    assert saved["suggested_success_criteria"] == "A rubber band holds the coiled cable"
+    assert "suggested_instruction" not in saved
+
+
+def test_a_fix_must_change_something():
+    db, ref = _db({"steps": [{"n": 2}]})
+    body = {k: v for k, v in BODY.items() if k != "suggested_instruction"}
+    with _as("supervisor"), patch("services.api.review_requests.get_firestore_client", return_value=db):
+        assert client.post("/api/review-requests", json=body, headers=AUTH).status_code == 422
+    ref.set.assert_not_called()

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from services.api.auth import AuthUser, get_firestore_client, require_role
 
@@ -20,10 +20,17 @@ class ReviewRequestCreate(BaseModel):
     skill_id: str = Field(..., min_length=1, max_length=128)
     step: int = Field(..., ge=1)
     reason: str = Field(..., min_length=3, max_length=1000)
-    suggested_instruction: str = Field(..., min_length=3, max_length=1000)
-    suggested_success_criteria: str | None = Field(default=None, max_length=1000)
+    suggested_instruction: str | None = Field(default=None, min_length=3, max_length=1000)
+    suggested_success_criteria: str | None = Field(default=None, min_length=3, max_length=1000)
     source: Literal["traceback", "supervisor"] = "supervisor"
     unit_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._-]{1,64}$")
+
+    @model_validator(mode="after")
+    def _suggests_something(self) -> "ReviewRequestCreate":
+        # A fix may change the instruction, the success criteria, or both.
+        if not self.suggested_instruction and not self.suggested_success_criteria:
+            raise ValueError("suggested_instruction or suggested_success_criteria is required")
+        return self
 
 
 @router.post("/review-requests", status_code=status.HTTP_201_CREATED)
@@ -47,13 +54,14 @@ def create_review_request(req: ReviewRequestCreate, user: AuthUser = Depends(req
         "skill_id": req.skill_id,
         "step": req.step,
         "reason": req.reason,
-        "suggested_instruction": req.suggested_instruction,
         "status": "open",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source": req.source,
         "unit_id": req.unit_id,
         "created_by_uid": user.uid,
     }
+    if req.suggested_instruction:
+        data["suggested_instruction"] = req.suggested_instruction
     if req.suggested_success_criteria:
         data["suggested_success_criteria"] = req.suggested_success_criteria
     ref = db.collection("review_requests").document()

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { Skill } from '../../../../../shared/schema/ts/skills.ts';
 import { validateSkillForPublish, ValidationResult } from './publishValidation';
+import { splitInstructionFix } from '../../lib/instructionFix';
 import { useI18n } from '../../i18n';
 
 export interface MasterReviewProps {
@@ -35,7 +36,7 @@ interface ReviewRequestItem {
   skill_id: string;
   step: number;
   reason: string;
-  suggested_instruction: string;
+  suggested_instruction?: string;
   suggested_success_criteria?: string;
   source?: 'traceback' | 'supervisor';
   unit_id?: string | null;
@@ -180,20 +181,22 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
     if (decision === 'applied') {
       const idx = skill.steps.findIndex((st) => st.n === rr.step);
       if (idx < 0) return;
+      const fix = splitInstructionFix(rr.suggested_instruction, rr.suggested_success_criteria);
       const updated = { ...skill, steps: [...skill.steps] };
       updated.steps[idx] = {
         ...updated.steps[idx],
-        instruction: rr.suggested_instruction,
-        ...(rr.suggested_success_criteria ? { success_criteria: rr.suggested_success_criteria } : {}),
+        ...(fix.instruction ? { instruction: fix.instruction } : {}),
+        ...(fix.successCriteria ? { success_criteria: fix.successCriteria } : {}),
       };
-      setSkill(updated);
       try {
         // The master's Apply is the approval: save the step now so the change is not lost.
         await updateDoc(doc(db, 'skills', skill.id), { steps: updated.steps });
       } catch (err) {
         console.warn('Failed to save the applied step:', err);
+        setError(t('app.review_apply_failed', { n: rr.step }));
         return;
       }
+      setSkill(updated);
     }
     try {
       await updateDoc(doc(db, 'review_requests', rr.id), { status: decision });
@@ -325,12 +328,13 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
       };
 
       const skillRef = doc(db, 'skills', skill.id);
+      // A written work instruction has no video_uri; Firestore rejects undefined values.
       await updateDoc(skillRef, {
         steps: updatedSkill.steps,
         status: 'published',
         published_at: nowIso,
         safety_rules: updatedSkill.safety_rules,
-        video_uri: updatedSkill.video_uri,
+        ...(updatedSkill.video_uri ? { video_uri: updatedSkill.video_uri } : {}),
       });
 
       setSkill(updatedSkill);
@@ -530,23 +534,25 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
               >
                 {t('app.review_schema_strict')}
               </span>
-              <span
-                style={{
-                  fontSize: '0.75rem',
-                  padding: '0.2rem 0.5rem',
-                  borderRadius: '0.35rem',
-                  backgroundColor: '#27272a',
-                  color: '#a1a1aa',
-                }}
-              >
-                H.264 MP4 faststart
-              </span>
+              {skill.capture_id && (
+                <span
+                  style={{
+                    fontSize: '0.75rem',
+                    padding: '0.2rem 0.5rem',
+                    borderRadius: '0.35rem',
+                    backgroundColor: '#27272a',
+                    color: '#a1a1aa',
+                  }}
+                >
+                  H.264 MP4 faststart
+                </span>
+              )}
             </div>
           </div>
 
           {validation.isValid ? (
             <div style={{ fontSize: '0.85rem', color: '#a7f3d0' }}>
-              ✓ {t('app.review_valid_desc', { count: skill.steps.length, schema: '/shared/schema/skills.json' })}
+              ✓ {t(skill.capture_id ? 'app.review_valid_desc' : 'app.review_valid_desc_written', { count: skill.steps.length, schema: '/shared/schema/skills.json' })}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
@@ -626,12 +632,23 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
             </div>
             <div style={{ fontSize: '0.9rem', color: '#d4d4d8', marginBottom: '0.5rem' }}>{rr.reason}</div>
             <div style={{ fontSize: '0.9rem', color: '#fafafa', marginBottom: '0.75rem' }}>
-              {t('app.review_suggested_instruction')} {rr.suggested_instruction}
-              {rr.suggested_success_criteria && (
-                <div>
-                  {t('app.review_suggested_criteria')} {rr.suggested_success_criteria}
-                </div>
-              )}
+              {(() => {
+                const fix = splitInstructionFix(rr.suggested_instruction, rr.suggested_success_criteria);
+                return (
+                  <>
+                    {fix.instruction && (
+                      <div>
+                        {t('app.review_suggested_instruction')} {fix.instruction}
+                      </div>
+                    )}
+                    {fix.successCriteria && (
+                      <div style={{ marginTop: fix.instruction ? '0.35rem' : 0 }}>
+                        {t('app.review_suggested_criteria')} {fix.successCriteria}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               <button

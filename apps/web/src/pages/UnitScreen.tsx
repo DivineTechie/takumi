@@ -14,6 +14,7 @@ import { useAuth } from '../lib/auth';
 import { AgentWorking } from '../components/AgentWorking';
 import { TraceGraph } from '../components/units/TraceGraph';
 import { useI18n } from '../i18n';
+import { splitInstructionFix } from '../lib/instructionFix';
 
 // Translation keys; resolved with t() at render time.
 const TRACE_TOOLS = ['quality.unit_tool_history', 'quality.unit_tool_same_step', 'quality.unit_tool_work_instruction'];
@@ -120,13 +121,16 @@ export const UnitScreen: React.FC = () => {
 
   const sendToStudio = async () => {
     const r = trace?.report;
-    if (!r || !r.work_instruction_fix || !r.root_cause_skill_id || r.root_cause_step === null) return;
+    if (!r || !r.root_cause_skill_id || r.root_cause_step === null) return;
+    const fix = splitInstructionFix(r.work_instruction_fix, r.success_criteria_fix);
+    if (!fix.instruction && !fix.successCriteria) return;
     try {
       await createReviewRequest({
         skill_id: r.root_cause_skill_id,
         step: r.root_cause_step,
         reason: `Quality trace-back of unit ${unitId}: ${r.summary}`.slice(0, 1000),
-        suggested_instruction: r.work_instruction_fix.slice(0, 1000),
+        ...(fix.instruction ? { suggested_instruction: fix.instruction.slice(0, 1000) } : {}),
+        ...(fix.successCriteria ? { suggested_success_criteria: fix.successCriteria.slice(0, 1000) } : {}),
         source: 'traceback',
         unit_id: unitId,
       });
@@ -337,10 +341,18 @@ export const UnitScreen: React.FC = () => {
                   )}
                 </div>
 
-                {trace.report.work_instruction_fix && (
+                {(trace.report.work_instruction_fix || trace.report.success_criteria_fix) && (
                   <div className="bg-surface-container rounded-xl p-3 text-sm">
                     <h3 className="font-bold mb-1">{t('quality.unit_suggested_change')}</h3>
-                    <p>{trace.report.work_instruction_fix}</p>
+                    {(() => {
+                      const fix = splitInstructionFix(trace.report.work_instruction_fix, trace.report.success_criteria_fix);
+                      return (
+                        <>
+                          {fix.instruction && <p>{fix.instruction}</p>}
+                          {fix.successCriteria && <p className={fix.instruction ? 'mt-1' : undefined}>{t('quality.unit_suggested_criteria', { criteria: fix.successCriteria })}</p>}
+                        </>
+                      );
+                    })()}
                     {trace.report.root_cause_skill_id && trace.report.root_cause_step !== null ? (
                       <button
                         type="button"
