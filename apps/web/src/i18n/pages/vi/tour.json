@@ -3,7 +3,7 @@
   "tour.flow_act": "Xử lý",
   "tour.flow_act_1": "Trợ lý bảo trì lập lệnh bảo trì, xưởng nghe thông báo bằng ngôn ngữ của mình",
   "tour.flow_act_2": "Trợ lý truy vết tìm công đoạn phát sinh lỗi và các sản phẩm có rủi ro",
-  "tour.flow_act_3": "Hỏi TAKUMI bằng giọng nói: hôm nay có kịp đơn hàng không?",
+  "tour.flow_act_3": "Hỏi Ask TAKUMI bằng giọng nói: có kịp đơn hàng hôm nay không?",
   "tour.flow_sense": "Nhận biết",
   "tour.flow_sense_1": "Machine Watch đọc đèn tháp, bộ đếm và màn hình cảnh báo",
   "tour.flow_sense_2": "Station Watch theo dõi từng bước thao tác thủ công",

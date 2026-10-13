@@ -3,7 +3,7 @@
   "tour.flow_act": "Umaksyon",
   "tour.flow_act_1": "Gumagawa ang maintenance agent ng work order at naririnig ito sa floor sa kanilang wika",
   "tour.flow_act_2": "Hinahanap ng trace-back agent ang hakbang kung saan nagsimula ang defect at ang mga apektadong unit",
-  "tour.flow_act_3": "Tanungin ang TAKUMI gamit ang boses: aabot ba tayo sa mga order ngayon?",
+  "tour.flow_act_3": "Ask TAKUMI gamit ang boses: aabot ba ang mga order ngayon?",
   "tour.flow_sense": "Pansinin",
   "tour.flow_sense_1": "Binabasa ng Machine Watch ang mga stack light, counter, at screen ng alarm",
   "tour.flow_sense_2": "Sinusubaybayan ng Station Watch ang bawat hakbang ng manual na trabaho",

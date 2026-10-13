@@ -32,7 +32,7 @@ LANGS = {
     "id": "Bahasa Indonesia",
     "fil": "Filipino (Tagalog)",
 }
-KEEP = ["TAKUMI", "LIVE", "HOME RIG", "PUBLIC DATA", "Gemini", "Gemini Live", "Google ADK", "Google", "VisA", "Cloud Run",
+KEEP = ["TAKUMI", "Station Watch", "Machine Watch", "Standard Work Studio", "Ask TAKUMI", "LIVE", "HOME RIG", "PUBLIC DATA", "Gemini", "Gemini Live", "Google ADK", "Google", "VisA", "Cloud Run",
         "BigQuery", "Pub/Sub", "Firebase", "Firestore", "Secret Manager", "Model Armor", "OEE", "QR", "HMI", "ID"]
 BATCH = 60
 PLACEHOLDER = re.compile(r"\{[a-zA-Z0-9_]+\}")

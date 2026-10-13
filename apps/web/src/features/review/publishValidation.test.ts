@@ -12,6 +12,7 @@ const validSkill: Skill = {
     display_name: 'Master Tanaka',
     role: 'Senior Electrician',
   },
+  capture_id: 'cap_123',
   video_uri: 'gs://takumi-cup-2026.firebasestorage.app/captures/cap_123/master.mp4',
   safety_rules: [
     'Main breaker switch set to position 0',
@@ -175,5 +176,18 @@ describe('validateSkillForPublish', () => {
     const res = validateSkillForPublish(invalid, 20.0);
     expect(res.isValid).toBe(false);
     expect(res.missingFieldsByStep[1]).toContain('common_mistakes');
+  });
+
+  it('does not ask a written work instruction (no recording) for video, clips or interview timestamps', () => {
+    const written = JSON.parse(JSON.stringify(validSkill)) as Skill;
+    delete written.capture_id;
+    delete written.video_uri;
+    written.steps.forEach((step) => {
+      delete step.clip;
+      delete step.why_source;
+    });
+    const result = validateSkillForPublish(written);
+    expect(result.issues.map((i) => i.field)).toEqual([]);
+    expect(result.isValid).toBe(true);
   });
 });

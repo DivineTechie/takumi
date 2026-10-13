@@ -31,17 +31,17 @@ describe('SetupForm Component', () => {
     );
   });
 
-  it('validates empty skill title', () => {
+  it('validates an empty task title', () => {
     const handleStart = vi.fn();
     render(<SetupForm onStart={handleStart} isStarting={false} />);
 
-    const input = screen.getByLabelText('Task / Skill Title');
+    const input = screen.getByLabelText('Task title');
     fireEvent.change(input, { target: { value: '   ' } });
 
     const startBtn = screen.getByText('START CAPTURE');
     fireEvent.click(startBtn);
 
-    expect(screen.getByText('Please enter a skill title to begin capture')).toBeInTheDocument();
+    expect(screen.getByText('Enter a task title to start recording')).toBeInTheDocument();
     expect(handleStart).not.toHaveBeenCalled();
   });
 });

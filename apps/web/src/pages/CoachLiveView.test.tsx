@@ -801,7 +801,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     });
   });
 
-  it('shows "Coaching is temporarily unavailable, please try again later" banner and status on unavailable error', async () => {
+  it('shows the "Station Watch is unavailable right now" banner and status on unavailable error', async () => {
     let capturedCallbacks!: LiveClientCallbacks;
     vi.mocked(GeminiLiveClient).mockImplementationOnce((cfg) => {
       capturedCallbacks = cfg.callbacks;
@@ -847,7 +847,7 @@ describe('CoachLiveView Pass 2 Tools & Session Workflow', () => {
     capturedCallbacks.onError?.(new Error('Coaching is temporarily unavailable, please try again later'));
 
     await waitFor(() => {
-      const msgs = screen.getAllByText('Coaching is temporarily unavailable, please try again later');
+      const msgs = screen.getAllByText('Station Watch is unavailable right now. Please try again later.');
       expect(msgs.length).toBeGreaterThanOrEqual(1);
     });
   });

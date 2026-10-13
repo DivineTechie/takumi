@@ -3,7 +3,7 @@
   "tour.flow_act": "Tindak",
   "tour.flow_act_1": "Agen pemeliharaan menyusun work order dan lantai produksi mendengarnya dalam bahasa mereka",
   "tour.flow_act_2": "Agen pelacak menemukan langkah awal cacat dan unit yang berisiko",
-  "tour.flow_act_3": "Tanya TAKUMI lewat suara: apakah pesanan hari ini akan tercapai?",
+  "tour.flow_act_3": "Ask TAKUMI lewat suara: apakah pesanan hari ini akan terpenuhi?",
   "tour.flow_sense": "Deteksi",
   "tour.flow_sense_1": "Machine Watch membaca stack light, penghitung, dan layar alarm",
   "tour.flow_sense_2": "Station Watch memantau tiap langkah kerja manual",

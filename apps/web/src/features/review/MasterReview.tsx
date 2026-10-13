@@ -393,7 +393,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
               {skill.title}
             </h1>
             <div style={{ color: '#a1a1aa', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-              {t('app.library_master_label')} <strong style={{ color: '#d4d4d8' }}>{skill.master.display_name}</strong> ({skill.master.role}) · {t('app.review_video_label')} <code style={{ color: '#fbbf24', fontSize: '0.8rem' }}>{skill.video_uri ? skill.video_uri.split('/').pop() : 'master.mp4'}</code>
+              {t('app.library_master_label')} <strong style={{ color: '#d4d4d8' }}>{skill.master.display_name}</strong> ({skill.master.role}){skill.video_uri && (<> · {t('app.review_video_label')} <code style={{ color: '#fbbf24', fontSize: '0.8rem' }}>{skill.video_uri.split('/').pop()}</code></>)}
             </div>
           </div>
 
@@ -467,7 +467,7 @@ export const MasterReview: React.FC<MasterReviewProps> = ({ skillId: propSkillId
               ) : (
                 <>
                   <Send size={18} />
-                  <span>{publishing ? t('app.review_publishing') : t('app.review_publish_btn')}</span>
+                  <span>{publishing ? t('app.review_publishing') : skill.status === 'published' ? t('app.review_publish_changes') : t('app.review_publish_btn')}</span>
                 </>
               )}
             </button>

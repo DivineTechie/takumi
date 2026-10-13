@@ -26,10 +26,13 @@ export interface ValidationResult {
  *    - point_hint
  *    - translations for at least 'vi' and 'hi' (instruction and why)
  * 3. Skill-level safety_rules with visible facts only.
+ * A written work instruction (no capture behind it) has no video, so the video, clip and interview
+ * timestamp rules apply only to instructions made from a recording.
  */
 export function validateSkillForPublish(skill: Skill, videoDuration?: number): ValidationResult {
   const issues: ValidationIssue[] = [];
   const missingFieldsByStep: Record<number, string[]> = {};
+  const recorded = Boolean(skill.capture_id);
 
   const addStepIssue = (stepNum: number, field: string, message: string) => {
     issues.push({ step: stepNum, field, message });
@@ -52,7 +55,7 @@ export function validateSkillForPublish(skill: Skill, videoDuration?: number): V
     issues.push({ field: 'master', message: 'Master display name and role are required.' });
   }
 
-  if (!skill.video_uri || (!skill.video_uri.endsWith('.mp4') && !skill.video_uri.includes('.mp4?'))) {
+  if (recorded && (!skill.video_uri || (!skill.video_uri.endsWith('.mp4') && !skill.video_uri.includes('.mp4?')))) {
     issues.push({
       field: 'video_uri',
       message: 'Video URI must point to the transcoded master MP4 (captures/{id}/master.mp4).',
@@ -80,7 +83,7 @@ export function validateSkillForPublish(skill: Skill, videoDuration?: number): V
 
   // Steps validation
   if (!skill.steps || skill.steps.length === 0) {
-    issues.push({ field: 'steps', message: 'The lesson must contain at least one step.' });
+    issues.push({ field: 'steps', message: 'The work instruction must contain at least one step.' });
     return {
       isValid: false,
       issues,
@@ -91,8 +94,10 @@ export function validateSkillForPublish(skill: Skill, videoDuration?: number): V
   skill.steps.forEach((step) => {
     const n = step.n;
 
-    // 1. Clip validation
-    if (!step.clip) {
+    // 1. Clip validation (instructions made from a recording only)
+    if (!recorded) {
+      // written instruction: no video to clip
+    } else if (!step.clip) {
       addStepIssue(n, 'clip', `Step ${n}: Missing video clip range (clip.start_s and clip.end_s).`);
     } else {
       const { start_s, end_s } = step.clip;
@@ -113,12 +118,12 @@ export function validateSkillForPublish(skill: Skill, videoDuration?: number): V
 
     // 2. Why & why_source
     if (!step.why || !step.why.trim()) {
-      addStepIssue(n, 'why', `Step ${n}: Missing craftsman "why" rationale.`);
+      addStepIssue(n, 'why', `Step ${n}: Missing the reason for this step ("why").`);
     }
 
     // A reason the model inferred (not said by the master) is labelled as such and has no timestamps.
     if (!step.why_source) {
-      if (!step.why_inferred) {
+      if (recorded && !step.why_inferred) {
         addStepIssue(n, 'why_source', `Step ${n}: Missing "why_source" interview timestamps.`);
       }
     } else {
