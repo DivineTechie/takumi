@@ -30,6 +30,8 @@ export interface MeResponse {
   role: 'trainee' | 'master' | 'supervisor';
   display_name: string | null;
   role_assigned: boolean;
+  /** Demo: a personal account may switch roles; the shared judge accounts keep theirs. */
+  can_pick_role?: boolean;
 }
 
 export interface LiveTokenResponse {
@@ -182,6 +184,10 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 
 export async function getMe(): Promise<MeResponse> {
   return await apiFetch<MeResponse>('/api/me');
+}
+
+export async function pickDemoRole(role: 'trainee' | 'master' | 'supervisor'): Promise<{ role: string }> {
+  return await apiFetch('/api/me/role', { method: 'POST', body: JSON.stringify({ role }) });
 }
 
 export async function liveToken(
@@ -728,6 +734,8 @@ export interface TracebackResult {
     evidence: string[];
     confidence: 'low' | 'medium' | 'high';
     hold_unit_ids: string[];
+    /** Units at risk that an earlier decision already put on hold (shown, never held twice). */
+    already_on_hold_unit_ids?: string[];
     hold_reason: string;
     work_instruction_fix: string | null;
     success_criteria_fix?: string | null;

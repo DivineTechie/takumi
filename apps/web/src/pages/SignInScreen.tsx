@@ -120,6 +120,10 @@ export const SignInScreen: React.FC = () => {
 
         {/* Action Section */}
         <div className="w-full flex flex-col justify-end items-center pt-6 space-y-4">
+          <div className="w-full p-3.5 rounded-xl bg-primary-container/10 border border-primary-container/40 text-sm text-on-surface text-left">
+            <p className="font-bold mb-1">{t('app.signin_judges_title')}</p>
+            <p className="text-on-surface-variant">{t('app.signin_judges_desc')}</p>
+          </div>
           {errorMessage && (
             <div className="w-full p-3.5 rounded-xl bg-error-container/30 border border-error/50 text-error text-center text-sm">
               {errorMessage}

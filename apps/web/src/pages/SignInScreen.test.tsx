@@ -28,7 +28,19 @@ describe('SignInScreen Test Account Integration', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      canPickRole: false,
+      pickRole: vi.fn(),
     });
+  });
+
+  it('tells judges how to get in', () => {
+    render(
+      <MemoryRouter>
+        <SignInScreen />
+      </MemoryRouter>
+    );
+    expect(screen.getByText('Judges: start here')).toBeInTheDocument();
+    expect(screen.getByText(/choose Operator, Supervisor or Master at the top of Home/)).toBeInTheDocument();
   });
 
   it('renders Google sign-in button and test account toggle', () => {
@@ -38,8 +50,8 @@ describe('SignInScreen Test Account Integration', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/Sign in with Google/i)).toBeDefined();
-    expect(screen.getByText(/Use a test account/i)).toBeDefined();
+    expect(screen.getByText('Sign in with Google')).toBeDefined();
+    expect(screen.getByText('Use a test account')).toBeDefined();
     expect(screen.queryByPlaceholderText('judge-trainee@takumi-cup-2026.web.app')).toBeNull();
   });
 
@@ -50,7 +62,7 @@ describe('SignInScreen Test Account Integration', () => {
       </MemoryRouter>
     );
 
-    const toggleButton = screen.getByText(/Use a test account/i);
+    const toggleButton = screen.getByText('Use a test account');
     fireEvent.click(toggleButton);
 
     expect(screen.getByPlaceholderText('judge-trainee@takumi-cup-2026.web.app')).toBeDefined();
@@ -71,7 +83,7 @@ describe('SignInScreen Test Account Integration', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByText(/Use a test account/i));
+    fireEvent.click(screen.getByText('Use a test account'));
 
     const emailInput = screen.getByPlaceholderText('judge-trainee@takumi-cup-2026.web.app');
     const passwordInput = screen.getByPlaceholderText('Password');
@@ -98,7 +110,7 @@ describe('SignInScreen Test Account Integration', () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByText(/Use a test account/i));
+    fireEvent.click(screen.getByText('Use a test account'));
 
     fireEvent.change(screen.getByPlaceholderText('judge-trainee@takumi-cup-2026.web.app'), {
       target: { value: 'bad@takumi-cup-2026.web.app' },

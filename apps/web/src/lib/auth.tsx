@@ -15,7 +15,7 @@ import {
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import React from 'react';
 import { auth } from './firebase';
-import { getMe } from './api';
+import { getMe, pickDemoRole } from './api';
 
 export type Role = 'trainee' | 'master' | 'supervisor';
 
@@ -29,6 +29,9 @@ export interface AuthContextType {
   finishSignInWithEmail: (email?: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshRole: () => Promise<void>;
+  /** Demo role picker (personal accounts only). */
+  canPickRole: boolean;
+  pickRole: (role: Role) => Promise<void>;
 }
 
 const googleProvider = new GoogleAuthProvider();
@@ -95,6 +98,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<Role | null>(null);
+  const [canPickRole, setCanPickRole] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
 
   const syncUserRole = async (currentUser: User) => {
@@ -105,6 +109,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await currentUser.getIdToken(true);
       }
       setRole(me.role as Role);
+      setCanPickRole(!!me.can_pick_role);
     } catch (err) {
       console.error('Failed to sync user role via /api/me:', err);
       // Fallback to checking existing token claims
@@ -140,6 +145,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await syncUserRole(currentUser);
       } else {
         setRole(null);
+        setCanPickRole(false);
       }
       setLoading(false);
     });
@@ -171,6 +177,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     },
     signOut: signOutAction,
     refreshRole,
+    canPickRole,
+    pickRole: async (next: Role) => {
+      await pickDemoRole(next);
+      // The new role is a custom claim: refresh the ID token so the API and Firestore rules see it.
+      await auth.currentUser?.getIdToken(true);
+      setRole(next);
+    },
   };
 
   return (

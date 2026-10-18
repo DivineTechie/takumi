@@ -10,15 +10,34 @@ You need only a laptop and (optionally) a phone. No hardware kit is required.
 
 ---
 
-## Accounts
+## How to sign in (30 seconds)
 
-| Role | Account | Use it for |
-| :--- | :--- | :--- |
-| Supervisor | `judge-supervisor@takumi-cup-2026.web.app` | Dashboard, control tower, unit records, trace-back, holds, inspection decisions |
-| Trainee (operator) | `judge-trainee@takumi-cup-2026.web.app` | Station Watch, inspection station, gallery, Machine Watch |
-| Master | `judge-master@takumi-cup-2026.web.app` | Standard Work Studio (record a task, review, apply review requests) |
+**Fastest: your own Google account.** Open the [live app](https://takumi-cup-2026.web.app) and press **Sign in with Google**. At the top of Home, the **Try every role** bar switches between three roles in one click:
 
-Passwords are in the confidential submission form, never in this public repository. On the sign-in screen choose **"Use a test account"**. Any Google account also works and signs in as a trainee.
+| Role | What it unlocks |
+| :--- | :--- |
+| **Operator** | Station Watch, the inspection station, the real-parts gallery, Machine Watch |
+| **Supervisor** | Control tower, quality dashboard, unit records, trace-back, holds, work orders, Ask TAKUMI |
+| **Master** | Standard Work Studio: record a task, review it, apply review requests, publish |
+
+Role switching is a demo convenience; in a real factory the plant admin assigns roles. Each walkthrough below names the role it needs.
+
+**Or a shared test account.** On the sign-in screen choose **Use a test account**. These accounts keep a fixed role; their passwords are in the submission form, never in this public repository.
+
+| Role | Account |
+| :--- | :--- |
+| Supervisor | `judge-supervisor@takumi-cup-2026.web.app` |
+| Operator | `judge-trainee@takumi-cup-2026.web.app` |
+| Master | `judge-master@takumi-cup-2026.web.app` |
+
+## The five-minute path
+
+1. **Any role: inspect a real part.** Home → **Try real parts (VisA)** → **Inspect Unit** (about 5 s). Section 1.
+2. **Supervisor: a unit fails.** Open [/units/FIX-0004](https://takumi-cup-2026.web.app/units/FIX-0004) → **Trace back** (about 15 to 25 s). The agent finds step 3 of *Pack a phone charger kit* and FIX-0002 at risk. Approve the hold, then **Send to the Standard Work Studio**. Section 4.
+3. **Master: fix the instruction.** Home → **Work instructions** → *Pack a phone charger kit*: the review request is at the top. **Apply to step 3**, then **PUBLISH CHANGES**. Section 6.
+4. **Supervisor: a machine stops.** Open the **Machine test bench** in one tab, stop a machine, then in **Control tower** press **Draft work order** and **Speak**. Ask TAKUMI "Which machine is stopped, and why?". Section 5.
+
+The FIX units are scripted records (TEST FIXTURES) so every judge can run the same trace-back. If an earlier judge already held FIX-0002, the trace-back still shows it, marked **already on hold**.
 
 ---
 
@@ -41,7 +60,7 @@ Images: VisA dataset (Amazon), CC BY 4.0. Every result is labelled PUBLIC DATA. 
 
 ## 3. Station Watch (5 minutes, phone or laptop camera)
 
-1. As trainee, open **Home → Start Station Watch**, pick a work instruction and your language.
+1. As Operator (any role works), open **Home → Start Station Watch**, pick a work instruction and your language.
 2. Optionally type a **unit serial** (for example `JUDGE-001`): the session is then recorded on that unit.
 3. Do the steps in front of the camera. The coach speaks in your language, points at the right place when you ask "where?", checks each step against visible success criteria, and stops you with a full-screen STOP on a hazard.
 
@@ -64,13 +83,22 @@ Open **Home → Control tower** (`/control`). Every event (station steps, inspec
 
 ## 6. Standard Work Studio (master)
 
-As master, **Home → Record a task**: record a short demonstration and say why each step matters. A Google ADK 2 workflow sends the video to Gemini, which writes the steps with visible success criteria and reasons; Gemini Robotics-ER adds a pointing hint per step, a checker flags criteria that are not visible facts, and the steps are translated into five languages. Follow the run live (every step shows its real progress), then review: edit steps, apply or dismiss review requests from supervisors, and publish. A run takes a few minutes; each master can start 10 runs a day.
+**Review a work instruction (1 minute).** As Master open **Home → Work instructions** and pick *Pack a phone charger kit*. Review requests from supervisors (for example the one trace-back sent in section 4) appear at the top: **Apply to step 3** changes the step's instruction and success criteria, **Dismiss** closes it. Edit any step, then **PUBLISH CHANGES**.
+
+**Record a new task (a few minutes).** As master, **Home → Record a task**: record a short demonstration and say why each step matters. A Google ADK 2 workflow sends the video to Gemini, which writes the steps with visible success criteria and reasons; Gemini Robotics-ER adds a pointing hint per step, a checker flags criteria that are not visible facts, and the steps are translated into five languages. Follow the run live (every step shows its real progress), then review: edit steps, apply or dismiss review requests from supervisors, and publish. A run takes a few minutes; each master can start 10 runs a day.
 
 ---
 
 ## Observability
 
 [/status](https://takumi-cup-2026.web.app/status) shows API health, a live (cached) Gemini check and 7-day latency percentiles. Cloud Monitoring alerts on API, Gemini and Forge health and on server errors. If /status shows Gemini as degraded, AI features pause while records, dashboards and the gallery history keep working.
+
+## Limits while testing
+
+- Each account can make 3,000 AI calls and start 30 Gemini Live sessions (Station Watch and Ask TAKUMI) a day; each master can start 10 Studio recordings a day. Signing in with your own Google account gives you your own allowance.
+- The agents answer within about 15 to 25 seconds and stop at 50 seconds, so they never hang. Simple questions work best for Ask TAKUMI, for example "Will we make today's orders?" or "Which machine is stopped, and why?".
+- Gemini preview models can briefly return "high demand" at peak times. The screen then shows an error, never a made-up answer; wait a few seconds and try again. [/status](https://takumi-cup-2026.web.app/status) shows the live state.
+- The first request after a quiet period can take a few seconds longer while Cloud Run starts an instance.
 
 ## Tips
 

@@ -13,7 +13,8 @@ Any camera a factory already has becomes its quality and operations layer, built
 | :--- | :--- |
 | 🎥 **Demo video** (2:49) | [youtu.be/C8BlBFzSVY4](https://youtu.be/C8BlBFzSVY4) |
 | 🌐 **Live app** | [takumi-cup-2026.web.app](https://takumi-cup-2026.web.app) |
-| 🧭 **Judges' guide** (accounts and 5-minute walkthroughs) | [docs/JUDGES.md](docs/JUDGES.md) |
+| 🧭 **Judges' guide** (sign-in, a five-minute path, walkthroughs) | [docs/JUDGES.md](docs/JUDGES.md) |
+| 🔑 **Judges: how to sign in** | **Sign in with Google**, then pick **Operator**, **Supervisor** or **Master** at the top of Home. [Details](docs/JUDGES.md#how-to-sign-in-30-seconds) |
 | 🎬 **Product tour** (no sign-in needed) | [takumi-cup-2026.web.app/tour](https://takumi-cup-2026.web.app/tour) |
 | 📊 **Evaluations** (method, results, cost; public) | [takumi-cup-2026.web.app/evals](https://takumi-cup-2026.web.app/evals) |
 | 🟢 **System status** (API and a live Gemini check) | [takumi-cup-2026.web.app/status](https://takumi-cup-2026.web.app/status) |
@@ -87,6 +88,16 @@ Method, caveats and per-category results: [/evals](https://takumi-cup-2026.web.a
 - **The browser never sees an API key.** Gemini Live uses single-use tokens; user text is screened by **Model Armor**; keys live in **Secret Manager**; **Cloud Monitoring** alerts on API, Gemini and Forge health; **Cloud Build** tests and deploys every push.
 
 Details and the main flows: [docs/architecture.md](docs/architecture.md).
+
+### Grounded answers, fast responses
+
+- **Agents answer only from TAKUMI's records.** The maintenance, trace-back and planner agents read Firestore and BigQuery through read-only tools and reply in a fixed response schema. For trace-back the server then drops any unit the tools did not return and marks a step with no recorded issue as low confidence, so a hold can never name an invented unit. The work-order and trace-back screens list the tool calls behind each answer.
+- **Ask TAKUMI** answers by calling functions over the factory's own data, shows which data it read, can hand a question to the planner or maintenance agent, and cannot approve anything.
+- **People decide.** Inspection reveals the dataset label only after the verdict; Station Watch passes a step only on visible facts; every hold, work order and instruction change waits for a person.
+- **Edge first.** Machine Watch compares small regions in the browser twice a second at no cost and calls Gemini only when something changes, which is how a stop is seen in seconds.
+- **Cheap model first.** Flash-Lite screens every part and every step; Flash is called only to confirm a suspected defect or verify a step.
+- **No server hop for voice.** The browser talks to Gemini Live directly with a single-use token, so coaching and Ask TAKUMI are not slowed by our backend.
+- **Bounded agents.** The maintenance and trace-back agents make their independent tool calls in parallel, and every agent stops at 50 s (inside the 60 s Firebase Hosting limit) with a clear error instead of hanging.
 
 | Google service / model | Job in TAKUMI |
 |---|---|

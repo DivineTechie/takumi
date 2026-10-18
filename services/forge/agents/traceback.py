@@ -39,6 +39,9 @@ class TracebackReport(BaseModel):
     evidence: list[str] = Field(default_factory=list, description="Short facts from the records that support the root cause.")
     confidence: Literal["low", "medium", "high"] = "low"
     hold_unit_ids: list[str] = Field(default_factory=list, description="Other units to put on hold for re-inspection.")
+    already_on_hold_unit_ids: list[str] = Field(
+        default_factory=list, description="Units at risk that find_similar_units shows are already on hold."
+    )
     hold_reason: str = ""
     work_instruction_fix: str | None = Field(
         default=None, description="The new instruction text for the step, written as the instruction itself (no labels)."
@@ -54,6 +57,7 @@ class TracebackTools:
     def __init__(self, db: Any):
         self.db = db
         self.seen_candidates: set[str] = set()
+        self.held_candidates: set[str] = set()
         self.seen_steps: set[tuple[str, int]] = set()
 
     def get_unit_history(self, unit_id: str) -> dict:
@@ -109,7 +113,8 @@ class TracebackTools:
     def find_similar_units(self, skill_id: str, step: int, exclude_unit_id: str) -> dict:
         """Finds other units whose record at this station shows a mistake, safety stop or unfinished check at this step.
 
-        Units already failed or on hold are left out. Use this to decide which units to hold for re-inspection.
+        Units already failed are left out; units already on hold are listed with status "on_hold" so the
+        supervisor sees every unit at risk. Use this to decide which units to hold for re-inspection.
 
         Args:
             skill_id: The station's skill id from the unit history.
@@ -120,7 +125,7 @@ class TracebackTools:
         for snap in self.db.collection("units").stream():
             u = snap.to_dict() or {}
             uid = u.get("id")
-            if not uid or uid == exclude_unit_id or u.get("status") in ("failed", "on_hold"):
+            if not uid or uid == exclude_unit_id or u.get("status") == "failed":
                 continue
             for r in u.get("station_records") or []:
                 if r.get("skill_id") != skill_id:
@@ -139,6 +144,7 @@ class TracebackTools:
             if len(matches) >= MAX_SIMILAR:
                 break
         self.seen_candidates.update(m["unit_id"] for m in matches)
+        self.held_candidates.update(m["unit_id"] for m in matches if m["status"] == "on_hold")
         return {"skill_id": skill_id, "step": step, "count": len(matches), "units": matches}
 
     def get_work_instruction(self, skill_id: str, step: int) -> dict:
@@ -176,8 +182,9 @@ step's instruction or success criteria that would prevent this. Never mention or
 
 REPORTER_INSTRUCTION = """Turn the investigator's notes into the report. Use only facts in the notes:
 {findings}
-List in hold_unit_ids only unit ids that the notes say find_similar_units returned. If the root cause is unknown,
-leave the root cause fields empty, set confidence to low and leave hold_unit_ids empty.
+List in hold_unit_ids only unit ids that the notes say find_similar_units returned and that are not already on
+hold; list the ones already on hold in already_on_hold_unit_ids. If the root cause is unknown, leave the root cause
+fields empty, set confidence to low and leave both unit lists empty.
 Put only the new instruction text in work_instruction_fix and any new success criteria in success_criteria_fix,
 without labels such as "Instruction:"."""
 
@@ -205,8 +212,12 @@ def build_traceback_agent(tools: TracebackTools) -> SequentialAgent:
 
 
 def sanitise(report: TracebackReport, tools: TracebackTools, failed_unit_id: str) -> TracebackReport:
-    """Keeps only claims the tools can back: hold candidates the tools returned, a step seen in the history."""
-    report.hold_unit_ids = [u for u in dict.fromkeys(report.hold_unit_ids) if u in tools.seen_candidates and u != failed_unit_id]
+    """Keeps only claims the tools can back: hold candidates the tools returned, a step seen in the history.
+    Candidates are split by their status as the tools saw it: units to hold now, and units already on hold."""
+    at_risk = dict.fromkeys(report.hold_unit_ids + report.already_on_hold_unit_ids)
+    backed = [u for u in at_risk if u in tools.seen_candidates and u != failed_unit_id]
+    report.hold_unit_ids = [u for u in backed if u not in tools.held_candidates]
+    report.already_on_hold_unit_ids = [u for u in backed if u in tools.held_candidates]
     if report.root_cause_skill_id and report.root_cause_step is not None:
         if (report.root_cause_skill_id, report.root_cause_step) not in tools.seen_steps:
             report.confidence = "low"

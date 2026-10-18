@@ -112,3 +112,14 @@ TAKUMI is public and any verified account can sign in as a trainee, so every mod
 
 Agents and Studio steps call Gemini with timeouts, so a slow model fails clearly instead of hanging; agent requests end before the 60 s Firebase Hosting limit.
 
+
+---
+
+## 6. Demo access
+
+TAKUMI runs as a public demo with scripted and public data, so judges can try every role without shared passwords:
+
+- A person signed in with their own verified account can switch between Operator, Supervisor and Master on Home (`POST /api/me/role`, at most 40 switches per account per day). The new role is a custom claim, so the API and the Firestore and Storage rules enforce it exactly as they do for assigned roles.
+- The shared judge test accounts (`@takumi-cup-2026.web.app`) keep their fixed role; their passwords are never in this repository.
+- Every account keeps its own daily AI limits (section 5).
+- `DEMO_ROLE_PICKER=false` on `takumi-api` turns the picker off; in a real factory the plant admin assigns roles with `infra/set_role.py`.

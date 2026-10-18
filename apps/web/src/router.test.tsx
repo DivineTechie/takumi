@@ -29,6 +29,8 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      canPickRole: false,
+      pickRole: vi.fn(),
     });
 
     const routes = buildRouteObjects([testFeatureRoute]);
@@ -57,6 +59,8 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      canPickRole: false,
+      pickRole: vi.fn(),
     });
 
     const routes = buildRouteObjects([testFeatureRoute]);
@@ -84,6 +88,8 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      canPickRole: false,
+      pickRole: vi.fn(),
     });
 
     const routes = buildRouteObjects([testFeatureRoute]);
@@ -109,6 +115,8 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      canPickRole: false,
+      pickRole: vi.fn(),
     });
 
     const routes = buildRouteObjects([]);
@@ -133,6 +141,8 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      canPickRole: false,
+      pickRole: vi.fn(),
     });
 
     // Without the Studio routes mounted, /capture falls through to the not-found page

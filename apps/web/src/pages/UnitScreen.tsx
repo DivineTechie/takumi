@@ -320,8 +320,12 @@ export const UnitScreen: React.FC = () => {
                 )}
 
                 <div>
-                  <h3 className="font-bold text-sm mb-1">{t('quality.unit_units_at_risk', { count: trace.report.hold_unit_ids.length })}</h3>
-                  {trace.report.hold_unit_ids.length === 0 && <p className="text-sm text-on-surface-variant">{t('quality.unit_none_found')}</p>}
+                  <h3 className="font-bold text-sm mb-1">
+                    {t('quality.unit_units_at_risk', { count: trace.report.hold_unit_ids.length + (trace.report.already_on_hold_unit_ids?.length ?? 0) })}
+                  </h3>
+                  {trace.report.hold_unit_ids.length === 0 && !trace.report.already_on_hold_unit_ids?.length && (
+                    <p className="text-sm text-on-surface-variant">{t('quality.unit_none_found')}</p>
+                  )}
                   {trace.report.hold_unit_ids.map((id) => (
                     <label key={id} className="flex items-center gap-2 min-h-[44px] text-sm">
                       <input
@@ -333,6 +337,14 @@ export const UnitScreen: React.FC = () => {
                         {id}
                       </Link>
                     </label>
+                  ))}
+                  {(trace.report.already_on_hold_unit_ids ?? []).map((id) => (
+                    <div key={id} className="flex items-center gap-2 min-h-[44px] text-sm">
+                      <Link to={`/units/${encodeURIComponent(id)}`} className="font-mono underline">
+                        {id}
+                      </Link>
+                      <span className="px-2 py-0.5 rounded-full bg-purple-600 text-white text-xs font-bold">{t('quality.unit_already_on_hold')}</span>
+                    </div>
                   ))}
                   {trace.report.hold_unit_ids.length > 0 && (
                     <button type="button" onClick={approveHold} disabled={selected.length === 0} className="mt-2 min-h-[56px] px-5 rounded-xl bg-purple-700 text-white font-bold disabled:opacity-40">
