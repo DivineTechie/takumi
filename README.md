@@ -11,7 +11,7 @@ Any camera a factory already has becomes its quality and operations layer, built
 
 | | Link |
 | :--- | :--- |
-| 🎥 **Demo video** (2:49) | [youtu.be/C8BlBFzSVY4](https://youtu.be/C8BlBFzSVY4) |
+| 🎥 **Demo video** (3:44) | [youtu.be/sJCbGBt26mY](https://youtu.be/sJCbGBt26mY) |
 | 🌐 **Live app** | [takumi-cup-2026.web.app](https://takumi-cup-2026.web.app) |
 | 🧭 **Judges' guide** (sign-in, a five-minute path, walkthroughs) | [docs/JUDGES.md](docs/JUDGES.md) |
 | 🔑 **Judges: how to sign in** | Press **Continue as guest** (no account or personal data), then pick **Operator**, **Supervisor** or **Master** at the top of Home. [Details](docs/JUDGES.md#how-to-sign-in-30-seconds) |
@@ -58,7 +58,7 @@ All screenshots are of the deployed app.
 | <img src="docs/screenshots/ask-takumi.jpg" alt="Ask TAKUMI voice copilot answering in Hindi" width="440"><br>**Ask TAKUMI:** a spoken question in Hindi, answered by voice from real counts | <img src="docs/screenshots/machine-watch.jpg" alt="Machine Watch on a phone detecting a stop" width="440"><br>**Machine Watch:** the phone sees Press 2 stop with an alarm in seconds |
 | <img src="docs/screenshots/machine-setup.jpg" alt="Gemini Robotics-ER finds each light, counter and screen" width="200"><br>**Setup:** Gemini Robotics-ER boxes every lamp, counter and screen | <img src="docs/screenshots/station-watch-hindi.jpg" alt="Station Watch start screen in Hindi" width="200"><br>**Station Watch** in the operator's language (six languages) |
 
-[Watch the 2:49 demo video](https://youtu.be/C8BlBFzSVY4): the whole shift end to end, recorded on the live app.
+[Watch the 3:44 demo video](https://youtu.be/sJCbGBt26mY): the whole shift end to end, recorded on the live app, then how it works under the hood and how to try it yourself.
 
 ---
 
