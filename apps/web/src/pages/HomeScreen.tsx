@@ -154,7 +154,7 @@ export const HomeScreen: React.FC = () => {
                 <div className="absolute right-0 mt-2 w-52 bg-surface-container-high border border-outline-variant rounded-xl shadow-xl py-2 z-50">
                   <div className="px-4 py-2 border-b border-outline-variant">
                     <p className="text-xs text-on-surface-variant">{t('app.home_signed_in_as')}</p>
-                    <p className="text-sm font-bold text-on-surface truncate">{user?.displayName || user?.email}</p>
+                    <p className="text-sm font-bold text-on-surface truncate">{user?.isAnonymous ? t('app.home_guest') : user?.displayName || user?.email}</p>
                     <span className="inline-block px-2 py-0.5 text-[11px] font-bold uppercase rounded bg-primary-container/20 text-primary-container mt-1">
                       {t(`app.home_role_${role || 'trainee'}`)}
                     </span>

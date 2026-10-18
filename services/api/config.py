@@ -24,6 +24,12 @@ LIMIT_LIVE_TOKENS_PER_DAY = int(os.environ.get("LIMIT_LIVE_TOKENS_PER_DAY", "60"
 LIMIT_CHECKS_PER_DAY = int(os.environ.get("LIMIT_CHECKS_PER_DAY", "3000"))
 # Backstop across all users; the API runs at most 3 instances, so the project-wide ceiling is 3x this.
 LIMIT_INSTANCE_CALLS_PER_DAY = int(os.environ.get("LIMIT_INSTANCE_CALLS_PER_DAY", "20000"))
+# Guests ("Continue as guest": anonymous sign-in, no personal data) get smaller daily allowances, and all guests
+# together share a daily pool, so the demo's Gemini budget stays bounded however many guest sessions exist.
+LIMIT_GUEST_CHECKS_PER_DAY = int(os.environ.get("LIMIT_GUEST_CHECKS_PER_DAY", "300"))
+LIMIT_GUEST_LIVE_TOKENS_PER_DAY = int(os.environ.get("LIMIT_GUEST_LIVE_TOKENS_PER_DAY", "8"))
+LIMIT_GUEST_POOL_CHECKS_PER_DAY = int(os.environ.get("LIMIT_GUEST_POOL_CHECKS_PER_DAY", "4000"))
+LIMIT_GUEST_POOL_LIVE_TOKENS_PER_DAY = int(os.environ.get("LIMIT_GUEST_POOL_LIVE_TOKENS_PER_DAY", "120"))
 
 # Timeouts in seconds
 TIMEOUT_WATCH_S = 6.0

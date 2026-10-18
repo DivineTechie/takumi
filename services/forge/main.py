@@ -9,7 +9,15 @@ from fastapi import FastAPI, Depends, BackgroundTasks, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from services.forge.config import LOCAL_DEV, MOCK_MODELS, STUDIO_RUNS_PER_DAY, TRACEBACK_TIMEOUT_S
+from services.forge.config import (
+    AGENT_RUNS_PER_DAY,
+    GUEST_AGENT_RUNS_PER_DAY,
+    GUEST_POOL_AGENT_RUNS_PER_DAY,
+    LOCAL_DEV,
+    MOCK_MODELS,
+    STUDIO_RUNS_PER_DAY,
+    TRACEBACK_TIMEOUT_S,
+)
 from services.forge.auth import AuthUser, verify_auth_token
 from services.forge.models.state import ForgeState
 from services.forge.graph.workflow import ForgePipeline
@@ -110,6 +118,37 @@ def reserve_studio_run(db: Any, uid: str, now: datetime | None = None) -> int | 
     day = (now or datetime.now(timezone.utc)).strftime("%Y%m%d")
     ref = db.collection("rate_limits").document(f"forge_{uid}_{day}")
     return firestore.transactional(_reserve)(db.transaction(), ref, day)
+
+
+def _reserve_agent(txn: Any, ref: Any, pool_ref: Any, limit: int, day: str) -> str | None:
+    snap = ref.get(transaction=txn)
+    used = int((snap.to_dict() or {}).get("agent_runs", 0)) if snap.exists else 0
+    pool_used = 0
+    if pool_ref is not None:
+        pool_snap = pool_ref.get(transaction=txn)
+        pool_used = int((pool_snap.to_dict() or {}).get("agent_runs", 0)) if pool_snap.exists else 0
+        if pool_used >= GUEST_POOL_AGENT_RUNS_PER_DAY:
+            return "Guest access has reached today's shared limit for agent runs. Please try again tomorrow."
+    if used >= limit:
+        return f"Daily limit reached ({limit} agent runs per day). Try again tomorrow."
+    txn.set(ref, {"agent_runs": used + 1, "day": day}, merge=True)
+    if pool_ref is not None:
+        txn.set(pool_ref, {"agent_runs": pool_used + 1, "day": day}, merge=True)
+    return None
+
+
+def reserve_agent_run(db: Any, user: AuthUser, now: datetime | None = None) -> None:
+    """Counts one agent run for the user today (rate_limits/forge_{uid}_{YYYYMMDD}); guests also count against
+    rate_limits/forge_guests_{YYYYMMDD}. Raises 429 when a cap is reached. Atomic (Firestore transaction)."""
+    from google.cloud import firestore
+
+    day = (now or datetime.now(timezone.utc)).strftime("%Y%m%d")
+    ref = db.collection("rate_limits").document(f"forge_{user.uid}_{day}")
+    pool_ref = db.collection("rate_limits").document(f"forge_guests_{day}") if user.guest else None
+    limit = min(AGENT_RUNS_PER_DAY, GUEST_AGENT_RUNS_PER_DAY) if user.guest else AGENT_RUNS_PER_DAY
+    refused = firestore.transactional(_reserve_agent)(db.transaction(), ref, pool_ref, limit, day)
+    if refused:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=refused)
 
 
 # --- Routes ---
@@ -227,6 +266,7 @@ async def regenerate_step_part(
 
     from services.forge.regenerate import regenerate_part
 
+    reserve_agent_run(db, user)
     try:
         result = await regenerate_part(skill, step, req.part, transcript)
     except StudioModelError as e:
@@ -254,6 +294,7 @@ async def traceback_agent(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Trace-back agent is unavailable")
     from services.forge.agents.traceback import run_traceback
 
+    reserve_agent_run(db, user)
     try:
         return await asyncio.wait_for(run_traceback(db, req.unit_id, user.uid), timeout=TRACEBACK_TIMEOUT_S)
     except asyncio.TimeoutError:
@@ -298,6 +339,7 @@ async def maintenance_agent(
 
     from services.forge.agents.maintenance import run_maintenance
 
+    reserve_agent_run(db, user)
     try:
         result = await asyncio.wait_for(run_maintenance(db, req.machine_id, user.uid), timeout=TRACEBACK_TIMEOUT_S)
     except asyncio.TimeoutError:
@@ -334,6 +376,7 @@ async def demand_agent(user: AuthUser = Depends(verify_auth_token)) -> dict[str,
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Demand agent is unavailable")
     from services.forge.agents.demand import run_demand
 
+    reserve_agent_run(db, user)
     try:
         return await asyncio.wait_for(run_demand(db, user.uid), timeout=TRACEBACK_TIMEOUT_S)
     except asyncio.TimeoutError:

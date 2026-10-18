@@ -150,7 +150,7 @@ def test_ask_grounded_answer_with_citation_and_clip(mock_published_skill, mock_c
             headers={"Authorization": "Bearer token"},
         )
         assert res.status_code == 200
-        mock_rate.assert_called_once_with("trainee_1", "checks")
+        mock_rate.assert_called_once_with("trainee_1", "checks", guest=False)
         data = res.json()
         assert "Master Kenji" in data["answer"]
         assert data["citation"]["type"] == "transcript"

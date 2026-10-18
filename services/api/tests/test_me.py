@@ -104,3 +104,15 @@ def test_unknown_role_is_rejected_and_switches_are_limited():
             with patch("services.api.main.DEMO_ROLE_SWITCHES_PER_DAY", 2):
                 codes = [client.post("/api/me/role", json={"role": "master"}, headers={"Authorization": "Bearer t"}).status_code for _ in range(3)]
     assert codes == [200, 200, 429]
+
+
+def test_guest_starts_as_supervisor_and_can_pick_roles():
+    token = {"uid": "guest_1", "role": None, "email": None, "email_verified": False, "firebase": {"sign_in_provider": "anonymous"}}
+    with patch("services.api.auth.auth.verify_id_token", return_value=token):
+        with patch("services.api.main.fb_auth.set_custom_user_claims") as mock_set_claims:
+            data = client.get("/api/me", headers={"Authorization": "Bearer t"}).json()
+    assert data["role"] == "supervisor" and data["role_assigned"] is True and data["can_pick_role"] is True
+    mock_set_claims.assert_called_once_with("guest_1", {"role": "supervisor"})
+    with patch("services.api.auth.auth.verify_id_token", return_value=dict(token, role="supervisor")):
+        with patch("services.api.main.fb_auth.set_custom_user_claims"):
+            assert client.post("/api/me/role", json={"role": "master"}, headers={"Authorization": "Bearer t"}).status_code == 200

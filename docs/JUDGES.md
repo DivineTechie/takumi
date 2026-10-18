@@ -12,7 +12,7 @@ You need only a laptop and (optionally) a phone. No hardware kit is required.
 
 ## How to sign in (30 seconds)
 
-**Fastest: your own Google account.** Open the [live app](https://takumi-cup-2026.web.app) and press **Sign in with Google**. At the top of Home, the **Try every role** bar switches between three roles in one click:
+**Fastest: continue as a guest.** Open the [live app](https://takumi-cup-2026.web.app) and press **Continue as guest**: no account, no email and no personal data. You start as Supervisor, and the **Try every role** bar at the top of Home switches between three roles in one click:
 
 | Role | What it unlocks |
 | :--- | :--- |
@@ -21,6 +21,8 @@ You need only a laptop and (optionally) a phone. No hardware kit is required.
 | **Master** | Standard Work Studio: record a task, review it, apply review requests, publish |
 
 Role switching is a demo convenience; in a real factory the plant admin assigns roles. Each walkthrough below names the role it needs.
+
+Signing in with Google works the same way and keeps your own allowance across devices.
 
 **Or a shared test account.** On the sign-in screen choose **Use a test account**. These accounts keep a fixed role; their passwords are in the submission form, never in this public repository.
 
@@ -95,7 +97,7 @@ Open **Home → Control tower** (`/control`). Every event (station steps, inspec
 
 ## Limits while testing
 
-- Each account can make 3,000 AI calls and start 30 Gemini Live sessions (Station Watch and Ask TAKUMI) a day; each master can start 10 Studio recordings a day. Signing in with your own Google account gives you your own allowance.
+- Each guest session can make 300 AI calls, start 8 Gemini Live sessions (Station Watch and Ask TAKUMI) and run 15 agents a day; all guests together share a daily pool. Signed-in accounts get 3,000 AI calls, 30 Live sessions and 60 agent runs a day; each master can start 10 Studio recordings a day.
 - The agents answer within about 15 to 25 seconds and stop at 50 seconds, so they never hang. Simple questions work best for Ask TAKUMI, for example "Will we make today's orders?" or "Which machine is stopped, and why?".
 - Gemini preview models can briefly return "high demand" at peak times. The screen then shows an error, never a made-up answer; wait a few seconds and try again. [/status](https://takumi-cup-2026.web.app/status) shows the live state.
 - The first request after a quiet period can take a few seconds longer while Cloud Run starts an instance.

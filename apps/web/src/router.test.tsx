@@ -29,6 +29,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      signInAsGuest: vi.fn(),
       canPickRole: false,
       pickRole: vi.fn(),
     });
@@ -59,6 +60,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      signInAsGuest: vi.fn(),
       canPickRole: false,
       pickRole: vi.fn(),
     });
@@ -88,6 +90,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      signInAsGuest: vi.fn(),
       canPickRole: false,
       pickRole: vi.fn(),
     });
@@ -115,6 +118,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      signInAsGuest: vi.fn(),
       canPickRole: false,
       pickRole: vi.fn(),
     });
@@ -141,6 +145,7 @@ describe('Router & Feature Routes behind RoleGuard', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      signInAsGuest: vi.fn(),
       canPickRole: false,
       pickRole: vi.fn(),
     });

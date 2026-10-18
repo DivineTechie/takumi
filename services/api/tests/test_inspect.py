@@ -191,7 +191,7 @@ def test_inspect_few_false_alarms_clean(mock_firestore, mock_storage):
         # Confirm was NOT called
         mock_confirm.assert_not_called()
         # Rate limit deducted 2 checks
-        mock_rate_limit.assert_called_with("trainee_1", "checks", cost=2)
+        mock_rate_limit.assert_called_with("trainee_1", "checks", guest=False, cost=2)
 
         # Unit status was set to passed
         unit_snap = mock_firestore.collection("units").document("UNIT-001").get()

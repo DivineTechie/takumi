@@ -15,6 +15,7 @@ describe('SignInScreen Test Account Integration', () => {
   const mockSignInWithGoogle = vi.fn();
   const mockSendSignInLink = vi.fn();
   const mockSignInWithPassword = vi.fn();
+  const mockSignInAsGuest = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -28,12 +29,13 @@ describe('SignInScreen Test Account Integration', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      signInAsGuest: mockSignInAsGuest,
       canPickRole: false,
       pickRole: vi.fn(),
     });
   });
 
-  it('tells judges how to get in', () => {
+  it('tells judges how to get in and lets them continue as a guest', async () => {
     render(
       <MemoryRouter>
         <SignInScreen />
@@ -41,6 +43,9 @@ describe('SignInScreen Test Account Integration', () => {
     );
     expect(screen.getByText('Judges: start here')).toBeInTheDocument();
     expect(screen.getByText(/choose Operator, Supervisor or Master at the top of Home/)).toBeInTheDocument();
+    expect(screen.getByText('No account or personal data needed')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Continue as guest'));
+    await waitFor(() => expect(mockSignInAsGuest).toHaveBeenCalled());
   });
 
   it('renders Google sign-in button and test account toggle', () => {

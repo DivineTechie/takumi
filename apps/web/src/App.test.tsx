@@ -19,6 +19,7 @@ describe('App', () => {
       finishSignInWithEmail: vi.fn(),
       signOut: vi.fn(),
       refreshRole: vi.fn(),
+      signInAsGuest: vi.fn(),
       canPickRole: false,
       pickRole: vi.fn(),
     });

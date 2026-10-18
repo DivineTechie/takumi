@@ -47,3 +47,31 @@ def test_rate_limit_exceeded_raises_429_with_retry_after():
             assert "Retry-After" in exc_info.value.headers
             retry_after = int(exc_info.value.headers["Retry-After"])
             assert retry_after > 0
+
+
+def test_guest_limits_are_smaller_and_share_a_pool():
+    """A guest is capped by its own smaller allowance and by the pool all guests share."""
+    def run(user_used, pool_used):
+        mock_db = MagicMock()
+        docs = {}
+        def document(doc_id):
+            d = MagicMock()
+            snap = MagicMock(exists=True)
+            snap.to_dict.return_value = {"checks": pool_used if doc_id.startswith("guests_") else user_used}
+            d.get.return_value = snap
+            docs[doc_id] = d
+            return d
+        mock_db.collection.return_value.document.side_effect = document
+        with patch("services.api.auth.get_firestore_client", return_value=mock_db):
+            with patch("google.cloud.firestore.transactional", lambda f: lambda txn: f(txn)):
+                check_rate_limit("guest_1", "checks", guest=True)
+        return docs
+
+    docs = run(user_used=10, pool_used=100)
+    assert any(k.startswith("guests_") for k in docs)
+    with pytest.raises(HTTPException) as e:
+        run(user_used=300, pool_used=100)  # guest allowance is 300, not 3,000
+    assert e.value.status_code == 429
+    with pytest.raises(HTTPException) as e:
+        run(user_used=10, pool_used=4000)  # the shared guest pool is full
+    assert "shared limit" in e.value.detail

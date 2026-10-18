@@ -167,7 +167,7 @@ def test_regenerate_returns_real_model_output(as_role):
     db = StoreDB(_store())
     regen = AsyncMock(return_value={"text": "Insert the blue wire into the left terminal.", "translations": {"vi": "Cắm dây xanh."}})
     with patch.object(main, "get_firestore_client", return_value=db), patch.object(main, "MOCK_MODELS", False), \
-            patch("services.forge.regenerate.regenerate_part", regen):
+            patch("services.forge.regenerate.regenerate_part", regen), patch.object(main, "reserve_agent_run"):
         as_role("trainee")
         assert client.post("/forge/steps/regenerate", json={"skill_id": "skill_1", "n": 1, "part": "instruction"}).status_code == 403
         as_role("master", uid="someone_else")
@@ -204,3 +204,30 @@ def test_regenerate_part_uses_the_model_answer_and_only_lesson_languages(monkeyp
     transcript = [{"t": 15.0, "speaker": "master", "text": "Left is neutral."}, {"t": 90.0, "speaker": "master", "text": "Later."}]
     out = asyncio.run(regenerate_part(skill, step, "success_criteria", transcript))
     assert out == {"text": "The blue ferrule is inside the left terminal.", "translations": {"vi": "Đầu cos xanh nằm trong cổng trái."}}
+
+
+def test_agent_runs_are_capped_per_account_and_for_all_guests():
+    from unittest.mock import MagicMock
+    from fastapi import HTTPException
+    from services.forge.auth import AuthUser
+
+    def db_with(used, pool_used):
+        db = MagicMock()
+        def document(doc_id):
+            d = MagicMock()
+            snap = MagicMock(exists=True)
+            snap.to_dict.return_value = {"agent_runs": pool_used if doc_id.startswith("forge_guests_") else used}
+            d.get.return_value = snap
+            return d
+        db.collection.return_value.document.side_effect = document
+        return db
+
+    member, guest = AuthUser("u1", "supervisor", "a@example.com"), AuthUser("g1", "supervisor", None, guest=True)
+    with patch("google.cloud.firestore.transactional", lambda f: lambda txn, *a: f(txn, *a)):
+        main.reserve_agent_run(db_with(20, 0), member)  # members: 60 a day
+        main.reserve_agent_run(db_with(5, 10), guest)
+        for db, user, text in ((db_with(60, 0), member, "60 agent runs"), (db_with(15, 10), guest, "15 agent runs"),
+                               (db_with(1, 250), guest, "shared limit")):
+            with pytest.raises(HTTPException) as e:
+                main.reserve_agent_run(db, user)
+            assert e.value.status_code == 429 and text in e.value.detail

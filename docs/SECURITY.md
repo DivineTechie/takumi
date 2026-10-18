@@ -108,6 +108,8 @@ TAKUMI is public and any verified account can sign in as a trainee, so every mod
 | AI calls per API instance per day, across all users (at most 3 instances) | 20,000 | `LIMIT_INSTANCE_CALLS_PER_DAY` |
 | Machine Watch reads per machine per minute | 6 | `LIMIT_MACHINE_READS_PER_MIN` |
 | Standard Work Studio runs per master per day | 10 | `STUDIO_RUNS_PER_DAY`, `services/forge/config.py` |
+| Agent runs per account per day (trace-back, maintenance, planner, step regenerate) | 60 | `AGENT_RUNS_PER_DAY`, `services/forge/config.py` |
+| Guests (each / all guests together, per day): AI calls · Live sessions · agent runs | 300 / 4,000 · 8 / 120 · 15 / 250 | `LIMIT_GUEST_*`, `GUEST_*AGENT_RUNS_PER_DAY` |
 | Requests per IP per minute on public endpoints (status, deep health) | 60 | `services/api/public_rate_limit.py` |
 
 Agents and Studio steps call Gemini with timeouts, so a slow model fails clearly instead of hanging; agent requests end before the 60 s Firebase Hosting limit.
@@ -117,9 +119,10 @@ Agents and Studio steps call Gemini with timeouts, so a slow model fails clearly
 
 ## 6. Demo access
 
-TAKUMI runs as a public demo with scripted and public data, so judges can try every role without shared passwords:
+TAKUMI runs as a public demo with scripted and public data, so judges can try every role without shared passwords or personal data:
 
-- A person signed in with their own verified account can switch between Operator, Supervisor and Master on Home (`POST /api/me/role`, at most 40 switches per account per day). The new role is a custom claim, so the API and the Firestore and Storage rules enforce it exactly as they do for assigned roles.
+- **Continue as guest** uses Firebase anonymous sign-in: no account, email or personal data. A guest starts as Supervisor.
+- A guest, or a person signed in with their own verified account, can switch between Operator, Supervisor and Master on Home (`POST /api/me/role`, at most 40 switches per account per day). The new role is a custom claim, so the API and the Firestore and Storage rules enforce it exactly as they do for assigned roles.
 - The shared judge test accounts (`@takumi-cup-2026.web.app`) keep their fixed role; their passwords are never in this repository.
-- Every account keeps its own daily AI limits (section 5).
+- Guests get smaller daily limits (300 AI calls, 8 Gemini Live sessions, 15 agent runs each), and all guests together share a daily pool (4,000 AI calls, 120 Live sessions, 250 agent runs). Signed-in accounts get 3,000 AI calls, 30 Live sessions and 60 agent runs a day (section 5). The guest pool bounds the Gemini spend however many guest sessions are opened.
 - `DEMO_ROLE_PICKER=false` on `takumi-api` turns the picker off; in a real factory the plant admin assigns roles with `infra/set_role.py`.
