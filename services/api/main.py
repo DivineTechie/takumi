@@ -40,6 +40,9 @@ from services.api.bigquery_client import (
     stream_session_event,
 )
 from services.api.config import (
+    DEMO_ROLE_PICKER,
+    DEMO_ROLE_SWITCHES_PER_DAY,
+    SHARED_ACCOUNT_DOMAIN,
     EXCLUDED_UIDS,
     GCP_PROJECT,
     LOCAL_DEV,
@@ -130,6 +133,12 @@ class MeResponse(BaseModel):
     role: str
     display_name: str | None = None
     role_assigned: bool = False
+    can_pick_role: bool = False
+
+
+class RolePickRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["trainee", "supervisor", "master"]
 
 
 class LiveTokenRequest(BaseModel):
@@ -262,6 +271,15 @@ async def healthz_deep(request: Request) -> dict[str, str]:
     return {"status": "ok"}
 
 
+def can_pick_role(user: AuthUser) -> bool:
+    """Demo role picker: verified personal accounts only; the shared judge accounts keep their role."""
+    email = (user.email or "").lower()
+    return DEMO_ROLE_PICKER and user.email_verified and bool(email) and not email.endswith(SHARED_ACCOUNT_DOMAIN)
+
+
+_role_switches: dict[str, list[float]] = {}
+
+
 @app.get("/api/me", response_model=MeResponse)
 def get_me(user: AuthUser = Depends(verify_auth_token)) -> MeResponse:
     if user.role is not None:
@@ -270,6 +288,7 @@ def get_me(user: AuthUser = Depends(verify_auth_token)) -> MeResponse:
             role=user.role,
             display_name=user.display_name,
             role_assigned=False,
+            can_pick_role=can_pick_role(user),
         )
 
     # User has no role claim yet: check if email is verified
@@ -286,7 +305,23 @@ def get_me(user: AuthUser = Depends(verify_auth_token)) -> MeResponse:
         role="trainee",
         display_name=user.display_name,
         role_assigned=True,
+        can_pick_role=can_pick_role(user),
     )
+
+
+@app.post("/api/me/role")
+def pick_demo_role(req: RolePickRequest, user: AuthUser = Depends(verify_auth_token)) -> dict[str, Any]:
+    """Demo: switches the caller's own role. The client refreshes its ID token to pick up the new claim."""
+    if not can_pick_role(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account keeps its assigned role")
+    now = time.time()
+    recent = [t for t in _role_switches.get(user.uid, []) if t > now - 86400]
+    if len(recent) >= DEMO_ROLE_SWITCHES_PER_DAY:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many role switches today")
+    _role_switches[user.uid] = recent + [now]
+    fb_auth.set_custom_user_claims(user.uid, {"role": req.role})
+    logger.info("Demo role picked", extra={"props": {"event": "demo_role_picked", "role": req.role}})
+    return {"role": req.role}
 
 
 def record_call_timing(

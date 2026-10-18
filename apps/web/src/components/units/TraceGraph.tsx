@@ -59,10 +59,12 @@ export const TraceGraph: React.FC<{ unitId: string; defect: string | null; trace
   const narrow = useNarrow();
   const { t } = useI18n();
   const r = trace.report;
-  const units = r.hold_unit_ids.slice(0, MAX_UNITS);
-  const more = r.hold_unit_ids.length - units.length;
+  const held = new Set(r.already_on_hold_unit_ids ?? []);
+  const atRisk = [...r.hold_unit_ids, ...held];
+  const units = atRisk.slice(0, MAX_UNITS);
+  const more = atRisk.length - units.length;
   const hasCause = !!r.root_cause_station;
-  const hasFix = !!r.work_instruction_fix && hasCause;
+  const hasFix = (!!r.work_instruction_fix || !!r.success_criteria_fix) && hasCause;
 
   let width: number, height: number, unit: Node, cause: Node, fix: Node, holds: Node[];
   if (narrow) {
@@ -100,7 +102,7 @@ export const TraceGraph: React.FC<{ unitId: string; defect: string | null; trace
           <>
             <path d={`M${cause.x + cause.w / 2},${cause.y + cause.h} L${cause.x + cause.w / 2},${holds[0].y - 22}`} className="tk-draw stroke-purple-500 fill-none" strokeWidth={2} style={{ animationDelay: '1.5s' }} />
             <text x={width / 2 + 8} y={holds[0].y - 8} className="fill-current text-[12px] font-bold tk-rise" style={{ animationDelay: '1.6s' }}>
-              {t('quality.trace_at_risk', { count: r.hold_unit_ids.length })}
+              {t('quality.trace_at_risk', { count: atRisk.length })}
             </text>
           </>
         )}
@@ -125,7 +127,7 @@ export const TraceGraph: React.FC<{ unitId: string; defect: string | null; trace
           <Box n={cause} tone="fill-surface-container-high text-on-surface" title={t('quality.trace_no_station')} sub={t('quality.trace_not_enough_records')} delay={1.1} />
         )}
         {holds.map((h, i) => (
-          <Box key={units[i]} n={h} tone="fill-purple-600 text-white" title={units[i]} delay={1.8 + i * 0.15} mono />
+          <Box key={units[i]} n={h} tone="fill-purple-600 text-white" title={units[i]} sub={held.has(units[i]) ? t('quality.trace_on_hold') : undefined} delay={1.8 + i * 0.15} mono />
         ))}
         {more > 0 && (
           <text
@@ -140,7 +142,7 @@ export const TraceGraph: React.FC<{ unitId: string; defect: string | null; trace
         {hasFix && <Box n={fix} tone="fill-emerald-600 text-white" title={t('quality.trace_fix_title')} sub={t('quality.trace_fix_sub')} delay={2.2 + holds.length * 0.15} />}
       </svg>
       <figcaption className="sr-only">
-        {t(hasFix ? 'quality.trace_caption_fix' : 'quality.trace_caption', { count: r.hold_unit_ids.length })}
+        {t(hasFix ? 'quality.trace_caption_fix' : 'quality.trace_caption', { count: atRisk.length })}
       </figcaption>
     </figure>
   );

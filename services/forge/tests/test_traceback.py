@@ -71,13 +71,15 @@ def test_history_hides_operator_and_lists_issues():
     assert tools.get_unit_history("nope") == {"error": "unit nope not found"}
 
 
-def test_similar_units_same_step_only_and_skips_failed_or_held():
+def test_similar_units_same_step_only_skips_failed_and_marks_held():
     tools = TracebackTools(_db())
     r = tools.find_similar_units("skill_cable", 2, "F1")
-    assert sorted(u["unit_id"] for u in r["units"]) == ["A", "B"]
+    assert sorted(u["unit_id"] for u in r["units"]) == ["A", "B", "D"]
     b = next(u for u in r["units"] if u["unit_id"] == "B")
     assert b["issue_types"] == ["step_not_verified"]
-    assert tools.seen_candidates == {"A", "B"}
+    assert next(u for u in r["units"] if u["unit_id"] == "D")["status"] == "on_hold"
+    assert tools.seen_candidates == {"A", "B", "D"}
+    assert tools.held_candidates == {"D"}
 
 
 def test_work_instruction():
@@ -92,10 +94,12 @@ def test_sanitise_drops_unbacked_holds_and_flags_unrecorded_step():
     tools.find_similar_units("skill_cable", 2, "F1")
     report = TracebackReport(
         summary="x", root_cause_skill_id="skill_cable", root_cause_step=2, confidence="high",
-        hold_unit_ids=["A", "B", "C", "F1", "invented", "A"],
+        hold_unit_ids=["A", "B", "C", "F1", "invented", "A", "D"],
     )
     clean = sanitise(report, tools, "F1")
     assert clean.hold_unit_ids == ["A", "B"]
+    # A unit already on hold (by an earlier trace-back) is still shown as at risk, never held twice.
+    assert clean.already_on_hold_unit_ids == ["D"]
     assert clean.confidence == "high"
 
     wrong_step = sanitise(TracebackReport(summary="x", root_cause_skill_id="skill_cable", root_cause_step=3, confidence="high"), tools, "F1")

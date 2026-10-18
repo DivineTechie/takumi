@@ -58,6 +58,12 @@ STORAGE_BUCKET = os.environ.get("FIREBASE_STORAGE_BUCKET", "takumi-cup-2026.fire
 BQ_LOCATION = os.environ.get("BIGQUERY_LOCATION", "asia-southeast1")
 SESSIONS_ENABLED = os.environ.get("SESSIONS_ENABLED", "true").lower() in ("true", "1", "yes")
 
+# Demo: a person who signs in with their own (verified) account may switch between the three roles to try every
+# part of TAKUMI. The shared judge test accounts keep their fixed role. Set DEMO_ROLE_PICKER=false to turn it off.
+DEMO_ROLE_PICKER = os.environ.get("DEMO_ROLE_PICKER", "true").lower() in ("true", "1", "yes")
+DEMO_ROLE_SWITCHES_PER_DAY = 40
+SHARED_ACCOUNT_DOMAIN = "@takumi-cup-2026.web.app"
+
 # Supervisor insight exclusions
 EXCLUDED_UIDS = set(
     filter(None, [u.strip() for u in os.environ.get("EXCLUDED_UIDS", "").split(",")])

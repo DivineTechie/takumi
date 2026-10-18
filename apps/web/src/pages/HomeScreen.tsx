@@ -1,6 +1,6 @@
 import React, { useState, type ReactNode } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../lib/auth';
+import { useAuth, type Role } from '../lib/auth';
 import { useTheme } from '../lib/theme';
 import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n';
 import logoSvg from '../assets/logo.svg';
@@ -11,6 +11,62 @@ const secondaryBtn =
   'w-full min-h-[56px] py-3.5 px-4 bg-surface border border-outline-variant hover:bg-surface-container text-on-surface rounded-xl font-bold text-[16px] flex items-center justify-center gap-2 active:scale-[0.99] transition-all cursor-pointer';
 const noAccess =
   'w-full min-h-[56px] py-3.5 px-5 bg-surface-container text-on-surface-variant rounded-xl font-medium text-[16px] flex items-center justify-center text-center border border-outline-variant';
+
+const DEMO_ROLES: { role: Role; icon: string }[] = [
+  { role: 'trainee', icon: 'front_hand' },
+  { role: 'supervisor', icon: 'monitoring' },
+  { role: 'master', icon: 'videocam' },
+];
+
+/** Demo: lets a person who signed in with their own account try every role (the shared test accounts keep theirs). */
+const RolePicker: React.FC<{ role: Role | null; pickRole: (r: Role) => Promise<void> }> = ({ role, pickRole }) => {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState<Role | null>(null);
+  const [failed, setFailed] = useState(false);
+  const choose = async (next: Role) => {
+    if (next === role || busy) return;
+    setBusy(next);
+    setFailed(false);
+    try {
+      await pickRole(next);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <section aria-label={t('app.home_role_picker_title')} className="mb-6 rounded-2xl border border-primary-container/40 bg-primary-container/10 p-4">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+        <div className="lg:w-72 shrink-0">
+          <h2 className="font-bold text-on-surface">{t('app.home_role_picker_title')}</h2>
+          <p className="text-sm text-on-surface-variant">{t('app.home_role_picker_desc')}</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 flex-1" role="radiogroup">
+          {DEMO_ROLES.map(({ role: r, icon }) => (
+            <button
+              key={r}
+              type="button"
+              role="radio"
+              aria-checked={role === r}
+              onClick={() => choose(r)}
+              className={`min-h-[56px] rounded-xl px-3 py-2 text-left flex items-center gap-3 border transition-colors cursor-pointer ${
+                role === r ? 'bg-primary-container text-on-primary-container border-primary-container' : 'bg-surface border-outline-variant hover:bg-surface-container text-on-surface'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[22px]">{icon}</span>
+              <span>
+                <span className="block font-bold">{busy === r ? t('app.home_role_switching') : t(`app.home_role_pick_${r}`)}</span>
+                <span className="block text-xs opacity-80">{t(`app.home_role_pick_${r}_desc`)}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {failed && <p className="mt-2 text-sm text-error">{t('app.home_role_failed')}</p>}
+    </section>
+  );
+};
 
 const Card: React.FC<{ title: string; desc: string; children: ReactNode }> = ({ title, desc, children }) => (
   <section className="bg-surface-container-low border border-outline-variant rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-colors">
@@ -23,7 +79,7 @@ const Card: React.FC<{ title: string; desc: string; children: ReactNode }> = ({ 
 );
 
 export const HomeScreen: React.FC = () => {
-  const { user, role, signOut } = useAuth();
+  const { user, role, signOut, canPickRole, pickRole } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { language, setLanguage, t } = useTranslation();
   const navigate = useNavigate();
@@ -142,6 +198,8 @@ export const HomeScreen: React.FC = () => {
         )}
 
         <h1 className="mb-6 text-[28px] leading-[36px] font-bold text-on-surface">{t('home_heading')}</h1>
+
+        {canPickRole && <RolePicker role={role} pickRole={pickRole} />}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">
           <Card title={t('app.home_inspection_title')} desc={t('app.home_inspection_desc')}>
