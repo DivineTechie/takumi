@@ -99,7 +99,7 @@ def test_endpoint_guards_saves_draft_and_dedups():
         assert _client_as("trainee").post("/forge/agents/maintenance", json={"machine_id": "m1"}).status_code == 403
         client = _client_as("supervisor")
         with patch("services.forge.main.get_firestore_client", return_value=db), patch("services.forge.main.MOCK_MODELS", False), \
-                patch("services.forge.agents.maintenance.run_maintenance", run):
+                patch("services.forge.agents.maintenance.run_maintenance", run), patch("services.forge.main.reserve_agent_run"):
             assert client.post("/forge/agents/maintenance", json={"machine_id": "m2"}).status_code == 409
             assert client.post("/forge/agents/maintenance", json={"machine_id": "zz"}).status_code == 404
             first = client.post("/forge/agents/maintenance", json={"machine_id": "m1"}).json()

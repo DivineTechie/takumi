@@ -15,6 +15,7 @@ class AuthUser(NamedTuple):
     uid: str
     role: str | None
     email: str | None
+    guest: bool = False  # anonymous "Continue as guest" session
 
 
 def init_firebase_admin() -> None:
@@ -61,4 +62,5 @@ def verify_auth_token(
     if not uid:
         raise HTTPException(status_code=401, detail="Invalid token: missing uid")
 
-    return AuthUser(uid=uid, role=role, email=email)
+    guest = (decoded_token.get("firebase") or {}).get("sign_in_provider") == "anonymous"
+    return AuthUser(uid=uid, role=role, email=email, guest=guest)

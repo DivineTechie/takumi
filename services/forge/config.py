@@ -26,6 +26,11 @@ STUDIO_MAX_VIDEO_S = float(os.environ.get("STUDIO_MAX_VIDEO_S", "960"))  # 15-mi
 STUDIO_MAX_VIDEO_MB = int(os.environ.get("STUDIO_MAX_VIDEO_MB", "300"))  # Cloud Run instance has 1 GiB of memory
 STUDIO_MAX_STEPS = 12
 STUDIO_RUNS_PER_DAY = int(os.environ.get("STUDIO_RUNS_PER_DAY", "10"))
+# Agent runs (trace-back, maintenance, planner, step regenerate) per day: per account, smaller per guest, and one
+# pool shared by all guests ("Continue as guest" sessions), so the demo's Gemini budget stays bounded.
+AGENT_RUNS_PER_DAY = int(os.environ.get("AGENT_RUNS_PER_DAY", "60"))
+GUEST_AGENT_RUNS_PER_DAY = int(os.environ.get("GUEST_AGENT_RUNS_PER_DAY", "15"))
+GUEST_POOL_AGENT_RUNS_PER_DAY = int(os.environ.get("GUEST_POOL_AGENT_RUNS_PER_DAY", "250"))
 # Every model call is bounded; the whole run is bounded too, so a job can never hang.
 STUDIO_FILE_ACTIVE_TIMEOUT_S = 300.0
 STUDIO_SEGMENT_TIMEOUT_S = 300.0

@@ -272,9 +272,13 @@ async def healthz_deep(request: Request) -> dict[str, str]:
 
 
 def can_pick_role(user: AuthUser) -> bool:
-    """Demo role picker: verified personal accounts only; the shared judge accounts keep their role."""
+    """Demo role picker: guests and verified personal accounts; the shared judge accounts keep their role."""
+    if not DEMO_ROLE_PICKER:
+        return False
+    if user.guest:
+        return True
     email = (user.email or "").lower()
-    return DEMO_ROLE_PICKER and user.email_verified and bool(email) and not email.endswith(SHARED_ACCOUNT_DOMAIN)
+    return user.email_verified and bool(email) and not email.endswith(SHARED_ACCOUNT_DOMAIN)
 
 
 _role_switches: dict[str, list[float]] = {}
@@ -290,6 +294,11 @@ def get_me(user: AuthUser = Depends(verify_auth_token)) -> MeResponse:
             role_assigned=False,
             can_pick_role=can_pick_role(user),
         )
+
+    # A guest starts as supervisor (the widest view of the demo) and can switch roles on Home.
+    if user.guest and DEMO_ROLE_PICKER:
+        fb_auth.set_custom_user_claims(user.uid, {"role": "supervisor"})
+        return MeResponse(uid=user.uid, role="supervisor", display_name=None, role_assigned=True, can_pick_role=True)
 
     # User has no role claim yet: check if email is verified
     if not user.email_verified:
@@ -382,7 +391,7 @@ async def issue_live_token(
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid purpose")
 
-    check_rate_limit(user.uid, "live_tokens")
+    check_rate_limit(user.uid, "live_tokens", guest=user.guest)
 
     t_model_start = time.perf_counter()
     try:
@@ -404,7 +413,7 @@ async def watch_step(
     user: AuthUser = Depends(require_station_user),
 ) -> dict[str, Any]:
     t_handler_start = time.perf_counter()
-    check_rate_limit(user.uid, "checks")
+    check_rate_limit(user.uid, "checks", guest=user.guest)
 
     # Validate image and resize to at most 640 px
     img = decode_and_validate_image(req.image_b64)
@@ -437,7 +446,7 @@ async def verify_step(
     user: AuthUser = Depends(require_station_user),
 ) -> dict[str, Any]:
     t_handler_start = time.perf_counter()
-    check_rate_limit(user.uid, "checks")
+    check_rate_limit(user.uid, "checks", guest=user.guest)
 
     # Validate image and resize to at most VERIFY_MAX_PX (default 1280)
     img = decode_and_validate_image(req.image_b64)
@@ -468,7 +477,7 @@ async def point_target(
     user: AuthUser = Depends(require_any_authenticated_user),
 ) -> dict[str, Any]:
     t_handler_start = time.perf_counter()
-    check_rate_limit(user.uid, "checks")
+    check_rate_limit(user.uid, "checks", guest=user.guest)
 
     # Screen target text with Model Armor (fail-open)
     screening = screen_text(req.target, purpose="point_target")
@@ -577,7 +586,7 @@ async def ask_master(
     Timeout 12 s with fallback: "Let's come back to that."
     """
     t_handler_start = time.perf_counter()
-    check_rate_limit(user.uid, "checks")
+    check_rate_limit(user.uid, "checks", guest=user.guest)
 
     screening = screen_text(req.question, purpose="question")
     if not screening.get("allowed", True):
@@ -1451,7 +1460,7 @@ async def post_inspect(
         )
 
     # 4. Check rate limit ONLY after all inputs and product validation pass (400/404 never use quota)
-    check_rate_limit(user.uid, "checks", cost=2)
+    check_rate_limit(user.uid, "checks", guest=user.guest, cost=2)
 
     try:
         ref_bytes_list = get_or_load_references(req.product_id, ref_paths[:3])
@@ -1860,7 +1869,7 @@ async def post_inspect_gallery(
     prod_data = prod_snap.to_dict() or {}
 
     # Quota check (2 checks per inspection call)
-    check_rate_limit(user.uid, "checks", cost=2)
+    check_rate_limit(user.uid, "checks", guest=user.guest, cost=2)
 
     ref_paths = prod_data.get("reference_image_paths") or []
     if len(ref_paths) < 3:

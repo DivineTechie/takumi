@@ -14,7 +14,7 @@ Any camera a factory already has becomes its quality and operations layer, built
 | 🎥 **Demo video** (2:49) | [youtu.be/C8BlBFzSVY4](https://youtu.be/C8BlBFzSVY4) |
 | 🌐 **Live app** | [takumi-cup-2026.web.app](https://takumi-cup-2026.web.app) |
 | 🧭 **Judges' guide** (sign-in, a five-minute path, walkthroughs) | [docs/JUDGES.md](docs/JUDGES.md) |
-| 🔑 **Judges: how to sign in** | **Sign in with Google**, then pick **Operator**, **Supervisor** or **Master** at the top of Home. [Details](docs/JUDGES.md#how-to-sign-in-30-seconds) |
+| 🔑 **Judges: how to sign in** | Press **Continue as guest** (no account or personal data), then pick **Operator**, **Supervisor** or **Master** at the top of Home. [Details](docs/JUDGES.md#how-to-sign-in-30-seconds) |
 | 🎬 **Product tour** (no sign-in needed) | [takumi-cup-2026.web.app/tour](https://takumi-cup-2026.web.app/tour) |
 | 📊 **Evaluations** (method, results, cost; public) | [takumi-cup-2026.web.app/evals](https://takumi-cup-2026.web.app/evals) |
 | 🟢 **System status** (API and a live Gemini check) | [takumi-cup-2026.web.app/status](https://takumi-cup-2026.web.app/status) |

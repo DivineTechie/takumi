@@ -5,7 +5,7 @@ import { useTranslation, SUPPORTED_LANGUAGES, type LanguageCode } from '../i18n'
 import logoSvg from '../assets/logo.svg';
 
 export const SignInScreen: React.FC = () => {
-  const { user, loading, signInWithGoogle, sendSignInLink, signInWithPassword } = useAuth();
+  const { user, loading, signInWithGoogle, sendSignInLink, signInWithPassword, signInAsGuest } = useAuth();
   const { language, setLanguage, t } = useTranslation();
   const location = useLocation();
   const [email, setEmail] = useState('');
@@ -17,11 +17,25 @@ export const SignInScreen: React.FC = () => {
   const [testEmail, setTestEmail] = useState('');
   const [testPassword, setTestPassword] = useState('');
   const [isTestSubmitting, setIsTestSubmitting] = useState(false);
+  const [isGuestSubmitting, setIsGuestSubmitting] = useState(false);
 
   if (!loading && user) {
     const fromPath = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
     return <Navigate to={fromPath} replace />;
   }
+
+  const handleGuestSignIn = async () => {
+    try {
+      setErrorMessage(null);
+      setIsGuestSubmitting(true);
+      await signInAsGuest();
+    } catch (err: unknown) {
+      console.error('Guest sign-in error:', err);
+      setErrorMessage(t('app.signin_guest_failed'));
+    } finally {
+      setIsGuestSubmitting(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     try {
@@ -142,6 +156,20 @@ export const SignInScreen: React.FC = () => {
             </div>
           ) : (
             <>
+              {/* Guest: the fastest way in for judges, no account or personal data */}
+              <button
+                type="button"
+                onClick={handleGuestSignIn}
+                disabled={isGuestSubmitting}
+                className="w-full min-h-[64px] py-2 bg-primary-container text-on-primary-container rounded-lg px-4 flex flex-col items-center justify-center shadow transition-all hover:brightness-105 active:scale-[0.99] disabled:opacity-60 cursor-pointer"
+              >
+                <span className="flex items-center gap-2 text-[18px] font-bold">
+                  <span className="material-symbols-outlined text-[22px]">person</span>
+                  {isGuestSubmitting ? t('app.signin_guest_signing_in') : t('app.signin_guest_btn')}
+                </span>
+                <span className="text-[13px] font-medium opacity-80">{t('app.signin_guest_hint')}</span>
+              </button>
+
               {/* Google Sign In Button */}
               <button
                 type="button"

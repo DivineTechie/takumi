@@ -8,6 +8,7 @@ import {
   isSignInWithEmailLink,
   signInWithEmailLink,
   signInWithEmailAndPassword,
+  signInAnonymously,
   signOut as firebaseSignOut,
   onAuthStateChanged,
   type User,
@@ -25,6 +26,8 @@ export interface AuthContextType {
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
+  /** Demo guest session (anonymous sign-in): no account and no personal data. */
+  signInAsGuest: () => Promise<void>;
   sendSignInLink: (email: string) => Promise<void>;
   finishSignInWithEmail: (email?: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -86,6 +89,11 @@ export async function completeEmailSignIn(email?: string): Promise<User> {
 
 export async function signInWithPasswordAction(email: string, pass: string): Promise<User> {
   const credential = await signInWithEmailAndPassword(auth, email, pass);
+  return credential.user;
+}
+
+export async function signInAsGuestAction(): Promise<User> {
+  const credential = await signInAnonymously(auth);
   return credential.user;
 }
 
@@ -166,6 +174,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     signInWithGoogle: signInWithGoogleAction,
     signInWithPassword: async (email: string, pass: string) => {
       const newUser = await signInWithPasswordAction(email, pass);
+      setUser(newUser);
+      await syncUserRole(newUser);
+    },
+    signInAsGuest: async () => {
+      const newUser = await signInAsGuestAction();
       setUser(newUser);
       await syncUserRole(newUser);
     },

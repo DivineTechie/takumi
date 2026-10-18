@@ -387,7 +387,7 @@ async def setup_machine(
             detail="Invalid image payload",
         )
 
-    check_rate_limit(user.uid, "checks")
+    check_rate_limit(user.uid, "checks", guest=user.guest)
 
     try:
         parsed = await asyncio.wait_for(
@@ -601,7 +601,7 @@ async def read_machine(
 
     # Check rolling cap and daily checks rate limit
     check_machine_rate_limit(machine_id)
-    check_rate_limit(user.uid, "checks")
+    check_rate_limit(user.uid, "checks", guest=user.guest)
 
     # Build Gemini prompt
     light_order = machine_data.get("light_order") or ["red", "yellow", "green"]
